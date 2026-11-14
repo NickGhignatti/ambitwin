@@ -39,12 +39,14 @@ COPY schemas/notification-schema /app/schemas/notification-schema
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY backend/notification .
 RUN cargo build --release
+# zlib sits in x86_64-linux-gnu or aarch64-linux-gnu: stage it at one path for both
+RUN cp "/usr/lib/$(uname -m)-linux-gnu/libz.so.1" /libz.so.1
 
 FROM gcr.io/distroless/cc-debian12:nonroot AS production
 # Distroless: no shell, no package manager, patched upstream - so the cd-registry Trivy
 # scan needs no apt-get upgrade step here. ca-certificates and libssl ship in the base
 # image; zlib does not.
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
+COPY --from=builder /libz.so.1 /usr/lib/libz.so.1
 COPY --from=builder /app/backend/notification/target/release/notification /usr/local/bin/notification
 
 EXPOSE 3000

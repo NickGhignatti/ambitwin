@@ -106,6 +106,7 @@ All six Rust Dockerfiles have the same shape. `telemetry` is the example.
         B->>BU: COPY backend/libs/auth-policy, auth-contracts
         B->>BU: COPY backend/telemetry .
         BU->>BU: cargo build --release
+        BU->>BU: cp libz.so.1 to /libz.so.1
         B->>PR: FROM distroless/cc-debian12:nonroot
         PR->>PR: COPY libz.so.1 and target/release/telemetry
         PR->>PR: CMD /usr/local/bin/telemetry
@@ -120,12 +121,13 @@ All six Rust Dockerfiles have the same shape. `telemetry` is the example.
 | 7 | Compile every dependency: tokio, axum, sqlx, rdkafka… | Steps 5–6 unchanged: a source edit keeps this layer |
 | 8 | Files read only by the service's own code, like `policy.cedar`, come after the cook | — |
 | 9–10 | Compile the service itself | Never, after a source change |
-| 11–13 | Copy only the binary and `libz.so.1`, which distroless lacks | — |
+| 11 | Put `libz.so.1` at `/libz.so.1`. Debian names its folder after the CPU (`x86_64-linux-gnu`, `aarch64-linux-gnu`), so one fixed path serves both | — |
+| 12–14 | Copy only the binary and `libz.so.1`, which distroless lacks. It lands in `/usr/lib`, which the loader searches on every CPU | — |
 
 **Example.** A one-line change in `src/kernel/ingest.rs`:
 
 - `recipe.json` comes out the same, so step 7 is cached.
-- Only steps 9–10 run: one crate compiles instead of a few hundred.
+- Only steps 9–11 run: one crate compiles instead of a few hundred.
 
 **Why the schemas are copied before each `cook`, not only before `prepare`.** Each stage starts from `chef`, with an empty `/app/schemas`. `prepare` needs the crates to read their `Cargo.toml`. `cook` needs them again to build them. A crate missing at cook time stops the build half way, with cargo failing to read `/app/schemas/<crate>/Cargo.toml`.
 
