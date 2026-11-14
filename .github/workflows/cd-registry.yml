@@ -88,13 +88,19 @@ jobs:
           echo "Selected images: $MATRIX"
 
   rust-base:
+    name: rust-base (${{ matrix.arch }})
     needs: changes
     if: ${{ needs.changes.outputs.any == 'true' }}
-    runs-on: ubuntu-latest
+    # native runners: a Rust release build under QEMU emulation runs many times slower
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     outputs:
       ref: ${{ steps.base.outputs.ref }}
     steps:
@@ -117,10 +123,13 @@ jobs:
         id: base
         uses: ./.github/actions/rust-base
 
-  build-and-push:
+  # Does work only when ci-docker.yml left no image to promote: a manual run, or a
+  # PR image that is missing. One leg per CPU, each scanned before it is pushed.
+  build:
+    name: build (${{ matrix.entry.image }}, ${{ matrix.arch }})
     needs: [changes, rust-base]
     if: ${{ needs.changes.outputs.any == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -130,7 +139,9 @@ jobs:
       pull-requests: read
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+      matrix:
+        entry: ${{ fromJSON(needs.changes.outputs.matrix).include }}
+        arch: [amd64, arm64]
 
     steps:
       - name: Checkout repository
@@ -138,10 +149,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set lowercase image prefix
+      - name: Set image name
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.entry.image }}
+          SHA: ${{ github.sha }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_PREFIX=ghcr.io/$OWNER_LOWERCASE" >> $GITHUB_ENV
+          OWNER_LOWERCASE=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/$OWNER_LOWERCASE/$IMAGE" >> "$GITHUB_ENV"
+          echo "IMAGE_REF=ghcr.io/$OWNER_LOWERCASE/$IMAGE:$SHA-$ARCH" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
@@ -154,76 +171,45 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # PR CI (ci-docker.yml) already built + Trivy-scanned + pushed this exact
-      # tree under a pr-<head-sha> tag before it landed on master. Squash-merge
-      # gives github.sha a new commit, so the PR's head SHA has to be resolved
-      # via the API rather than read off the push event.
-      - name: Resolve merged PR
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          PR_SHA=$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
-            --jq '[.[] | select(.merged_at)][0].head.sha // empty')
-          echo "pr_sha=$PR_SHA" >> "$GITHUB_OUTPUT"
-
+      # tree under a pr-<head-sha> tag before it landed on master.
       - name: Check for PR-cached image
         id: cache
-        if: steps.pr.outputs.pr_sha != ''
-        env:
-          IMAGE: ${{ matrix.image }}
-          PR_SHA: ${{ steps.pr.outputs.pr_sha }}
-        run: |
-          if docker buildx imagetools inspect "$IMAGE_PREFIX/$IMAGE:pr-$PR_SHA" >/dev/null 2>&1; then
-            echo "cached=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "cached=false" >> "$GITHUB_OUTPUT"
-          fi
+        uses: ./.github/actions/pr-image
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Frontend Build Args
-        if: matrix.image == 'ambitwin-frontend' && steps.cache.outputs.cached != 'true'
-        run: echo "BUILD_ARGS=VITE_VAPID_PUBLIC_KEY=${{ secrets.VITE_VAPID_PUBLIC_KEY }}" >> $GITHUB_ENV
+        if: matrix.entry.image == 'ambitwin-frontend' && steps.cache.outputs.cached != 'true'
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+        run: echo "BUILD_ARGS=VITE_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY" >> "$GITHUB_ENV"
 
-      # Skipped entirely when a PR-cached image is promoted below. Build into the
-      # local daemon only (push: false + load: true) — publishing happens after
-      # the Trivy gate passes, so a vulnerable image never reaches GHCR. Revisit
-      # if `platforms:` (multi-arch) is added.
-      - name: Build ${{ matrix.image }} (local, pre-scan)
+      # Into the local daemon only (push: false + load: true): publishing happens
+      # after the Trivy gate passes, so a vulnerable image never reaches GHCR.
+      - name: Build ${{ matrix.entry.image }} (local, pre-scan)
         if: steps.cache.outputs.cached != 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: ${{ matrix.entry.context }}
+          file: ${{ matrix.entry.dockerfile }}
           push: false
           load: true
           build-args: ${{ env.BUILD_ARGS }}
-          build-contexts: rust-base=docker-image://${{ needs.rust-base.outputs.ref }}
-          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          build-contexts: rust-base=docker-image://${{ needs.rust-base.outputs.ref }}-${{ matrix.arch }}
+          tags: ${{ env.IMAGE_REF }}
+          cache-from: type=gha,scope=${{ matrix.entry.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.entry.image }}-${{ matrix.arch }}
 
-      - name: Resolve scan target
-        env:
-          CACHED: ${{ steps.cache.outputs.cached }}
-          IMAGE: ${{ matrix.image }}
-          PR_SHA: ${{ steps.pr.outputs.pr_sha }}
-          SHA: ${{ github.sha }}
-        run: |
-          if [ "$CACHED" = "true" ]; then
-            echo "SCAN_REF=$IMAGE_PREFIX/$IMAGE:pr-$PR_SHA" >> "$GITHUB_ENV"
-          else
-            echo "SCAN_REF=$IMAGE_PREFIX/$IMAGE:$SHA" >> "$GITHUB_ENV"
-          fi
-
-      # Gates the promote/push below (finding = job fails before publish). OS
-      # packages only — app deps are already gated pre-merge by per-service audits.
+      # Gates the push below (finding = job fails before publish). OS packages
+      # only — app deps are already gated pre-merge by per-service audits.
       - name: Scan image for vulnerabilities (Trivy)
+        if: steps.cache.outputs.cached != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          image-ref: ${{ env.SCAN_REF }}
+          image-ref: ${{ env.IMAGE_REF }}
           format: sarif
-          output: trivy-results-${{ matrix.image }}.sarif
+          output: trivy-results-${{ matrix.entry.image }}-${{ matrix.arch }}.sarif
           severity: HIGH,CRITICAL
           # sarif drops the severity filter by default, so exit-code fired on UNKNOWN findings
           limit-severities-for-sarif: true
@@ -233,54 +219,149 @@ jobs:
           vuln-type: os # OS packages only — app deps gated by per-service CI
 
       - name: Upload Trivy scan results to GitHub Security
-        if: always()
+        if: ${{ always() && steps.cache.outputs.cached != 'true' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
         continue-on-error: true
         with:
-          sarif_file: trivy-results-${{ matrix.image }}.sarif
-          category: trivy-${{ matrix.image }}
+          sarif_file: trivy-results-${{ matrix.entry.image }}-${{ matrix.arch }}.sarif
+          category: trivy-${{ matrix.entry.image }}-${{ matrix.arch }}
+
+      # the scanned image itself, under a per-CPU tag; publish joins the two CPUs
+      - name: Push ${{ matrix.entry.image }} (scan passed)
+        if: steps.cache.outputs.cached != 'true'
+        run: docker push "$IMAGE_REF"
+
+  publish:
+    name: publish (${{ matrix.entry.image }})
+    needs: [changes, build]
+    # one image's failed build leg must not block the others: each publish checks its own tags
+    if: ${{ !cancelled() && needs.changes.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      security-events: write
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix:
+        entry: ${{ fromJSON(needs.changes.outputs.matrix).include }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Set image name
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.entry.image }}
+        run: |
+          OWNER_LOWERCASE=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/$OWNER_LOWERCASE/$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for PR-cached image
+        id: cache
+        uses: ./.github/actions/pr-image
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Gates the promotion below. The PR scan read an older advisory database, so
+      # each CPU is scanned again; TRIVY_PLATFORM picks the CPU inside the index.
+      - name: Scan the PR image, amd64 (Trivy)
+        if: steps.cache.outputs.cached == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          TRIVY_PLATFORM: linux/amd64
+        with:
+          image-ref: ${{ steps.cache.outputs.ref }}
+          format: sarif
+          output: trivy-results-${{ matrix.entry.image }}-amd64.sarif
+          severity: HIGH,CRITICAL
+          # sarif drops the severity filter by default, so exit-code fired on UNKNOWN findings
+          limit-severities-for-sarif: true
+          exit-code: "1"
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          vuln-type: os
+
+      - name: Scan the PR image, arm64 (Trivy)
+        if: steps.cache.outputs.cached == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          image-ref: ${{ steps.cache.outputs.ref }}
+          format: sarif
+          output: trivy-results-${{ matrix.entry.image }}-arm64.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          exit-code: "1"
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          vuln-type: os
+
+      - name: Upload amd64 scan results to GitHub Security
+        if: ${{ always() && steps.cache.outputs.cached == 'true' }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+        continue-on-error: true
+        with:
+          sarif_file: trivy-results-${{ matrix.entry.image }}-amd64.sarif
+          category: trivy-${{ matrix.entry.image }}-amd64
+
+      - name: Upload arm64 scan results to GitHub Security
+        if: ${{ always() && steps.cache.outputs.cached == 'true' }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+        continue-on-error: true
+        with:
+          sarif_file: trivy-results-${{ matrix.entry.image }}-arm64.sarif
+          category: trivy-${{ matrix.entry.image }}-arm64
 
       # carbon copy, not a new index: an index borrows the pr version's manifests
       # and breaks when cleanup deletes that version
       - name: Promote PR-cached image (scan passed)
         if: steps.cache.outputs.cached == 'true'
         env:
-          IMAGE: ${{ matrix.image }}
+          PR_REF: ${{ steps.cache.outputs.ref }}
           SHA: ${{ github.sha }}
         run: |
           docker buildx imagetools create --prefer-index=false \
-            --tag "$IMAGE_PREFIX/$IMAGE:latest" \
-            --tag "$IMAGE_PREFIX/$IMAGE:$SHA" \
-            "$SCAN_REF"
+            --tag "$IMAGE_NAME:latest" \
+            --tag "$IMAGE_NAME:$SHA" \
+            "$PR_REF"
 
-      - name: Check promoted image pulls
-        if: steps.cache.outputs.cached == 'true'
+      # fails when a build leg pushed no tag, so a one-CPU latest is never published
+      - name: Join the two builds under latest
+        if: steps.cache.outputs.cached != 'true'
         env:
-          IMAGE: ${{ matrix.image }}
+          SHA: ${{ github.sha }}
         run: |
-          for digest in $(docker buildx imagetools inspect "$IMAGE_PREFIX/$IMAGE:latest" --raw | jq -r '.manifests[]?.digest'); do
-            docker buildx imagetools inspect "$IMAGE_PREFIX/$IMAGE@$digest" >/dev/null
+          docker buildx imagetools create \
+            --tag "$IMAGE_NAME:latest" \
+            --tag "$IMAGE_NAME:$SHA" \
+            "$IMAGE_NAME:$SHA-amd64" "$IMAGE_NAME:$SHA-arm64"
+
+      - name: Check published image pulls
+        run: |
+          for digest in $(docker buildx imagetools inspect "$IMAGE_NAME:latest" --raw | jq -r '.manifests[]?.digest'); do
+            docker buildx imagetools inspect "$IMAGE_NAME@$digest" >/dev/null
           done
 
-      # Same context/build-args/cache as the pre-scan build, so this resolves from
-      # the warm gha cache (no recompile) and pushes the exact scanned layers, now also tagged :latest.
-      - name: Push ${{ matrix.image }} (scan passed)
-        if: steps.cache.outputs.cached != 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: true
-          build-args: ${{ env.BUILD_ARGS }}
-          build-contexts: rust-base=docker-image://${{ needs.rust-base.outputs.ref }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:latest
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-
       - name: Print image tag
-        # Pass expansions through env (set as a literal value), never inline
-        # them into the shell — avoids template-injection as a standing pattern.
         env:
-          IMAGE_REF: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
-        run: echo "Successfully pushed $IMAGE_REF"
+          SHA: ${{ github.sha }}
+        run: echo "Successfully published $IMAGE_NAME:$SHA"

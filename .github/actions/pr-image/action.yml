@@ -1,0 +1,45 @@
+name: pr-image
+description: >-
+  Finds the image ci-docker.yml built, scanned and pushed for the pull request behind
+  this commit. The caller must be logged in to GHCR.
+
+inputs:
+  image:
+    description: Image name with its registry prefix and no tag, e.g. ghcr.io/owner/ambitwin-twin
+    required: true
+  token:
+    description: Token that can read the repository's pull requests
+    required: true
+
+outputs:
+  cached:
+    description: "'true' when the pull request image exists and holds both CPUs"
+    value: ${{ steps.find.outputs.cached }}
+  ref:
+    description: The pull request image ref, meaningful only when cached is 'true'
+    value: ${{ steps.find.outputs.ref }}
+
+runs:
+  using: composite
+  steps:
+    # a squash merge gives github.sha a new commit, so the PR head SHA comes from the API
+    - name: Find the pull request image
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ github.sha }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        PR_SHA=$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
+          --jq '[.[] | select(.merged_at)][0].head.sha // empty')
+        REF="$IMAGE:pr-$PR_SHA"
+        CACHED=false
+        # a one-CPU image is never promoted: latest must hold amd64 and arm64
+        if [ -n "$PR_SHA" ] && docker buildx imagetools inspect "$REF" --raw 2>/dev/null \
+          | jq -e '[.manifests[]?.platform.architecture] | index("arm64") and index("amd64")' >/dev/null; then
+          CACHED=true
+        fi
+        echo "cached=$CACHED" >> "$GITHUB_OUTPUT"
+        echo "ref=$REF" >> "$GITHUB_OUTPUT"

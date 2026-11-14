@@ -164,7 +164,7 @@ How each builder finds it:
 | Where | How `FROM rust-base` resolves |
 |---|---|
 | Compose | `build.additional_contexts: rust-base: service:rust-base`. `docker/rust-base/docker-compose.yml` declares it with `scale: 0`, so it is built but never run |
-| `cd-registry` | `build-contexts: rust-base=docker-image://ghcr.io/<owner>/ambitwin-rust-base:<rust>-<hash>`. The hash is the first 12 characters of the Dockerfile's SHA-256, so an unchanged base is never rebuilt |
+| `ci-docker`, `cd-registry` | `build-contexts: rust-base=docker-image://ghcr.io/<owner>/ambitwin-rust-base:<rust>-<hash>-<cpu>`. The hash is the first 12 characters of the Dockerfile's SHA-256, so an unchanged base is never rebuilt. `<cpu>` is `amd64` or `arm64`: one base per CPU |
 | Integration runners | Include `docker/rust-base/docker-compose.yml` and export `RUST_VERSION` themselves |
 
 ---
@@ -266,18 +266,22 @@ Every image on GHCR is the production stage of the Dockerfiles above. A PR and `
         participant G as GHCR
         participant CD as cd-registry
         PR->>D: a changed service with an image
-        D->>D: build the service Dockerfile, production stage
+        D->>D: build the service Dockerfile, production stage, once per CPU
         D->>D: Trivy, OS packages, HIGH and CRITICAL
-        D->>G: push :pr-headsha
+        D->>G: push :pr-headsha-amd64 and :pr-headsha-arm64
+        D->>G: join the two under :pr-headsha
         PR->>CD: merged into master
-        CD->>G: is :pr-headsha there?
+        CD->>G: is :pr-headsha there, with both CPUs?
         alt yes
-            CD->>G: Trivy again, then an exact copy tagged :latest and :sha
+            CD->>G: Trivy again on each CPU, then an exact copy tagged :latest and :sha
         else no
-            CD->>CD: build the service Dockerfile, production stage
-            CD->>G: Trivy, then push :latest and :sha
+            CD->>CD: build the service Dockerfile, production stage, once per CPU
+            CD->>G: Trivy, then push :sha-amd64 and :sha-arm64
+            CD->>G: join the two under :latest and :sha
         end
 
+- Every image holds two builds: `linux/amd64` and `linux/arm64`. `docker pull` takes the one that matches the machine, so a laptop gets x86 and an ARM server gets ARM from the same tag.
+- Each build runs on a runner of its own CPU. Nothing is emulated.
 - Python images build with no cache on a PR, so `apt-get upgrade` really runs.
 - Go and Rust used to ship the CI job's binary in `alpine`. That binary links glibc and Alpine has only musl, so it never started (`exec /app/main: no such file or directory`).
 
