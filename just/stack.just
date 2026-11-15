@@ -28,6 +28,10 @@ dev *args: env
 start *args: env
     @mise exec -- python3 scripts/compose/compose-run.py start {{args}}
 
+[doc("Start the published GHCR images behind HTTPS (background). Needs APP_HOST, AUTH_HOST and CV_GATEWAY_CLIENT_SECRET in .env.")]
+prod *args: env
+    @mise exec -- python3 scripts/compose/compose-run.py prod {{args}}
+
 [doc("Stop all containers and remove orphans (always tears down everything).")]
 down *args:
     @mise exec -- python3 scripts/compose/compose-run.py down {{args}}

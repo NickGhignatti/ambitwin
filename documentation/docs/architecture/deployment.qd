@@ -105,6 +105,103 @@ Application images use `IfNotPresent`, so `just k8s load` works on k3d without a
 
 ---
 
+## One machine: Oracle Cloud
+
+The same stack also runs on one ARM machine with Docker Compose and no Kubernetes. It is a deployment target, not a new topology: same services, same routes, same auth.
+
+.mermaid
+    flowchart LR
+        B["Browser"] -- "HTTPS, port 443" --> C["Caddy"]
+        C -- "ambitwin.kubeet.dev" --> F["frontend and service routes"]
+        C -- "auth.kubeet.dev" --> K["Keycloak, realm ambitwin"]
+        A["SSH tunnel"] -. "the machine's own localhost" .-> T["Keycloak admin, Grafana, Prometheus, Langfuse"]
+
+| Part | Local stack | On the machine |
+|---|---|---|
+| Start | `just stack dev` | `just stack prod` |
+| Images | Built from source | Pulled from GHCR, the `linux/arm64` build |
+| Edge file | `Caddyfile`, port 80 | `Caddyfile.prod`, ports 80 and 443 |
+| Certificate | None | Let's Encrypt, fetched and renewed by Caddy |
+| Routes | `Caddyfile.routes` | The same file |
+| Keycloak | `start-dev` on `http://localhost:8090` | `start` on `https://auth.kubeet.dev` |
+| Open host ports | Databases, brokers, tools | 80 and 443 only |
+| Restart after a crash or reboot | No | `unless-stopped` |
+| Memory | No limit | A ceiling per container |
+
+### The machine
+
+| Setting | Value | Why |
+|---|---|---|
+| Shape | Ampere A1, 4 OCPU, 24 GB, Ubuntu 24.04 | The only Always Free shape large enough: the x86 micro shapes have 1 GB |
+| Public IP | Reserved | The DNS records must survive a restart |
+| DNS | `A` records for `ambitwin.kubeet.dev` and `auth.kubeet.dev` | Caddy asks for a certificate per name |
+| Ports | 80 and 443 open in the VCN security list **and** in the machine's `iptables` | Oracle's Ubuntu image rejects inbound traffic by default, so opening only the security list is not enough |
+| Account | Pay-As-You-Go, with a budget alert | Always Free machines often fail to create ("Out of host capacity") and idle ones can be reclaimed after 7 days |
+
+`.dev` names are HTTPS-only in every browser (HSTS preload), so the site cannot be tried over plain HTTP first.
+
+### Setup
+
+1. Install Docker, `just` and `mise`, then clone the repository.
+2. Run `just stack env`: it writes the generated secrets to `.env`.
+3. Add the four lines below to `.env`.
+4. Run `just stack prod`. Add `--no-simulators` to leave the demo data out.
+
+```bash
+APP_HOST=ambitwin.kubeet.dev
+AUTH_HOST=auth.kubeet.dev
+CV_GATEWAY_CLIENT_SECRET=<output of: openssl rand -hex 32>
+OPENROUTER_API_KEY=<the agent's LLM key>
+```
+
+- `just stack prod` stops before starting anything when `APP_HOST`, `AUTH_HOST` or `CV_GATEWAY_CLIENT_SECRET` is missing.
+- An update is the same command again: `--pull always` fetches the newer images, and only changed containers restart.
+- `IMAGE_TAG=<commit sha>` in `.env` pins every image to one commit instead of `latest`.
+
+### What must be set on GitHub
+
+| Where | Name | Value |
+|---|---|---|
+| Repository variable | `VITE_KEYCLOAK_URL` | `https://auth.kubeet.dev` |
+
+Vite fixes the Keycloak address into the frontend bundle when the image is built. Without the variable the published image sends the browser to `http://localhost:8090` to sign in.
+
+### Reaching the tools
+
+Nothing below is routed by Caddy. Each is bound to `127.0.0.1` on the machine, so it is reached through an SSH tunnel.
+
+| Tool | Tunnel | Then open |
+|---|---|---|
+| Keycloak admin console | `ssh -L 8090:localhost:8090 <machine>` | `http://localhost:8090/admin` |
+| Grafana | `ssh -L 3000:localhost:3000 <machine>` | `http://localhost:3000` |
+| Prometheus | `ssh -L 9090:localhost:9090 <machine>` | `http://localhost:9090` |
+| Langfuse | `ssh -L 3030:localhost:3030 <machine>` | `http://localhost:3030` |
+
+`auth.kubeet.dev` answers `404` for `/admin` and `/realms/master`: the admin console is not on the internet.
+
+### Memory ceilings
+
+| Group | Ceiling each |
+|---|---|
+| Go and Rust services | 512 MB |
+| `agent`, `langfuse-web`, `langfuse-worker` | 1 GB |
+| Service databases | 768 MB |
+| `keycloak` | 1.5 GB |
+| `kafka`, `clickhouse` | 2 GB |
+
+- A ceiling is the most a container may take, not what it uses. Past it, Docker stops and restarts that container alone.
+- All ceilings together come to about 23 GB of the machine's 24 GB.
+- The numbers were picked with headroom and have not been measured under load.
+
+### Gaps of this target
+
+- **Service database passwords are fixed in the compose files** (`telemetry`/`telemetry`, MongoDB with no login). No port is published, so only another container on the machine can reach them.
+- **No backup** of any database.
+- **Grafana and Langfuse keep their default admin logins.** They are reachable only through the tunnel.
+- **The `cv-gateway` Keycloak client accepts any redirect address.** Its secret is what protects it, so `CV_GATEWAY_CLIENT_SECRET` must be long and random.
+
+---
+
 ## When something is wrong
 
 ```bash

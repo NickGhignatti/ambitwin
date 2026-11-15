@@ -1,0 +1,185 @@
+# Production override, applied on top of compose.runtime.yml by `just stack prod`.
+# Images come from GHCR, nothing is built, and only Caddy is reachable from outside.
+
+x-service: &service
+  build: !reset null
+  restart: unless-stopped
+  mem_limit: 512m
+
+x-store: &store
+  restart: unless-stopped
+  mem_limit: 768m
+
+services:
+  # ── Edge ─────────────────────────────────────────────────────────────────────
+  gateway:
+    restart: unless-stopped
+    mem_limit: 256m
+    # 443/udp is HTTP/3. Port 80 stays open: Let's Encrypt checks it, and Caddy redirects it to HTTPS.
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_HOST: ${APP_HOST:?set in .env, e.g. ambitwin.kubeet.dev}
+      AUTH_HOST: ${AUTH_HOST:?set in .env, e.g. auth.kubeet.dev}
+    volumes: !override
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:z
+      - ./Caddyfile.routes:/etc/caddy/Caddyfile.routes:z
+      - caddy_data:/data
+      - caddy_config:/config
+
+  client:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-frontend:${IMAGE_TAG:-latest}
+    mem_limit: 128m
+    ports: !reset []
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  keycloak:
+    restart: unless-stopped
+    mem_limit: 1536m
+    # `start` is production mode: it refuses to boot without a real hostname
+    command: !override ["start", "--features=organization", "--import-realm"]
+    environment:
+      KC_HOSTNAME: https://${AUTH_HOST}
+      # the admin console answers only here, on the host itself (SSH tunnel)
+      KC_HOSTNAME_ADMIN: http://localhost:8090
+      # TLS ends at Caddy, which reaches Keycloak over plain HTTP and says so in X-Forwarded-*
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      APP_PUBLIC_URL: https://${APP_HOST}
+      CV_GATEWAY_CLIENT_SECRET: ${CV_GATEWAY_CLIENT_SECRET:?set in .env}
+    ports: !override
+      - "127.0.0.1:8090:8080"
+
+  keycloak-db:
+    <<: *store
+    mem_limit: 512m
+
+  claims-gateway:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-claims-gateway:${IMAGE_TAG:-latest}
+    environment:
+      OIDC_ISSUER: https://${AUTH_HOST}/realms/ambitwin
+      REGISTRATION_CLIENT_SECRET: ${CV_GATEWAY_CLIENT_SECRET:?set in .env}
+
+  # ── Control plane ────────────────────────────────────────────────────────────
+  tenancy:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-tenancy:${IMAGE_TAG:-latest}
+  tenancy-db:
+    <<: *store
+    mem_limit: 512m
+  registry:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-registry:${IMAGE_TAG:-latest}
+  registry-db:
+    <<: *store
+    mem_limit: 512m
+  provisioner:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-provisioner:${IMAGE_TAG:-latest}
+
+  # ── Services ─────────────────────────────────────────────────────────────────
+  digital-twin:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-twin:${IMAGE_TAG:-latest}
+  twin-db:
+    <<: *store
+  telemetry:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-telemetry:${IMAGE_TAG:-latest}
+  telemetry-db:
+    <<: *store
+  dashboard:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-dashboard:${IMAGE_TAG:-latest}
+  dashboard-db:
+    <<: *store
+  notification:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-notification:${IMAGE_TAG:-latest}
+  notification-db:
+    <<: *store
+  socket:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-socket:${IMAGE_TAG:-latest}
+    environment:
+      # the only origin the socket accepts
+      FRONTEND_URL: https://${APP_HOST}
+  chat:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-chat:${IMAGE_TAG:-latest}
+  chat-db:
+    <<: *store
+  agent:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-agent:${IMAGE_TAG:-latest}
+    mem_limit: 1g
+  agent-db:
+    <<: *store
+
+  # ── Brokers ──────────────────────────────────────────────────────────────────
+  redis:
+    restart: unless-stopped
+    mem_limit: 256m
+    ports: !reset []
+  kafka:
+    restart: unless-stopped
+    # the broker's JVM takes a 1 GB heap by default
+    mem_limit: 2g
+    ports: !reset []
+
+  # ── Observability: bound to the host's own localhost, reached over an SSH tunnel ──
+  prometheus:
+    restart: unless-stopped
+    mem_limit: 512m
+    command: !override
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.external-url=http://localhost:9090/"
+    ports:
+      - "127.0.0.1:9090:9090"
+  grafana:
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3000/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  # ── Langfuse (agent traces): same rule, localhost only ───────────────────────
+  langfuse-web:
+    mem_limit: 1g
+    ports: !override
+      - "127.0.0.1:3030:3000"
+    environment:
+      NEXTAUTH_URL: http://localhost:3030
+  langfuse-worker:
+    mem_limit: 1g
+  langfuse-db:
+    mem_limit: 512m
+  redis-langfuse:
+    mem_limit: 256m
+  clickhouse:
+    mem_limit: 2g
+  minio:
+    mem_limit: 512m
+
+  # ── Simulators: demo data only, leave out with --no-simulators ───────────────
+  sensor-simulator:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-simulator:${IMAGE_TAG:-latest}
+    mem_limit: 256m
+    ports: !reset []
+  aq-simulator:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-aq-simulator:${IMAGE_TAG:-latest}
+    mem_limit: 256m
+    ports: !reset []
+  ap-simulator:
+    <<: *service
+    image: ghcr.io/nickghignatti/ambitwin-ap-simulator:${IMAGE_TAG:-latest}
+    mem_limit: 256m
+    ports: !reset []

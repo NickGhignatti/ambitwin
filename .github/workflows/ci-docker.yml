@@ -87,6 +87,8 @@ jobs:
           context: ${{ matrix.entry.context }}
           file: ${{ matrix.entry.dockerfile }}
           build-contexts: ${{ needs.rust-base.outputs.ref && format('rust-base=docker-image://{0}-{1}', needs.rust-base.outputs.ref, matrix.arch) || '' }}
+          # Vite fixes this address into the bundle at build time; unset, the app looks for Keycloak on localhost
+          build-args: ${{ matrix.entry.image == 'ambitwin-frontend' && format('VITE_KEYCLOAK_URL={0}', vars.VITE_KEYCLOAK_URL) || '' }}
           # every image but go/rust (distroless) runs apk/apt upgrade, which a cached layer would skip
           no-cache: ${{ matrix.entry.lang != 'go' && matrix.entry.lang != 'rust' }}
           push: false

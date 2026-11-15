@@ -1,9 +1,4 @@
-(require_gateway_auth) {
-    forward_auth claims-gateway:3000 {
-        uri /verify
-        copy_headers X-Gateway-Claims
-    }
-}
+import Caddyfile.routes
 
 :80 {
     # Enable compression using Zstandard
@@ -28,91 +23,7 @@
     header Access-Control-Allow-Origin "{http.request.header.Origin}"
     header Access-Control-Allow-Credentials "true"
 
-    # ── Claims Gateway (Keycloak token exchange, /me, JWKS) ─────────────────────
-    handle_path /gateway/* {
-        reverse_proxy claims-gateway:3000
-    }
-
-    # ── Tenancy Service (domains, subdomains, invite codes) ─────────────────────
-    handle_path /tenancy/* {
-        import require_gateway_auth
-        reverse_proxy tenancy:3000
-    }
-
-    # ── Digital Twin service ──────────────────────────────────────────────────
-    handle_path /twin/* {
-        import require_gateway_auth
-        reverse_proxy digital-twin:3000
-    }
-
-    # ── Notification service ──────────────────────────────────────────────────
-    handle_path /notification/* {
-        import require_gateway_auth
-        reverse_proxy notification:3000
-    }
-
-    # ── Agent service ─────────────────────────────────────────────────────────
-    handle_path /agent/* {
-        reverse_proxy agent:3000 {
-            header_up -X-Gateway-Claims
-        }
-    }
-
-    # ── Chat service ──────────────────────────────────────────────────────────
-    handle_path /chat/* {
-        import require_gateway_auth
-        reverse_proxy chat:3000 {
-            # Chat answers stream back as SSE. Without this the proxy buffers the
-            # whole response and the tokens arrive all at once, which is the exact
-            # behaviour streaming exists to remove.
-            flush_interval -1
-        }
-    }
-
-    # ── Contracts Service ───────────────────────────────────────────────────────
-    handle_path /dashboard {
-        import require_gateway_auth
-        reverse_proxy dashboard:3000
-    }
-    handle_path /dashboard/* {
-        import require_gateway_auth
-        reverse_proxy dashboard:3000
-    }
-
-    # ── Socket.IO server ──────────────────────────────────────────────────────
-    handle /socket.io/* {
-        import require_gateway_auth
-        reverse_proxy socket:3000
-    }
-
-    # ── Telemetry service ────────────────────────────────────────────────────
-    # Exact path, deliberately: `handle`, not `handle_path /telemetry/ingest/*`.
-    # A sub-path (/telemetry/ingest/batch) falls through to the gated block below
-    # and 401s every gateway, which carries no user JWT to present. The same exact
-    # path is listed by hand in k8s/istio-request-authentication.yml's
-    # no-principal rule — add one here without adding it there and the route is
-    # ungated locally but gated in production. Both are asserted by
-    # backend/acceptance/edge/test_edge_routing.py.
-    handle /telemetry/ingest {
-        uri strip_prefix /telemetry
-        reverse_proxy telemetry:3000
-    }
-    # A collector reads its routers here with the same key, signing a timestamp instead of
-    # a body. Exact path, and listed in the same Istio no-principal rule, for the same reason.
-    handle /telemetry/collector {
-        uri strip_prefix /telemetry
-        reverse_proxy telemetry:3000
-    }
-    # A collector posts its Wi-Fi tick here, body-signed like ingest. Exact path, and listed
-    # in the same Istio no-principal rule, for the same reason.
-    handle /telemetry/observations {
-        uri strip_prefix /telemetry
-        reverse_proxy telemetry:3000
-    }
-    handle_path /telemetry/* {
-        import require_gateway_auth
-        reverse_proxy telemetry:3000
-    }
+    import service_routes
 
     # ── Mongo Express GUIs ────────────────────────────────────────────────────
     handle /twin-db-gui/* {

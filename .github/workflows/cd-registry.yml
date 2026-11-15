@@ -183,7 +183,15 @@ jobs:
         if: matrix.entry.image == 'ambitwin-frontend' && steps.cache.outputs.cached != 'true'
         env:
           VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
-        run: echo "BUILD_ARGS=VITE_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY" >> "$GITHUB_ENV"
+          # Vite fixes this address into the bundle at build time; unset, the app looks for Keycloak on localhost
+          KEYCLOAK_URL: ${{ vars.VITE_KEYCLOAK_URL }}
+        run: |
+          {
+            echo "BUILD_ARGS<<END_OF_BUILD_ARGS"
+            echo "VITE_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY"
+            echo "VITE_KEYCLOAK_URL=$KEYCLOAK_URL"
+            echo "END_OF_BUILD_ARGS"
+          } >> "$GITHUB_ENV"
 
       # Into the local daemon only (push: false + load: true): publishing happens
       # after the Trivy gate passes, so a vulnerable image never reaches GHCR.

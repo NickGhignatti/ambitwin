@@ -70,6 +70,7 @@ just setup install       # mise install + per-language deps everywhere
 just stack env           # generate .env (keys, Keycloak, control plane)
 just stack dev           # full compose stack, hot reload
                          # flags: --build --no-agent --no-metrics --no-simulators --dry-run
+just stack prod          # published GHCR images behind HTTPS, one machine (needs APP_HOST, AUTH_HOST)
 just stack logs <svc>    # follow one service
 just lint fix            # then: just lint affected
 just test affected       # mirrors per-service CI legs
@@ -166,7 +167,7 @@ fitness test. Read it before restructuring that service. Go control-plane servic
 & Adapters: core in `internal/service` / `internal/reconciler`, wired in `cmd/<svc>/main.go`,
 real port/adapter split only on the outbound side.
 
-**Routing** (`Caddyfile`, mirrored by `k8s/istio-*.yml`): `/gateway`, `/tenancy`, `/twin`,
+**Routing** (`Caddyfile.routes`, imported by `Caddyfile` and `Caddyfile.prod`, mirrored by `k8s/istio-*.yml`): `/gateway`, `/tenancy`, `/twin`,
 `/telemetry`, `/notification`, `/chat` (SSE, needs `flush_interval -1`), `/dashboard`,
 `/socket.io`, `/agent` (ungated), `/` → frontend. `/telemetry/ingest`, `/telemetry/collector` and
 `/telemetry/observations` are ungated at the edge and HMAC-verified in-service — exact paths, so a sub-path would 401.

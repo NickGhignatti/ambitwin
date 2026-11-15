@@ -71,7 +71,7 @@
       "name": "claims-gateway (service testing only)",
       "enabled": true,
       "publicClient": false,
-      "secret": "dev-only-not-for-production",
+      "secret": "${CV_GATEWAY_CLIENT_SECRET:dev-only-not-for-production}",
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -122,12 +122,14 @@
       "redirectUris": [
         "http://localhost:5173/*",
         "http://localhost:8080/*",
-        "http://localhost/*"
+        "http://localhost/*",
+        "${APP_PUBLIC_URL:http://localhost}/*"
       ],
       "webOrigins": [
         "http://localhost:5173",
         "http://localhost:8080",
-        "http://localhost"
+        "http://localhost",
+        "${APP_PUBLIC_URL:http://localhost}"
       ],
       "defaultClientScopes": ["profile", "email", "roles", "organization"],
       "protocolMappers": [
