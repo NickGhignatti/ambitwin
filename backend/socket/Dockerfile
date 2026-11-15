@@ -47,8 +47,7 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS production
 # Distroless: no shell, no package manager, patched upstream - so the cd-registry Trivy
 # scan needs no apt-get upgrade step here. The healthcheck runs `socket --health`, which
 # probes /health in-process, so the image needs no probe binary either.
-# ca-certificates and libssl ship in the base image; zlib does not.
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
+# ca-certificates and libssl ship in the base image.
 COPY --from=builder /app/backend/socket/target/release/socket /usr/local/bin/socket
 
 EXPOSE 3000

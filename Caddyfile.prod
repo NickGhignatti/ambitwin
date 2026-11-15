@@ -1,0 +1,25 @@
+import Caddyfile.routes
+
+# A host name instead of a port makes Caddy fetch and renew a Let's Encrypt certificate.
+{$APP_HOST} {
+    encode zstd gzip
+
+    import service_routes
+
+    # the app and its API share one origin here, so no CORS headers are needed
+    handle {
+        reverse_proxy client:8080
+    }
+}
+
+{$AUTH_HOST} {
+    # admin console and master realm stay off the internet: reach them on the host's localhost:8090
+    @admin path /admin /admin/* /realms/master /realms/master/*
+    handle @admin {
+        respond 404
+    }
+
+    handle {
+        reverse_proxy keycloak:8080
+    }
+}

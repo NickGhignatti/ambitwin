@@ -28,6 +28,7 @@ Locally the whole platform runs under Docker Compose. No single file lists every
 | `backend/<svc>/docker-compose.test.yml` | A throwaway stack for that service's integration tests | `telemetry-test` |
 | `backend/acceptance/docker-compose.*.yml` | The cross-service acceptance stack | `integration-tests` |
 | `docker/rust-base/docker-compose.yml` | The Rust build image, `scale: 0` | `rust-base` |
+| `docker-compose.prod.yml` (root) | Changes for `just stack prod`: published images instead of builds, no host ports, restart rule, memory ceilings | `client` |
 | `simulators/*/`, `devices/ap-collector/`, `frontend/` | Same base + dev pair | `client` |
 
 - **Why per service.** A service is added or removed without touching a central file, and its compose file moves with it.
@@ -109,7 +110,7 @@ A pair of files is one entry because two separate entries may not define the sam
 
 | Flag | Patterns | Leaves out |
 |---|---|---|
-| `--no-agent` | `agent` | `backend/agent`, all 9 services |
+| `--no-agent` | `agent`, `langfuse`, `clickhouse`, `minio` | `backend/agent`, all 9 services |
 | `--no-metrics` | `prometheus`, `grafana` | Two root services, by name |
 | `--no-simulators` | `simulator` | The three simulator folders |
 | `--no-devices` | `ap-collector` | `devices/ap-collector` |
@@ -120,6 +121,8 @@ A pair of files is one entry because two separate entries may not define the sam
 1. Folder `backend/chat` contains `chat`: its two files are not included.
 2. No other service name contains `chat`, so nothing else goes.
 
+**In `prod` no fragment is left out, only services.** `docker-compose.prod.yml` names every service, and a service named there but defined nowhere stops Compose. So the folder's file stays included and the service is only kept off the `up` list. `ap-collector` and `rust-base` are always kept off it: they have no published image.
+
 **Example of a trap.** `just stack dev db` drops every service with `db` in its name: `twin-db`, `telemetry-db`, `keycloak-db`… and the stack cannot start.
 
 ### Modes
@@ -129,6 +132,7 @@ A pair of files is one entry because two separate entries may not define the sam
 | `just stack dev` | `dev` | `up --watch --remove-orphans` |
 | `just stack dev --build` | `dev` | the same, plus `--build` |
 | `just stack start` | `start` | `up --build -d --remove-orphans`, production stages, in the background |
+| `just stack prod` | `prod` | `-f compose.runtime.yml -f docker-compose.prod.yml up -d --remove-orphans --pull always`: published images, nothing built. See [Deployment](../architecture/deployment.qd#one-machine-oracle-cloud) |
 | `just stack down` | `down` | `down --remove-orphans`, always everything |
 | `just stack logs <svc>` | — | `docker compose -f compose.runtime.yml logs -f <svc>` |
 | `--dry-run` | any | Prints the `docker` command and stops after writing the file |
@@ -138,6 +142,12 @@ A pair of files is one entry because two separate entries may not define the sam
 ## The edge: Caddy
 
 `gateway` runs `caddy:2.11.7` on `${BACKEND_PORT}` (80), with the repo-root `Caddyfile` mounted read-only.
+
+| File | Holds |
+|---|---|
+| `Caddyfile.routes` | The service routes and the `forward_auth` check. One copy, imported by the two files below, so the edges cannot drift apart |
+| `Caddyfile` | The local edge on port 80: CORS headers, the routes, the database browsers and tools |
+| `Caddyfile.prod` | The public edge: a host name per site, HTTPS, the routes, the frontend, Keycloak. No CORS and no tools |
 
 | Path | Goes to | Gated | Prefix removed |
 |---|---|---|---|
@@ -193,7 +203,7 @@ Why the edge checks once: the services behind it never verify a signature; they 
 
 ## `.env`: what `just stack env` writes
 
-Every `dev` and `start` runs `env` first. Each script appends only what is missing, so a second run changes nothing except `RUST_VERSION`.
+Every `dev`, `start` and `prod` runs `env` first. Each script appends only what is missing, so a second run changes nothing except `RUST_VERSION`.
 
 | Script | Writes |
 |---|---|
