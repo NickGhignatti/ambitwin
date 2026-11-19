@@ -60,6 +60,31 @@ fn a_unitless_metric_carries_an_explicit_null() {
     assert_eq!(air_quality["unit"], serde_json::Value::Null);
 }
 
+// A client asks for thresholds only where bounds are listed, so an empty list must decode
+// as "none", and a bound's direction uses the alert's words.
+#[test]
+fn bounds_say_which_metrics_take_thresholds() {
+    let catalog: ServiceMetricsContract = serde_json::from_str(FIXTURE).expect("fixture parses");
+    let bounds_of = |kind: &str| {
+        &catalog
+            .metrics
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .unwrap()
+            .bounds
+    };
+
+    assert!(bounds_of("totalDeviceCount").is_empty());
+    let temperature_bound_keys: Vec<&str> = bounds_of("temperature")
+        .iter()
+        .map(|bound| bound.key.as_str())
+        .collect();
+    assert_eq!(temperature_bound_keys, vec!["maxTemp", "minTemp"]);
+
+    let raw: serde_json::Value = serde_json::from_str(FIXTURE).expect("fixture parses");
+    assert_eq!(raw["metrics"][0]["bounds"][1]["direction"], "low");
+}
+
 #[test]
 fn the_whole_fixture_decodes_as_the_service_variant() {
     let decoded: MetricsDiscoveryResponse =

@@ -153,6 +153,7 @@ mod tests {
             unit: None,
             fields: vec![],
             actions: vec![],
+            bounds: vec![],
             source: Some(source.to_string()),
         }
     }

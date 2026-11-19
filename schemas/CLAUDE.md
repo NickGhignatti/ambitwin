@@ -105,6 +105,9 @@ Two wire families plus the metric catalog. Consumers: telemetry, dashboard, sock
   `#[serde(rename)]` survives: `kind`, `label`, `interface`, `unit`, `source`, and `r#type`
   (the raw identifier serialises as `type`, which a keyword otherwise forces you to rename).
   A multi-word field would reintroduce a rename that only the fixture reads — don't add one.
+- **`bounds` says which metrics take thresholds.** Telemetry fills it from each plugin's
+  `bounds()`; an empty list means none, so a client never asks for them. `direction` reuses the
+  alert's `BoundDirection` (`high`/`low`), so a bound and its breach use the same words.
   This is the drift that once emptied the dashboard catalog at runtime — `key`/`metricKey`,
   `kind`/`type`. Both sides now build from this struct, so it is a compile error instead.
   `fixtures/metric-contract.json` pins the bytes for the frontend, which cannot share the struct;

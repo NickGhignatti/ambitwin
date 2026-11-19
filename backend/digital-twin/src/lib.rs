@@ -36,6 +36,7 @@ async fn contracts() -> Json<ServiceMetricsContract> {
                     field("name", "string"),
                 ],
                 actions: vec![],
+                bounds: vec![],
                 source: None,
             },
             MetricContract {
@@ -49,6 +50,7 @@ async fn contracts() -> Json<ServiceMetricsContract> {
                     field("maxOccupancy", "integer"),
                 ],
                 actions: vec![],
+                bounds: vec![],
                 source: None,
             },
         ],

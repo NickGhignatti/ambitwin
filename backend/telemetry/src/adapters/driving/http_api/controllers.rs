@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 use telemetry_schema::{
-    ActionContract, ActionParameterContract, MetricContract, MetricFieldContract,
+    ActionContract, ActionParameterContract, BoundContract, MetricContract, MetricFieldContract,
     ServiceMetricsContract,
 };
 
@@ -176,6 +176,17 @@ pub async fn contracts(State(state): State<Arc<AppState>>) -> Json<ServiceMetric
                                 required: parameter.required,
                             })
                             .collect(),
+                    })
+                    .collect(),
+                bounds: plugin
+                    .bounds()
+                    .iter()
+                    .map(|bound| BoundContract {
+                        key: bound.key.to_owned(),
+                        field: bound.field.to_owned(),
+                        label: bound.label.to_owned(),
+                        unit: bound.unit.map(str::to_owned),
+                        direction: bound.direction,
                     })
                     .collect(),
                 source: None,

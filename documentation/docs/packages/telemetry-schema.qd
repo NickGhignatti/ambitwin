@@ -342,17 +342,20 @@ The fallbacks exist for messages written before those fields existed. They still
   {"kind":"temperature","label":"Temperature","interface":"ITemperature","unit":"°C",
    "fields":[{"name":"temperature","type":"Finite","required":true}],
    "actions":[{"name":"setTarget","label":"Set target temperature",
-               "parameters":[{"name":"target","type":"Finite","required":true}]}]}
+               "parameters":[{"name":"target","type":"Finite","required":true}]}],
+   "bounds":[{"key":"maxTemp","field":"temperature","label":"Temperature","unit":"°C","direction":"high"},
+             {"key":"minTemp","field":"temperature","label":"Temperature","unit":"°C","direction":"low"}]}
 ]}
 ```
 
 | Struct | Fields | Rules |
 |---|---|---|
 | `ServiceMetricsContract` | `service`, `metrics` | |
-| `MetricContract` | `kind`, `label`, `interface`, `unit`, `fields`, `actions`, `source` | `unit` always written, `null` when none. `actions` may be missing on read, then empty. `source` left out when empty |
+| `MetricContract` | `kind`, `label`, `interface`, `unit`, `fields`, `actions`, `bounds`, `source` | `unit` always written, `null` when none. `actions` and `bounds` may be missing on read, then empty. `source` left out when empty |
 | `MetricFieldContract` | `name`, `type`, `required`, `description` | `description` left out when empty |
 | `ActionContract` | `name`, `label`, `parameters` | A command a device accepts |
 | `ActionParameterContract` | `name`, `type`, `required` | |
+| `BoundContract` | `key`, `field`, `label`, `unit`, `direction` | A threshold the metric takes. `key` names it in a threshold body (`maxTemp`); `field` is the reading field it compares (`co2`, not always the value); `direction` `high` or `low`, as in an alert. Empty list = no thresholds, so a client asks for none |
 
 ### A catalog request end to end
 
@@ -434,7 +437,7 @@ What the tests here pin down:
 | `src/alerts.rs` | Value keyed by field; `unit` left out when empty; old messages parse; wrong key fails and names the field; every required field required; `b1:r1` key |
 | `src/lib.rs` | Single-word names; `actions` optional on read; both catalog forms |
 | `telemetry_envelope_conformance.rs` | Every fixture tick re-serialises **byte for byte**; every rejected tick fails |
-| `metric_contract_conformance.rs` | The fixture parses, re-serialises byte for byte, keeps `"unit": null` |
+| `metric_contract_conformance.rs` | The fixture parses, re-serialises byte for byte, keeps `"unit": null`; device counts list no bounds, temperature lists `maxTemp` and `minTemp` |
 | `*_schema.rs` | Accepted cases pass, rejected cases fail, plus the 500-reading cap and old field names refused |
 
 On the other side, `telemetry/src/adapters/driven/redis_fanout.rs` must publish each fixture tick byte for byte, and the frontend's `src/utils/commons/telemetry.ts` spec replays the same file.
