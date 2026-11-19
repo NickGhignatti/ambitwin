@@ -1,30 +1,35 @@
-import { DEFAULT_MAX_TEMPERATURE } from '@/utils/digital-twin/thresholds.ts'
 import { ref, computed } from 'vue'
-import { makeRequestWithRetry } from '@/composables/commons/useApi.ts'
+import { makeRequest, makeRequestWithRetry } from '@/composables/commons/useApi.ts'
 import { useBuildingsStore } from '@/stores/digital-twin/buildings.ts'
-import type {
-  BuildingDraft,
-  BuildingThresholdDraft,
-  RoomDraft,
-} from '@/types/administration/buildingDraft.ts'
+import type { BuildingDraft, RoomDraft } from '@/types/administration/buildingDraft.ts'
+import type { MetricContract } from '@/types/dashboard/table.ts'
+import {
+  CAPACITY_BOUND,
+  boundedMetrics,
+  defaultBuildingThresholds,
+  thresholdWrites,
+} from '@/utils/administration/thresholds.ts'
 
-const DEFAULT_THRESHOLDS: BuildingThresholdDraft = {
-  minTemp: 18,
-  maxTemp: DEFAULT_MAX_TEMPERATURE,
-  maxAqi: 75,
-  maxCo2: 1000,
+const fetchCatalog = async (): Promise<MetricContract[]> => {
+  const response = await makeRequest('/telemetry/contracts')
+  if (!response.ok) throw new Error(`metric catalog request failed: ${response.status}`)
+  return (await response.json()).metrics ?? []
 }
 
 export function useBuildingDraft() {
   const buildingsStore = useBuildingsStore()
   const draft = ref<BuildingDraft | null>(null)
+  const catalog = ref<MetricContract[]>([])
   const isSubmitting = ref(false)
   const hasData = computed(() => draft.value !== null)
+  const metricsWithBounds = computed(() => boundedMetrics(catalog.value))
 
-  const loadFromJson = (raw: any): void => {
+  // the form offers only the thresholds telemetry declares, so it waits for the catalog
+  const loadFromJson = async (raw: any): Promise<void> => {
+    if (catalog.value.length === 0) catalog.value = await fetchCatalog()
     draft.value = {
       name: raw.name?.trim() || '',
-      thresholds: { ...DEFAULT_THRESHOLDS },
+      thresholds: defaultBuildingThresholds(catalog.value),
       rooms: (raw.rooms ?? []).map((room: any) => ({
         id: room.id,
         name: room.name?.trim() || room.id,
@@ -32,10 +37,7 @@ export function useBuildingDraft() {
         position: room.position,
         dimensions: room.dimensions,
         color: room.color,
-        thresholds: {
-          ...DEFAULT_THRESHOLDS,
-          maxPeople: room.capacity ?? 0,
-        },
+        thresholds: { [CAPACITY_BOUND.kind]: { [CAPACITY_BOUND.key]: room.capacity ?? 0 } },
       })),
     }
   }
@@ -74,37 +76,26 @@ export function useBuildingDraft() {
 
       const buildingId = await buildingsStore.register(twinPayload, domainName)
 
-      // Every room's threshold goes in one request. As one request per room it was the
-      // bulk of a registration's round trips, and a failure part-way left some rooms
-      // written and the rest not, with nothing to say which.
-      const roomThresholds = Object.fromEntries(
-        draft.value.rooms.map((room) => [room.id, { maxPeople: room.thresholds.maxPeople }]),
-      )
-
-      // The three writes touch different metrics, so they overlap rather than queue.
-      await Promise.all([
-        makeRequestWithRetry(`/telemetry/thresholds/temperature/buildings/${buildingId}`, 'PATCH', {
-          body: JSON.stringify({
-            maxTemp: draft.value.thresholds.maxTemp,
-            minTemp: draft.value.thresholds.minTemp,
-          }),
-        }),
-        makeRequestWithRetry(`/telemetry/thresholds/airQuality/buildings/${buildingId}`, 'PATCH', {
-          body: JSON.stringify({
-            maxAqi: draft.value.thresholds.maxAqi,
-            maxCo2: draft.value.thresholds.maxCo2,
-          }),
-        }),
-        makeRequestWithRetry(
-          `/telemetry/thresholds/peopleCount/buildings/${buildingId}/rooms`,
-          'PATCH',
-          { body: JSON.stringify(roomThresholds) },
+      // at most two writes per metric, each touching a different row, so they overlap
+      await Promise.all(
+        thresholdWrites(catalog.value, buildingId, draft.value).map(({ path, body }) =>
+          makeRequestWithRetry(path, 'PATCH', { body: JSON.stringify(body) }),
         ),
-      ])
+      )
     } finally {
       isSubmitting.value = false
     }
   }
 
-  return { draft, hasData, isSubmitting, loadFromJson, updateBuilding, updateRoom, clear, submit }
+  return {
+    draft,
+    metricsWithBounds,
+    hasData,
+    isSubmitting,
+    loadFromJson,
+    updateBuilding,
+    updateRoom,
+    clear,
+    submit,
+  }
 }

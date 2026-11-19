@@ -19,8 +19,17 @@ const props = defineProps<{ open: boolean; domainName: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const { t } = useI18n()
-const { draft, hasData, isSubmitting, loadFromJson, updateBuilding, updateRoom, clear, submit } =
-  useBuildingDraft()
+const {
+  draft,
+  metricsWithBounds,
+  hasData,
+  isSubmitting,
+  loadFromJson,
+  updateBuilding,
+  updateRoom,
+  clear,
+  submit,
+} = useBuildingDraft()
 
 const error = ref<string | null>(null)
 // The drawings are kept, so a new scale re-extracts without a second upload.
@@ -48,7 +57,7 @@ const applyPlans = async () => {
       unitsPerMetre: unitsPerMetre.value,
     })
     planWarnings.value = warnings
-    loadFromJson(building)
+    await loadFromJson(building)
   } catch (cause) {
     planWarnings.value = []
     error.value = cause instanceof Error ? cause.message : t('model.register.plan.invalid')
@@ -69,10 +78,18 @@ const onPlans = async (uploads: PlanUpload[], scale: number) => {
 
 const onJson = async (file: File) => {
   reset()
+  let building: unknown
   try {
-    loadFromJson(JSON.parse(await file.text()))
+    building = JSON.parse(await file.text())
   } catch {
     error.value = t('model.register.invalidJson')
+    return
+  }
+  try {
+    await loadFromJson(building)
+  } catch (cause) {
+    console.error(cause)
+    error.value = t('model.register.catalogFailed')
   }
 }
 
@@ -128,7 +145,7 @@ const save = async () => {
           </BaseButton>
         </div>
 
-        <BuildingThresholds :draft="draft" @update="updateBuilding" />
+        <BuildingThresholds :draft="draft" :metrics="metricsWithBounds" @update="updateBuilding" />
 
         <section class="space-y-3">
           <h3 class="flex items-center gap-2 text-label-header uppercase text-on-surface-variant">
@@ -140,6 +157,8 @@ const save = async () => {
             v-for="room in draft.rooms"
             :key="room.id"
             :room="room"
+            :metrics="metricsWithBounds"
+            :building-thresholds="draft.thresholds"
             @update="updateRoom(room.id, $event)"
           />
         </section>

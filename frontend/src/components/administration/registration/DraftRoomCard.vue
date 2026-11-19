@@ -1,26 +1,37 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { RoomDraft, RoomThresholdDraft } from '@/types/administration/buildingDraft.ts'
+import type { RoomDraft } from '@/types/administration/buildingDraft.ts'
+import type { MetricContract } from '@/types/dashboard/table.ts'
+import {
+  CAPACITY_BOUND,
+  type ThresholdValues,
+  withBoundValue,
+} from '@/utils/administration/thresholds.ts'
 import TextInput from '@/components/commons/forms/TextInput.vue'
-import RangeSlider from '@/components/commons/forms/RangeSlider.vue'
 import FormField from '@/components/commons/forms/FormField.vue'
+import ThresholdInputs from '@/components/administration/registration/ThresholdInputs.vue'
 
-const props = defineProps<{ room: RoomDraft }>()
+const props = defineProps<{
+  room: RoomDraft
+  metrics: MetricContract[]
+  buildingThresholds: ThresholdValues
+}>()
 
 const emit = defineEmits<{ update: [patch: Partial<RoomDraft>] }>()
 
 const { t } = useI18n()
 
-// Air quality has only an upper threshold; the lower thumb is display-only.
-const aqiFloor = ref(0)
-
-const setThreshold = (patch: Partial<RoomThresholdDraft>) =>
-  emit('update', { thresholds: { ...props.room.thresholds, ...patch } })
-
 const setCapacity = (value: unknown) => {
   const capacity = Number(value) || 0
-  emit('update', { capacity, thresholds: { ...props.room.thresholds, maxPeople: capacity } })
+  emit('update', {
+    capacity,
+    thresholds: withBoundValue(
+      props.room.thresholds,
+      CAPACITY_BOUND.kind,
+      CAPACITY_BOUND.key,
+      capacity,
+    ),
+  })
 }
 </script>
 
@@ -43,35 +54,23 @@ const setCapacity = (value: unknown) => {
             type="number"
             min="0"
             icon="users"
-            :model-value="room.thresholds.maxPeople"
+            :model-value="room.capacity"
             @update:model-value="setCapacity"
           />
         </FormField>
       </header>
       <p class="truncate font-mono text-[10px] text-on-surface-variant">{{ room.id }}</p>
 
-      <div class="grid gap-4 md:grid-cols-2">
-        <RangeSlider
-          :min="0"
-          :max="50"
-          unit="°C"
-          color="var(--cv-warning)"
-          :label="t('model.rooms.temperature')"
-          :low="room.thresholds.minTemp"
-          :high="room.thresholds.maxTemp"
-          @update:low="setThreshold({ minTemp: $event })"
-          @update:high="setThreshold({ maxTemp: $event })"
-        />
-        <RangeSlider
-          v-model:low="aqiFloor"
-          :min="0"
-          :max="200"
-          color="var(--cv-tertiary)"
-          :label="t('model.register.room.indoorAqi')"
-          :high="room.thresholds.maxAqi"
-          @update:high="setThreshold({ maxAqi: $event })"
-        />
-      </div>
+      <p class="text-label-stat text-on-surface-variant">
+        {{ t('model.register.roomThresholds') }}
+      </p>
+      <ThresholdInputs
+        :metrics="metrics"
+        :values="room.thresholds"
+        :fallback="buildingThresholds"
+        :hidden-keys="[CAPACITY_BOUND.key]"
+        @update="emit('update', { thresholds: $event })"
+      />
     </div>
   </article>
 </template>

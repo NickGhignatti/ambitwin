@@ -185,8 +185,17 @@ fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
 - `DeviceCatalog::new` refuses a metric with no device, or with two. The service does not start.
 - A plugin with bounds must be in `telemetry_schema::ALERTABLE_METRICS`, or a test fails. See [Telemetry Schema](../packages/telemetry-schema.qd). That list is also how `notification` knows which metrics to deliver.
 - A **sensor is a device, not a metric**. A `router` is one device that reports three metrics. A sensor's actions are the union of its device's metrics' actions.
+- `/contracts` lists each plugin's bounds. The `client` builds its threshold inputs from that list when a building is registered, so a plugin with no bounds gets no inputs.
 
-**Adding a metric** = a plugin file, plus its line in `plugins::all()`, plus a device in `plugins::devices()`.
+| Registration form | Sent |
+|---|---|
+| Building `maxTemp` 27, `minTemp` 18 | `PATCH /thresholds/temperature/buildings/b1` `{maxTemp:27, minTemp:18}` |
+| Room `r1` `maxTemp` 24, other rooms left empty | `PATCH /thresholds/temperature/buildings/b1/rooms` `{r1:{maxTemp:24}}` |
+| Room capacities 30 and 10 | `PATCH /thresholds/peopleCount/buildings/b1/rooms` `{r1:{maxPeople:30}, r2:{maxPeople:10}}` |
+
+A room left empty is not sent: it falls back to the building's bound, one key at a time.
+
+**Adding a metric** = a plugin file, plus its line in `plugins::all()`, plus a device in `plugins::devices()`. Its bounds then show up in the registration form with no `client` change. A bound with no default value in the `client` starts empty.
 
 ---
 
@@ -229,7 +238,7 @@ The edge strips `/telemetry`. Three **exact** paths are open at the edge and che
 | `POST` | `/ingest` | Devices, simulators | Body HMAC | Store a batch |
 | `POST` | `/observations` | `ap-collector` | Body HMAC | Count a Wi-Fi tick, pass it to Kafka |
 | `GET` | `/collector?buildingId=` | `ap-collector` | Timestamp HMAC | Routers to poll |
-| `GET` | `/contracts` | `dashboard` | none | Metric catalog |
+| `GET` | `/contracts` | `dashboard`, `client` | none | Metric catalog, with each metric's bounds |
 | `GET` | `/devices` | `client` | none | Device kinds |
 | `GET` | `/health`, `/metrics` | Probes, Prometheus | none | |
 | `GET` | `/{metric}/latest?building=&roomId=` | `client` | read | Newest reading of one room |
