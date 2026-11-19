@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn every_registered_plugin_is_served() {
-        let registry = PluginRegistry::new(vec![fake("temperature"), fake("peopleCount")]).unwrap();
+        let registry = PluginRegistry::new(vec![fake("temperature"), fake("people_count")]).unwrap();
         assert_eq!(registry.all().len(), 2);
     }
 }

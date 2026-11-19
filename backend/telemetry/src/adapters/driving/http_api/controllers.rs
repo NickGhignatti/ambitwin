@@ -2,11 +2,10 @@ use crate::adapters::ingest_auth::CollectorQuery;
 use crate::adapters::metrics;
 use crate::kernel::authz;
 use crate::kernel::readings::DashboardQuery;
-use crate::plugins::device_count::TOTAL_DEVICE_COUNT;
+use crate::kernel::observations::TOTAL_DEVICE_COUNT;
 use crate::state::AppState;
 use crate::types::error::DomainError;
 use crate::types::identity::GatewayClaims;
-use crate::types::plugin::ENVELOPE_FIELDS;
 use crate::types::reading::Reading;
 use crate::types::sensor::{Command, Sensor};
 use crate::types::threshold::{Bounds, TemperatureLimits};
@@ -21,8 +20,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 use telemetry_schema::{
-    ActionContract, ActionParameterContract, BoundContract, MetricContract, MetricFieldContract,
-    ServiceMetricsContract,
+    ActionContract, ActionParameterContract, LimitContract, MetricContract, ServiceMetricsContract,
 };
 
 #[derive(Deserialize)]
@@ -86,17 +84,12 @@ async fn edit(state: &AppState, claims: &GatewayClaims, building: &str) -> Resul
 }
 
 fn reading_json(reading: &Reading) -> Value {
-    let mut body = Map::new();
-    body.insert("building".to_owned(), json!(reading.building_id));
-    body.insert("roomId".to_owned(), json!(reading.room_id));
-    body.insert("timestamp".to_owned(), json!(reading.ts_ms));
-    body.insert("value".to_owned(), json!(reading.value));
-    for (key, value) in &reading.payload {
-        if !ENVELOPE_FIELDS.contains(&key.as_str()) {
-            body.insert(key.clone(), value.clone());
-        }
-    }
-    Value::Object(body)
+    json!({
+        "building": reading.building_id,
+        "roomId": reading.room_id,
+        "timestamp": reading.ts_ms,
+        "value": reading.value,
+    })
 }
 
 fn limits_json(limits: &TemperatureLimits) -> Value {
@@ -151,16 +144,6 @@ pub async fn contracts(State(state): State<Arc<AppState>>) -> Json<ServiceMetric
                 label: descriptor.label.to_owned(),
                 interface: descriptor.interface_name.to_owned(),
                 unit: descriptor.unit.map(str::to_owned),
-                fields: descriptor
-                    .fields
-                    .iter()
-                    .map(|field| MetricFieldContract {
-                        name: field.name.to_owned(),
-                        r#type: format!("{:?}", field.kind),
-                        required: field.required,
-                        description: None,
-                    })
-                    .collect(),
                 actions: plugin
                     .actions()
                     .iter()
@@ -178,17 +161,10 @@ pub async fn contracts(State(state): State<Arc<AppState>>) -> Json<ServiceMetric
                             .collect(),
                     })
                     .collect(),
-                bounds: plugin
-                    .bounds()
-                    .iter()
-                    .map(|bound| BoundContract {
-                        key: bound.key.to_owned(),
-                        field: bound.field.to_owned(),
-                        label: bound.label.to_owned(),
-                        unit: bound.unit.map(str::to_owned),
-                        direction: bound.direction,
-                    })
-                    .collect(),
+                limit: LimitContract {
+                    min: descriptor.limit.min,
+                    max: descriptor.limit.max,
+                },
                 source: None,
             }
         })

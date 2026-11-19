@@ -180,11 +180,13 @@ mod tests {
     fn devices() -> DeviceCatalog {
         let metrics = [
             "temperature",
-            "peopleCount",
-            "airQuality",
-            "totalDeviceCount",
-            "ratioDeviceCount",
-            "estimatedOccupancy",
+            "people_count",
+            "co2",
+            "indoor_aqi",
+            "humidity",
+            "total_device_count",
+            "ratio_device_count",
+            "estimated_occupancy",
         ];
         let registry = PluginRegistry::new(
             metrics
@@ -202,11 +204,11 @@ mod tests {
             vec![
                 device(
                     "router",
-                    &["totalDeviceCount", "ratioDeviceCount", "estimatedOccupancy"],
+                    &["total_device_count", "ratio_device_count", "estimated_occupancy"],
                 ),
                 device("temperature", &["temperature"]),
-                device("airQuality", &["airQuality"]),
-                device("peopleCount", &["peopleCount"]),
+                device("air_quality", &["co2", "indoor_aqi", "humidity"]),
+                device("people_count", &["people_count"]),
             ],
             &registry,
         )
@@ -222,8 +224,8 @@ mod tests {
 
     fn both() -> Vec<SimulatorSpec> {
         vec![
-            spec(SENSOR_SIM, &["temperature", "peopleCount"]),
-            spec(AQ_SIM, &["airQuality"]),
+            spec(SENSOR_SIM, &["temperature", "people_count"]),
+            spec(AQ_SIM, &["air_quality"]),
         ]
     }
 
@@ -309,13 +311,13 @@ mod tests {
         let h = harness(both(), vec![], FakeSimulators::default());
         let plan = h.simulation.plan(&[
             sensor("t1", "temperature", Some("r1")),
-            sensor("p1", "peopleCount", Some("r1")),
+            sensor("p1", "people_count", Some("r1")),
         ]);
         assert_eq!(
             plan.by_simulator[SENSOR_SIM],
             vec![
                 simulated("t1", "temperature", "r1"),
-                simulated("p1", "peopleCount", "r1"),
+                simulated("p1", "people_count", "r1"),
             ]
         );
         assert!(plan.by_simulator[AQ_SIM].is_empty());
@@ -324,10 +326,10 @@ mod tests {
     #[test]
     fn an_air_quality_station_goes_to_the_other_simulator() {
         let h = harness(both(), vec![], FakeSimulators::default());
-        let plan = h.simulation.plan(&[sensor("a1", "airQuality", Some("r2"))]);
+        let plan = h.simulation.plan(&[sensor("a1", "air_quality", Some("r2"))]);
         assert_eq!(
             plan.by_simulator[AQ_SIM],
-            vec![simulated("a1", "airQuality", "r2")]
+            vec![simulated("a1", "air_quality", "r2")]
         );
         assert!(plan.by_simulator[SENSOR_SIM].is_empty());
     }
@@ -391,7 +393,7 @@ mod tests {
     async fn one_failing_simulator_does_not_keep_the_others_stale() {
         let h = harness(
             both(),
-            vec![sensor("a1", "airQuality", Some("r1"))],
+            vec![sensor("a1", "air_quality", Some("r1"))],
             FakeSimulators {
                 failing: vec![SENSOR_SIM.to_owned()],
                 ..Default::default()
@@ -404,7 +406,7 @@ mod tests {
             vec![(
                 AQ_SIM.to_owned(),
                 "b1".to_owned(),
-                vec![simulated("a1", "airQuality", "r1")],
+                vec![simulated("a1", "air_quality", "r1")],
             )]
         );
     }

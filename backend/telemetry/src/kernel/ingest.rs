@@ -3,7 +3,7 @@ use crate::kernel::registry::PluginRegistry;
 use crate::types::error::DomainError;
 use crate::types::event::{AlertPayload, TelemetryEvent};
 use crate::types::reading::Reading;
-use crate::types::threshold::{Bounds, breaches};
+use crate::types::threshold::{Bounds, breach};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
@@ -114,13 +114,9 @@ impl Ingest {
         let Some(plugin) = self.registry.get(&reading.metric) else {
             return;
         };
-        let Some(bounds) = resolved else {
+        let Some(found) = resolved.and_then(|bounds| breach(&bounds, reading.value)) else {
             return;
         };
-        let found = breaches(plugin.bounds(), &bounds, &reading.payload);
-        if found.is_empty() {
-            return;
-        }
         // A failed lookup names the alert by its ids rather than dropping it.
         let names = self
             .buildings
@@ -135,23 +131,21 @@ impl Ingest {
             .as_ref()
             .and_then(|n| n.rooms.get(&reading.room_id))
             .unwrap_or(&reading.room_id);
-        for breach in found {
-            let alert = AlertPayload {
-                metric: reading.metric.clone(),
-                field: breach.bound.field.to_owned(),
-                building_id: reading.building_id.clone(),
-                room_id: reading.room_id.clone(),
-                building_name: building_name.clone(),
-                room_name: room_name.clone(),
-                value: breach.value,
-                label: breach.bound.label.to_owned(),
-                unit: breach.bound.unit.map(str::to_owned),
-                direction: breach.bound.direction,
-                threshold: breach.threshold,
-                ts_ms: self.clock.now_ms(),
-            };
-            self.alerts.publish_breach(&alert).await;
-        }
+        let descriptor = plugin.descriptor();
+        let alert = AlertPayload {
+            metric: reading.metric.clone(),
+            building_id: reading.building_id.clone(),
+            room_id: reading.room_id.clone(),
+            building_name: building_name.clone(),
+            room_name: room_name.clone(),
+            value: found.value,
+            label: descriptor.label.to_owned(),
+            unit: descriptor.unit.map(str::to_owned),
+            direction: found.direction,
+            threshold: found.threshold,
+            ts_ms: self.clock.now_ms(),
+        };
+        self.alerts.publish_breach(&alert).await;
     }
 }
 
@@ -225,7 +219,7 @@ mod tests {
     }
 
     fn item(room: &str, value: f64) -> Value {
-        json!({ "type": "fake", "roomId": room, "timestamp": 1_699_999_000_000i64, "fake": value })
+        json!({ "type": "fake", "roomId": room, "timestamp": 1_699_999_000_000i64, "value": value })
     }
 
     #[tokio::test]
@@ -289,7 +283,7 @@ mod tests {
         let h = plain();
         let items = vec![
             item("r1", 1.0),
-            json!({ "type": "humidity", "roomId": "r2" }),
+            json!({ "type": "noise", "roomId": "r2" }),
         ];
 
         let error = h.ingest.accept("b1", &items).await.unwrap_err();
@@ -298,7 +292,7 @@ mod tests {
             panic!("an unknown type inside a batch is a validation error, not a 404");
         };
         assert!(message.contains("readings[1]"), "got {message}");
-        assert!(message.contains("humidity"), "got {message}");
+        assert!(message.contains("noise"), "got {message}");
     }
 
     #[tokio::test]
@@ -327,7 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_breach_in_a_tick_raises_its_own_alert() {
-        let h = harness(FakeReadings::default(), bounds(json!({ "maxFake": 10.0 })));
+        let h = harness(FakeReadings::default(), bounds(json!({ "max": 10.0 })));
 
         h.ingest
             .accept("b1", &[item("r1", 50.0), item("r2", 1.0), item("r3", 99.0)])
@@ -370,7 +364,7 @@ mod tests {
     async fn a_reading_within_bounds_publishes_no_alert() {
         let h = harness(
             FakeReadings::default(),
-            bounds(json!({ "maxFake": 25.0, "minFake": 18.0 })),
+            bounds(json!({ "max": 25.0, "min": 18.0 })),
         );
         h.ingest.accept("b1", &[item("r1", 21.5)]).await.unwrap();
         assert!(h.alerts.published.lock().unwrap().is_empty());
@@ -379,7 +373,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_breach_publishes_an_alert_carrying_the_metric_and_the_bound() {
-        let h = harness(FakeReadings::default(), bounds(json!({ "maxFake": 25.0 })));
+        let h = harness(FakeReadings::default(), bounds(json!({ "max": 25.0 })));
         h.ingest.accept("b1", &[item("r1", 26.0)]).await.unwrap();
         let published = h.alerts.published.lock().unwrap();
         assert_eq!(published.len(), 1);
@@ -388,13 +382,12 @@ mod tests {
         assert_eq!(published[0].room_id, "r1");
         assert_eq!(published[0].threshold, 25.0);
         assert_eq!(published[0].value, 26.0);
-        assert_eq!(published[0].field, "fake");
         assert_eq!(published[0].label, "Fake");
     }
 
     #[tokio::test]
     async fn a_breach_is_named_by_the_registered_building_and_room() {
-        let h = harness(FakeReadings::default(), bounds(json!({ "maxFake": 25.0 })));
+        let h = harness(FakeReadings::default(), bounds(json!({ "max": 25.0 })));
         h.ingest.accept("b1", &[item("r1", 26.0)]).await.unwrap();
         let published = h.alerts.published.lock().unwrap();
         assert_eq!(published[0].building_name, "HQ");
@@ -403,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_room_twin_never_registered_is_named_by_its_id() {
-        let h = harness(FakeReadings::default(), bounds(json!({ "maxFake": 25.0 })));
+        let h = harness(FakeReadings::default(), bounds(json!({ "max": 25.0 })));
         h.ingest
             .accept("b1", &[item("zone-7", 26.0)])
             .await
@@ -421,7 +414,7 @@ mod tests {
         };
         let h = harness_with(
             FakeReadings::default(),
-            bounds(json!({ "maxFake": 25.0 })),
+            bounds(json!({ "max": 25.0 })),
             refusing,
         );
         h.ingest.accept("b1", &[item("r1", 26.0)]).await.unwrap();
@@ -432,7 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_breach_still_publishes_telemetry() {
-        let h = harness(FakeReadings::default(), bounds(json!({ "maxFake": 25.0 })));
+        let h = harness(FakeReadings::default(), bounds(json!({ "max": 25.0 })));
         h.ingest.accept("b1", &[item("r1", 26.0)]).await.unwrap();
         assert_eq!(h.fanout.published.lock().unwrap().len(), 1);
     }
