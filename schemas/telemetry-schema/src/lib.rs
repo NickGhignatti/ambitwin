@@ -7,17 +7,7 @@ pub use telemetry::{
     TelemetryReading, building_of_filtered_channel, filtered_channel,
 };
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetricFieldContract {
-    pub name: String,
-    pub r#type: String,
-    pub required: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,16 +25,20 @@ pub struct ActionContract {
     pub parameters: Vec<ActionParameterContract>,
 }
 
-/// One threshold a metric accepts. `key` names it in a threshold body (`maxTemp`); `field` is
-/// the reading field it compares, which is not always the metric's value (`co2`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BoundContract {
-    pub key: String,
-    pub field: String,
-    pub label: String,
-    pub unit: Option<String>,
-    pub direction: BoundDirection,
+/// The ends a metric's limit has. A present end can be set; its number is where a new building
+/// starts, `null` when it has no starting value (a room's people limit comes from its capacity).
+/// An absent end cannot be set, so a metric with neither takes no limit at all.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LimitContract {
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    pub min: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    pub max: Option<Option<f64>>,
+}
+
+// serde reads an explicit null as absent; a present null must stay "settable, no start"
+fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Option<f64>>, D::Error> {
+    Option::<f64>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,12 +48,10 @@ pub struct MetricContract {
     pub label: String,
     pub interface: String,
     pub unit: Option<String>,
-    pub fields: Vec<MetricFieldContract>,
     #[serde(default)]
     pub actions: Vec<ActionContract>,
-    /// Empty when the metric takes no thresholds, so no client asks for them.
     #[serde(default)]
-    pub bounds: Vec<BoundContract>,
+    pub limit: LimitContract,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 }
@@ -83,24 +75,17 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn field(name: &str) -> MetricFieldContract {
-        MetricFieldContract {
-            name: name.to_owned(),
-            r#type: "Finite".to_owned(),
-            required: true,
-            description: None,
-        }
-    }
-
     fn metric() -> MetricContract {
         MetricContract {
             kind: "temperature".to_owned(),
             label: "Temperature".to_owned(),
             interface: "ITemperature".to_owned(),
             unit: Some("C".to_owned()),
-            fields: vec![field("temperature")],
             actions: vec![],
-            bounds: vec![],
+            limit: LimitContract {
+                min: Some(Some(18.0)),
+                max: Some(Some(27.0)),
+            },
             source: None,
         }
     }
@@ -110,7 +95,7 @@ mod tests {
         let body = serde_json::to_value(metric()).unwrap();
         assert_eq!(body["kind"], "temperature");
         assert_eq!(body["interface"], "ITemperature");
-        assert_eq!(body["fields"][0]["type"], "Finite");
+        assert_eq!(body["limit"], json!({ "min": 18.0, "max": 27.0 }));
     }
 
     #[test]
@@ -120,14 +105,24 @@ mod tests {
         assert_eq!(body["actions"], json!([]));
     }
 
+    // a present null means "this end can be set, with no starting value"; absent means it cannot
     #[test]
-    fn a_catalog_without_an_actions_field_still_parses() {
+    fn a_limit_tells_a_settable_end_without_a_start_from_a_missing_end() {
+        let limit: LimitContract = serde_json::from_value(json!({ "max": null })).unwrap();
+        assert_eq!(limit.max, Some(None));
+        assert_eq!(limit.min, None);
+        assert_eq!(serde_json::to_value(&limit).unwrap(), json!({ "max": null }));
+    }
+
+    #[test]
+    fn a_catalog_without_actions_or_limit_still_parses() {
         let raw = json!({
             "kind": "occupancy", "label": "Occupancy",
-            "interface": "IOccupancy", "unit": null, "fields": []
+            "interface": "IOccupancy", "unit": null
         });
         let decoded: MetricContract = serde_json::from_value(raw).unwrap();
         assert!(decoded.actions.is_empty());
+        assert_eq!(decoded.limit, LimitContract::default());
     }
 
     #[test]

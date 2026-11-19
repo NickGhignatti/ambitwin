@@ -13,13 +13,13 @@
   "$defs": {
     "metric": {
       "type": "object",
-      "required": ["kind", "label", "interface", "unit", "fields"],
+      "required": ["kind", "label", "interface", "unit"],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "type": "string",
-          "minLength": 1,
-          "description": "Metric identifier, e.g. 'temperature'. The frontend keys columns on this."
+          "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$",
+          "description": "Metric id in snake_case, e.g. 'people_count'. A reading's 'type' carries the same id."
         },
         "label": { "type": "string", "minLength": 1 },
         "interface": { "type": "string", "minLength": 1 },
@@ -27,17 +27,12 @@
           "type": ["string", "null"],
           "description": "Null, not absent, when a metric is unitless -- serde skips nothing here."
         },
-        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
         "actions": {
           "type": "array",
           "items": { "$ref": "#/$defs/action" },
           "description": "Optional when parsing: a source may omit it and the crate defaults to empty."
         },
-        "bounds": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/bound" },
-          "description": "The thresholds the metric accepts; empty when it takes none. Optional when parsing, like actions."
-        },
+        "limit": { "$ref": "#/$defs/limit" },
         "source": {
           "type": "string",
           "minLength": 1,
@@ -45,15 +40,13 @@
         }
       }
     },
-    "field": {
+    "limit": {
       "type": "object",
-      "required": ["name", "type", "required"],
       "additionalProperties": false,
+      "description": "The ends a metric's limit has. A present end can be set; its number is where a new building starts, null when there is none. An absent end cannot be set; {} means no limit at all. Optional when parsing.",
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "type": { "$ref": "#/$defs/fieldKind" },
-        "required": { "type": "boolean" },
-        "description": { "type": "string" }
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] }
       }
     },
     "action": {
@@ -74,29 +67,6 @@
         "name": { "type": "string", "minLength": 1 },
         "type": { "$ref": "#/$defs/fieldKind" },
         "required": { "type": "boolean" }
-      }
-    },
-    "bound": {
-      "type": "object",
-      "required": ["key", "field", "label", "unit", "direction"],
-      "additionalProperties": false,
-      "properties": {
-        "key": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The name a threshold body uses, e.g. 'maxTemp'."
-        },
-        "field": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The reading field compared; not always the metric's value (air quality bounds 'co2')."
-        },
-        "label": { "type": "string", "minLength": 1 },
-        "unit": { "type": ["string", "null"] },
-        "direction": {
-          "enum": ["high", "low"],
-          "description": "'high' breaches above the value, 'low' below. Same words as an alert's direction."
-        }
       }
     },
     "fieldKind": {

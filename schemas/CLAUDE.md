@@ -85,29 +85,28 @@ that needs its own type.
 
 Two wire families plus the metric catalog. Consumers: telemetry, dashboard, socket, notification.
 
-- **`AlertEvent` has a hand-written `Serialize`/`Deserialize` because the value is keyed by
-  the field that breached** — `{"buildingId", "roomId", "buildingName", "roomName",
-  "<field>": value, "type": "<metric>", "field", "label", "unit"?, "direction": "high"|"low",
-  "threshold", "timestamp"}`. `type` means *metric*; one metric can bound several fields
-  (air quality: `co2`, `indoor_aqi`). The names are display text only — ids stay the keys,
-  because names repeat. `field`/`label`/`unit` and the names are optional on read: older
-  records read as the metric and the ids.
-  Derive would produce a different shape; don't "simplify" it back.
+- **One reading, one metric, one number.** `TelemetryReading` is exactly `type`, `roomId`,
+  `timestamp`, `value` (`deny_unknown_fields`); a device measuring several metrics sends one
+  reading each. Metric and device ids are `snake_case` values (`people_count`); JSON keys stay
+  `camelCase`. Design: `documentation/docs/design/metric-readings.qd`.
+- **`AlertEvent` is a derive**: `{"buildingId", "roomId", "buildingName", "roomName", "type":
+  "<metric>", "value", "label", "unit"?, "direction": "high"|"low", "threshold", "timestamp"}`.
+  `type` means *metric*. The names are display text only; ids stay the keys, because names repeat.
 - **`ALERTABLE_METRICS` is the set notification delivers.** telemetry's `plugins::all()` test pins
-  it to the plugins that declare bounds; notification uses it as its preference types. A bounded
+  it to the plugins that declare a limit; notification uses it as its preference types. A limited
   metric missing here would breach straight into `unsupported_metric`.
-- **`TelemetryEnvelope` / `TelemetryReading` carry no shape tag** — everything is a tick, so a
-  constant `type` would say nothing, and `type` already means metric on a reading. Plugin
-  fields ride in a `#[serde(flatten)]` map, so a reading round-trips whatever its plugin emitted.
+- **`TelemetryEnvelope` carries no shape tag** — everything is a tick, so a constant `type`
+  would say nothing, and `type` already means metric on a reading.
 - **Channel names are functions, not strings**: `RAW_CHANNEL`, `filtered_channel(building)`,
   `building_of_filtered_channel(channel)`. Topics: `ALERTS_TOPIC`, `ALERTS_DLQ_TOPIC`.
 - **Every metric-catalog field is one word**, so the Rust name *is* the wire name and no
-  `#[serde(rename)]` survives: `kind`, `label`, `interface`, `unit`, `source`, and `r#type`
+  `#[serde(rename)]` survives: `kind`, `label`, `interface`, `unit`, `limit`, `source`, and `r#type`
   (the raw identifier serialises as `type`, which a keyword otherwise forces you to rename).
   A multi-word field would reintroduce a rename that only the fixture reads — don't add one.
-- **`bounds` says which metrics take thresholds.** Telemetry fills it from each plugin's
-  `bounds()`; an empty list means none, so a client never asks for them. `direction` reuses the
-  alert's `BoundDirection` (`high`/`low`), so a bound and its breach use the same words.
+- **`limit` says which ends a metric's limit has.** `{"min": 18, "max": 27}`: a present end can
+  be set, its number is where a new building starts, `null` when it has none (`people_count`'s
+  max comes from capacity). `{}` means no limit, so a client never asks. `LimitContract` keeps a
+  present `null` apart from an absent end; don't collapse it to one `Option`.
   This is the drift that once emptied the dashboard catalog at runtime — `key`/`metricKey`,
   `kind`/`type`. Both sides now build from this struct, so it is a compile error instead.
   `fixtures/metric-contract.json` pins the bytes for the frontend, which cannot share the struct;

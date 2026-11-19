@@ -20,7 +20,7 @@
           },
           {
             "sensorId": "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9",
-            "sensorType": "peopleCount",
+            "sensorType": "people_count",
             "roomId": "room-lab-2"
           }
         ]
@@ -34,12 +34,12 @@
         "sensors": [
           {
             "sensorId": "c4d5e6f7-0819-4a2b-8c3d-4e5f60718293",
-            "sensorType": "airQuality",
+            "sensorType": "air_quality",
             "roomId": "room-lab-2"
           },
           {
             "sensorId": "d5e6f708-192a-4b3c-9d4e-5f6071829304",
-            "sensorType": "airQuality",
+            "sensorType": "air_quality",
             "roomId": "room-aula-magna"
           }
         ]
