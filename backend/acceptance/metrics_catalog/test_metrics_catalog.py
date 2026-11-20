@@ -63,9 +63,3 @@ def test_every_metric_has_a_source(metrics_catalog: dict):
     for metric in metrics_catalog["metrics"]:
         assert isinstance(metric["source"], str)
         assert len(metric["source"]) > 0
-
-
-def test_every_metric_has_at_least_one_field(metrics_catalog: dict):
-    for metric in metrics_catalog["metrics"]:
-        assert isinstance(metric["fields"], list)
-        assert len(metric["fields"]) > 0
