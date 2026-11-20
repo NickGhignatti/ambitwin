@@ -74,7 +74,7 @@ async fn a_breach_reaches_the_alerts_topic_keyed_by_building_and_room() {
     let (key, body) = wait_for(&consumer, &room_id).await;
     assert_eq!(key, format!("b1:{room_id}"));
     assert_eq!(body["type"], "temperature");
-    assert_eq!(body["temperature"], 26.0);
+    assert_eq!(body["value"], 26.0);
     assert_eq!(body["direction"], "high");
     assert_eq!(body["threshold"], 25.0);
     assert_eq!(body["timestamp"], 1_700_000_000_000i64);
