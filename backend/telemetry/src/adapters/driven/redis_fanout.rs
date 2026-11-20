@@ -94,12 +94,18 @@ mod tests {
 
         assert_eq!(body["buildingId"], "b1");
         assert_eq!(body["ingestedAt"], 1_700_000_000_000i64);
-        assert!(body.get("type").is_none(), "`type` belongs only to a reading");
+        assert!(
+            body.get("type").is_none(),
+            "`type` belongs only to a reading"
+        );
         let reading = &body["readings"][1];
         assert_eq!(reading["type"], "co2");
         assert_eq!(reading["roomId"], "r1");
         assert_eq!(reading["value"], 612.0);
-        assert!(reading.get("buildingId").is_none(), "the envelope owns the building");
+        assert!(
+            reading.get("buildingId").is_none(),
+            "the envelope owns the building"
+        );
     }
 
     const WIRE: &str = include_str!("../../../../../schemas/fixtures/telemetry-envelope.json");

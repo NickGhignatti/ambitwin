@@ -30,9 +30,17 @@ pub struct ActionContract {
 /// An absent end cannot be set, so a metric with neither takes no limit at all.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LimitContract {
-    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub min: Option<Option<f64>>,
-    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max: Option<Option<f64>>,
 }
 
@@ -111,7 +119,10 @@ mod tests {
         let limit: LimitContract = serde_json::from_value(json!({ "max": null })).unwrap();
         assert_eq!(limit.max, Some(None));
         assert_eq!(limit.min, None);
-        assert_eq!(serde_json::to_value(&limit).unwrap(), json!({ "max": null }));
+        assert_eq!(
+            serde_json::to_value(&limit).unwrap(),
+            json!({ "max": null })
+        );
     }
 
     #[test]

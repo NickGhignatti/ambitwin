@@ -179,13 +179,7 @@ async fn a_breach_produced_while_nobody_listens_is_still_delivered_on_return() {
     );
     assert_eq!(notification["type"], "danger");
     assert_eq!(notification["domainName"], "eng");
-    assert!(
-        armed(
-            &bus,
-            &format!("alert:temperature:{building}:r1")
-        )
-        .await
-    );
+    assert!(armed(&bus, &format!("alert:temperature:{building}:r1")).await);
     listener.abort();
 }
 

@@ -281,10 +281,7 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_sensor_type_names_the_reading_that_carried_it() {
         let h = plain();
-        let items = vec![
-            item("r1", 1.0),
-            json!({ "type": "noise", "roomId": "r2" }),
-        ];
+        let items = vec![item("r1", 1.0), json!({ "type": "noise", "roomId": "r2" })];
 
         let error = h.ingest.accept("b1", &items).await.unwrap_err();
 

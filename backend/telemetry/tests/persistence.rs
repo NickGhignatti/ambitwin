@@ -202,12 +202,7 @@ async fn a_room_threshold_and_a_building_threshold_coexist_and_room_wins() {
     let thresholds = PgThresholds::new(pool);
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "max": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     thresholds
@@ -245,21 +240,11 @@ async fn upserting_the_same_threshold_twice_updates_rather_than_duplicates() {
     let thresholds = PgThresholds::new(pool.clone());
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "max": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     let merged = thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "min": 18.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "min": 18.0 })))
         .await
         .unwrap();
 
@@ -280,12 +265,7 @@ async fn temperature_limits_joins_rooms_and_bounds() {
     let thresholds = PgThresholds::new(pool);
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "max": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     thresholds

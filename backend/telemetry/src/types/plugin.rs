@@ -123,7 +123,10 @@ pub fn validate_reading(
         return Err(errors);
     }
     Ok(Reading {
-        building_id: payload["buildingId"].as_str().unwrap_or_default().to_owned(),
+        building_id: payload["buildingId"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
         room_id: payload["roomId"].as_str().unwrap_or_default().to_owned(),
         metric: descriptor.key.to_owned(),
         ts_ms: payload["timestamp"].as_f64().unwrap_or_default() as i64,

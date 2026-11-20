@@ -204,7 +204,11 @@ mod tests {
             vec![
                 device(
                     "router",
-                    &["total_device_count", "ratio_device_count", "estimated_occupancy"],
+                    &[
+                        "total_device_count",
+                        "ratio_device_count",
+                        "estimated_occupancy",
+                    ],
                 ),
                 device("temperature", &["temperature"]),
                 device("air_quality", &["co2", "indoor_aqi", "humidity"]),
@@ -326,7 +330,9 @@ mod tests {
     #[test]
     fn an_air_quality_station_goes_to_the_other_simulator() {
         let h = harness(both(), vec![], FakeSimulators::default());
-        let plan = h.simulation.plan(&[sensor("a1", "air_quality", Some("r2"))]);
+        let plan = h
+            .simulation
+            .plan(&[sensor("a1", "air_quality", Some("r2"))]);
         assert_eq!(
             plan.by_simulator[AQ_SIM],
             vec![simulated("a1", "air_quality", "r2")]

@@ -1,8 +1,8 @@
 use crate::adapters::ingest_auth::CollectorQuery;
 use crate::adapters::metrics;
 use crate::kernel::authz;
-use crate::kernel::readings::DashboardQuery;
 use crate::kernel::observations::TOTAL_DEVICE_COUNT;
+use crate::kernel::readings::DashboardQuery;
 use crate::state::AppState;
 use crate::types::error::DomainError;
 use crate::types::identity::GatewayClaims;

@@ -101,14 +101,16 @@ mod tests {
 
     #[test]
     fn an_envelope_without_its_readings_or_building_is_not_an_envelope() {
-        assert!(serde_json::from_value::<TelemetryEnvelope>(
-            json!({ "buildingId": "b1", "ingestedAt": 1 })
-        )
-        .is_err());
-        assert!(serde_json::from_value::<TelemetryEnvelope>(
-            json!({ "ingestedAt": 1, "readings": [] })
-        )
-        .is_err());
+        assert!(
+            serde_json::from_value::<TelemetryEnvelope>(
+                json!({ "buildingId": "b1", "ingestedAt": 1 })
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<TelemetryEnvelope>(json!({ "ingestedAt": 1, "readings": [] }))
+                .is_err()
+        );
     }
 
     #[test]
