@@ -488,7 +488,8 @@ async fn upgrading_removes_stored_duplicates_even_when_compressed() {
         .await
         .unwrap();
 
-    migrator.run(&pool).await.unwrap();
+    // 0008 empties readings, so stop at the dedupe migration
+    migrator.run_to(7, &pool).await.unwrap();
 
     assert_eq!(count_readings(&pool).await, 1);
 }

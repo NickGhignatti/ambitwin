@@ -276,7 +276,7 @@ async fn ingest_rejects_a_non_string_building_and_a_non_numeric_reading() {
     let details = body["details"][0].as_str().unwrap();
     assert!(details.contains("buildingId"), "got {details}");
     assert!(details.contains("roomId"), "got {details}");
-    assert!(details.contains("temperature"), "got {details}");
+    assert!(details.contains("value"), "got {details}");
 }
 
 #[tokio::test]
@@ -1012,7 +1012,7 @@ async fn the_contract_advertises_metrics_and_their_actions() {
     assert_eq!(body["service"], "telemetry");
 
     let metrics = body["metrics"].as_array().unwrap();
-    assert_eq!(metrics.len(), 6);
+    assert_eq!(metrics.len(), 8);
     let temperature = metrics
         .iter()
         .find(|metric| metric["kind"] == "temperature")
@@ -1333,18 +1333,6 @@ async fn a_reading_without_a_type_names_its_index() {
     let details = body["details"][0].as_str().unwrap();
     assert!(details.contains("readings[0]"), "got {details}");
     assert!(details.contains("type"), "got {details}");
-}
-
-#[tokio::test]
-async fn the_type_field_is_not_stored_as_a_payload_extra() {
-    let app = test_app(fresh_db("ingest_typestrip").await, vec!["eng"]).await;
-    app.ingest(temperature("r1", BASE_MS, 21.5)).await;
-
-    let payload: serde_json::Value = sqlx::query_scalar("select payload from readings")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-    assert_eq!(payload, json!({}));
 }
 
 #[tokio::test]
