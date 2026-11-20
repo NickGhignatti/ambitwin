@@ -182,7 +182,7 @@ async fn a_breach_produced_while_nobody_listens_is_still_delivered_on_return() {
     assert!(
         armed(
             &bus,
-            &format!("alert:temperature:temperature:{building}:r1")
+            &format!("alert:temperature:{building}:r1")
         )
         .await
     );
@@ -204,7 +204,7 @@ async fn a_second_breach_inside_the_cooldown_publishes_nothing() {
     let building = unique("b");
     let twin = twin_returning(&building, &["eng"]).await;
     let (alerts, bus) = alerts(twin.uri()).await;
-    bus.start(&format!("alert:temperature:temperature:{building}:r1"), 300)
+    bus.start(&format!("alert:temperature:{building}:r1"), 300)
         .await
         .unwrap();
 

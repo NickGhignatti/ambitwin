@@ -1,9 +1,10 @@
-export interface BoundContract {
-  key: string
-  field: string
-  label: string
-  unit: string | null
-  direction: 'high' | 'low'
+/**
+ * The ends a metric's limit has. A present end can be set; its number is where a new building
+ * starts, `null` when it has none. An absent end cannot be set.
+ */
+export interface LimitContract {
+  min?: number | null
+  max?: number | null
 }
 
 export interface MetricContract {
@@ -12,7 +13,7 @@ export interface MetricContract {
   interface: string
   unit?: string
   source?: string
-  bounds?: BoundContract[]
+  limit?: LimitContract
 }
 
 export interface TableHeader {
@@ -24,8 +25,8 @@ export interface TableHeader {
 
 export interface TableBody {
   roomId: string
-  roomName: string
-  roomMaxOccupancy: number
+  room_name: string
+  room_max_occupancy: number
   status: string
   [metric: string]: unknown
 }

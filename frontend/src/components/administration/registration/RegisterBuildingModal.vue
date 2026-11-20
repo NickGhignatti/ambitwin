@@ -21,7 +21,7 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const {
   draft,
-  metricsWithBounds,
+  metricsWithLimits,
   hasData,
   isSubmitting,
   loadFromJson,
@@ -145,7 +145,7 @@ const save = async () => {
           </BaseButton>
         </div>
 
-        <BuildingThresholds :draft="draft" :metrics="metricsWithBounds" @update="updateBuilding" />
+        <BuildingThresholds :draft="draft" :metrics="metricsWithLimits" @update="updateBuilding" />
 
         <section class="space-y-3">
           <h3 class="flex items-center gap-2 text-label-header uppercase text-on-surface-variant">
@@ -157,7 +157,7 @@ const save = async () => {
             v-for="room in draft.rooms"
             :key="room.id"
             :room="room"
-            :metrics="metricsWithBounds"
+            :metrics="metricsWithLimits"
             :building-thresholds="draft.thresholds"
             @update="updateRoom(room.id, $event)"
           />

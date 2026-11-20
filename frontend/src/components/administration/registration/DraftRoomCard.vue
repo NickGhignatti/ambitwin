@@ -3,9 +3,9 @@ import { useI18n } from 'vue-i18n'
 import type { RoomDraft } from '@/types/administration/buildingDraft.ts'
 import type { MetricContract } from '@/types/dashboard/table.ts'
 import {
-  CAPACITY_BOUND,
+  CAPACITY_LIMIT,
   type ThresholdValues,
-  withBoundValue,
+  withLimitEnd,
 } from '@/utils/administration/thresholds.ts'
 import TextInput from '@/components/commons/forms/TextInput.vue'
 import FormField from '@/components/commons/forms/FormField.vue'
@@ -25,10 +25,10 @@ const setCapacity = (value: unknown) => {
   const capacity = Number(value) || 0
   emit('update', {
     capacity,
-    thresholds: withBoundValue(
+    thresholds: withLimitEnd(
       props.room.thresholds,
-      CAPACITY_BOUND.kind,
-      CAPACITY_BOUND.key,
+      CAPACITY_LIMIT.kind,
+      CAPACITY_LIMIT.end,
       capacity,
     ),
   })
@@ -68,7 +68,7 @@ const setCapacity = (value: unknown) => {
         :metrics="metrics"
         :values="room.thresholds"
         :fallback="buildingThresholds"
-        :hidden-keys="[CAPACITY_BOUND.key]"
+        :hidden="CAPACITY_LIMIT"
         @update="emit('update', { thresholds: $event })"
       />
     </div>

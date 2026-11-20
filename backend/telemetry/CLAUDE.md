@@ -15,7 +15,7 @@ Hexagon + microkernel, enforced by `tests/architecture.rs` — read it before re
 |---|---|---|
 | `src/types/` | Plain shapes: reading, sensor, threshold, plugin specs, errors. | anything else in the crate, any IO crate |
 | `src/kernel/` | Use cases: `ingest`, `observations`, `readings`, `thresholds`, `sensors`, `actions`, `registration`, `simulation`, `authz`, `registry` + `ports.rs`. | `crate::plugins`, `crate::adapters`, IO crates |
-| `src/plugins/` | One file per metric: `temperature`, `air_quality`, `people_count` (+ `common`). | `crate::kernel`, `crate::adapters`, IO crates, **any sibling plugin** |
+| `src/plugins/` | One file per metric: `temperature`, `people_count`, `co2`, `indoor_aqi`, `humidity`, `device_count` (+ `common`). | `crate::kernel`, `crate::adapters`, IO crates, **any sibling plugin** |
 | `src/adapters/` | Postgres, Kafka, Redis fanout, twin directory, simulators, threshold cache, ingest auth, HTTP API. | — |
 
 IO crates the core may never name: `sqlx`, `redis`, `rdkafka`, `axum`, `reqwest`, `prometheus`.
@@ -43,25 +43,26 @@ building is still refused; producers just stop sending the field that could disa
 `twin_schema` / `telemetry_schema` constants).
 
 **A sensor is a device, not a metric.** `sensor_type` holds a device kind from
-`plugins::devices()`; a router reports `totalDeviceCount`, `ratioDeviceCount` and `estimatedOccupancy`. Every metric
+`plugins::devices()`; a router reports `total_device_count`, `ratio_device_count` and `estimated_occupancy`; the `air_quality` station reports `co2`, `indoor_aqi` and `humidity`, one reading each. Every metric
 belongs to exactly one device — `DeviceCatalog::new` refuses to start otherwise. Served on
 `GET /devices`, kept out of `/contracts` because dashboard parses that shape too. A sensor's
 actions are the union of its device's metrics' actions.
 
 **Adding a metric = a plugin file plus its line in `plugins::all()` and a device in
-`plugins::devices()`.** A plugin with bounds also
+`plugins::devices()`.** A plugin with a limit also
 joins `telemetry_schema::ALERTABLE_METRICS` (test-enforced) — that is its delivery path in
-notification. A `SensorPlugin` gives `key`,
-`descriptor`, `validate`, `bounds`, optional `actions`; `PluginRegistry::new` rejects two
-plugins sharing a key. Plugins never import each other — shared helpers go in
-`plugins/common.rs`. `/contracts` serves what the registry holds, and dashboard parses that
+notification. A plugin is data: a `MetricDescriptor` (`key`, `label`, `interface_name`, `unit`,
+`value_kind`, `limit: LimitSpec`) in one generic `Metric` (`plugins/common.rs`), plus optional
+`actions`; `PluginRegistry::new` rejects two plugins sharing a key. Plugins never import each other. `/contracts` serves what the registry holds, and dashboard parses that
 same `telemetry_schema` definition, so a rename is a compile error rather than an empty
 catalog at runtime.
 
 **Every breach in a tick raises its own alert** to the `alerts` Kafka topic
 (`telemetry_schema::{ALERTS_TOPIC, AlertEvent}`). Fan-out to dashboard stays on Redis.
-A `BoundSpec` compares its own payload `field`, never the reading's `value` — air quality bounds
-`co2` as well as `indoor_aqi`. One alert per breached field; the first listed bound wins.
+A reading is one metric and one number, so `validate_reading` checks every reading the same
+way (`buildingId`, `roomId`, `timestamp`, `value`) and refuses any other key. A limit is
+`{"min"?, "max"?}`; a room's end wins over the building's one end at a time, and a reading
+breaches at most once (above `max` is checked before below `min`).
 Each alert carries the building and room names from the registration projection
 (`BuildingStore::names_of`, cached by `CachedBuildings`); an unregistered room is named by its id.
 
@@ -73,18 +74,18 @@ changing the scheme breaks both sides at once, by design.
 
 **A Wi-Fi tick is checked, counted, then republished as received.** `POST /telemetry/observations`
 parses `twin_schema::WifiObservations`, refuses unknown fields and anything `problems()` names
-(`400`, nothing published), counts phones per router room into `totalDeviceCount` /
-`ratioDeviceCount` through `Ingest` (one phone once, in its loudest router's room; an answered
+(`400`, nothing published), counts phones per router room into `total_device_count` /
+`ratio_device_count` through `Ingest` (one phone once, in its loudest router's room; an answered
 empty room is `0`, an unanswered one reports nothing), then produces the received bytes to `wifi-observations` keyed by
 `buildingId`, 10 min retention. Same signature check as ingest. Unknown fields are refused because
 the bytes travel on as received: a stray `mac` would reach Kafka. Never re-serialise the body.
 
 **digital-twin's room counts are stored, never merged.** `occupancy_consumer.rs` reads
 `estimated-occupancy` (earliest, manual commit) and `kernel/occupancy.rs` stores each room as an
-`estimatedOccupancy` reading through `Ingest`. It never feeds `totalDeviceCount`.
+`estimated_occupancy` reading through `Ingest`. It never feeds `total_device_count`.
 
 **Room thresholds are written as a batch.** `PATCH /thresholds/{sensorType}/buildings/{id}/rooms`
-takes `{roomId: bounds}` and validates every entry before writing any, so one bad bound rejects
+takes `{roomId: {"max": n}}` and validates every entry before writing any, so one bad end rejects
 the set. The per-room route stays for single edits. This mirrors ingest: the operation that
 naturally arrives as a set is accepted as a set, all-or-nothing. The writes are still one upsert
 per room — `ThresholdStore` has no transactional bulk write, and a retry converges.

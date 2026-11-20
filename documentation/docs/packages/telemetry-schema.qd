@@ -9,7 +9,7 @@
     | Serialise | Turn a Rust value into JSON text | `TelemetryEnvelope` → `{"buildingId":"b1",…}` |
     | Deserialise, parse | Turn JSON text back into a Rust value, or fail | A missing `buildingId` fails |
     | Tick | Everything one building reports at one moment | 40 readings in one message |
-    | Reading | One value from one room at one moment | 21.5 °C in room `r1` |
+    | Reading | One metric, one number, from one room at one moment | 21.5 °C in room `r1` |
     | Breach | A value past its limit | 1200 ppm CO₂, limit 1000 |
     | Fixture | A JSON file of example messages every language must agree on | `schemas/fixtures/telemetry-envelope.json` |
     | Channel | A Redis name that messages are published on | `telemetry:filtered:b1` |
@@ -39,7 +39,7 @@ With one crate, a renamed field breaks the build of every reader at the same tim
 
 | Module | Shapes and names | Written by | Read by |
 |---|---|---|---|
-| `lib.rs` | Metric catalog: `ServiceMetricsContract`, `MetricContract`, `MetricsDiscoveryResponse` | `telemetry` and `digital-twin` on `/contracts` | `dashboard`; `frontend` reads the same names |
+| `lib.rs` | Metric catalog: `ServiceMetricsContract`, `MetricContract`, `LimitContract`, `MetricsDiscoveryResponse` | `telemetry` and `digital-twin` on `/contracts` | `dashboard`; `frontend` reads the same names |
 | `telemetry.rs` | Tick: `TelemetryEnvelope`, `TelemetryReading`; channel names | `telemetry` | `dashboard`, `socket`, `frontend` |
 | `alerts.rs` | Breach: `AlertEvent`, `BoundDirection`; topic names; `ALERTABLE_METRICS` | `telemetry` | `notification` |
 
@@ -66,7 +66,8 @@ One building tick is **one** message, from `telemetry` to the browser.
 {"buildingId":"b1","ingestedAt":1700000000500,
  "readings":[
    {"type":"temperature","roomId":"r1","timestamp":1700000000000,"value":21.5},
-   {"type":"airQuality","roomId":"r2","timestamp":1700000000000,"value":42.0,"indoorAqi":42.0,"co2":810}
+   {"type":"indoor_aqi","roomId":"r2","timestamp":1700000000000,"value":42.0},
+   {"type":"co2","roomId":"r2","timestamp":1700000000000,"value":810.0}
  ]}
 ```
 
@@ -75,24 +76,24 @@ One building tick is **one** message, from `telemetry` to the browser.
 | `buildingId` | envelope | `building_id` | Required |
 | `ingestedAt` | envelope | `ingested_at_ms` | Required. Milliseconds since 1970, set when `telemetry` accepted the batch |
 | `readings` | envelope | `readings: Vec<Value>` | Required |
-| `type` | reading | `metric` | Required. The metric name |
+| `type` | reading | `metric` | Required. The metric id, `snake_case` |
 | `roomId` | reading | `room_id` | Required |
 | `timestamp` | reading | `ts_ms` | Required. When the sensor measured |
 | `value` | reading | `value: f64` | Required. An integer like `20` reads as `20.0` |
-| anything else | reading | `fields` | Kept as is, whatever the plugin put there |
 
 - The envelope has **no `type`**. Only its readings do. A reader that treats a whole tick as one reading finds no `type` and drops every update.
 - A reading never repeats `buildingId`: the envelope says it once. The JSON schema refuses a reading that carries it.
+- A reading is **one metric and one number**. A device that measures several things sends one reading for each: the air station's `co2`, `indoor_aqi` and `humidity` are three readings in one tick.
 
-### Why readings stay loose on the envelope
+### Why `TelemetryReading` refuses extra keys
 
-`readings` is a list of plain JSON values, not of `TelemetryReading`.
+`TelemetryReading` is `deny_unknown_fields`.
 
-- `telemetry` is a microkernel: each metric is a plugin, and each plugin adds its own fields (`indoorAqi`, `co2`, `pm25`).
-- Listing those fields here would make every new plugin edit a shared crate.
-- So the crate types only the four names every reading has. `#[serde(flatten)]` collects the rest into `fields`, and writes them back unchanged.
+- Every reading has the same four names, so the crate can type all of them.
+- A key that rides along (`pm25`, `scenario`) is an error, not something to carry. A producer that adds one finds out when its test fails.
+- The envelope still holds `readings` as plain JSON values: `dashboard` routes a tick by `buildingId` and never looks inside a reading.
 
-**Example.** An air quality reading with `indoorAqi: 42.0` and `pm25: 9.5` parses into `TelemetryReading`, with both in `fields`. Serialised again, it gives the same JSON back. The test `a_plugins_own_fields_ride_alongside_and_survive_a_round_trip` checks exactly this.
+**Example.** `{"type":"co2","roomId":"r2","timestamp":1700000000000,"value":810,"pm25":9.5}` fails to parse as a `TelemetryReading`: `pm25` is not a field. Without `pm25` it parses, and serialises back to the same JSON.
 
 ### A tick end to end
 
@@ -133,9 +134,9 @@ Example: building `b1`, one temperature reading of 21.5 °C in room `r1`.
 
 | Step | Holder | Data |
 |---|---|---|
-| 1 | Sensor gateway | `{"buildingId":"b1","readings":[{"type":"temperature","roomId":"r1","timestamp":1700000000000,"value":21.5,"temperature":21.5}]}` |
-| 2 | `TelemetryEvent` in `telemetry` | building `b1`, room `r1`, metric `temperature`, `ts_ms` 1700000000000, value 21.5, payload with `buildingId`, `roomId`, `timestamp`, `temperature`, ingested at 1700000000500 |
-| 4 | `TelemetryReading` | `{"type":"temperature","roomId":"r1","timestamp":1700000000000,"value":21.5,"temperature":21.5}`: `buildingId`, `roomId`, `timestamp` taken out of the payload, so none appears twice |
+| 1 | Sensor gateway | `{"buildingId":"b1","readings":[{"type":"temperature","roomId":"r1","timestamp":1700000000000,"value":21.5}]}` |
+| 2 | `TelemetryEvent` in `telemetry` | building `b1`, room `r1`, metric `temperature`, `ts_ms` 1700000000000, value 21.5, ingested at 1700000000500 |
+| 4 | `TelemetryReading` | `{"type":"temperature","roomId":"r1","timestamp":1700000000000,"value":21.5}`: the building is left off, so it is not said twice |
 | 5 | Text on `telemetry:raw` | `{"buildingId":"b1","ingestedAt":1700000000500,"readings":[…step 4…]}` |
 | 7 | `TelemetryEnvelope` in `dashboard` | `building_id` `b1`, `ingested_at_ms` 1700000000500, `readings` one JSON value, **plus the original text kept aside** |
 | 10 | Text on `telemetry:filtered:b1` | Identical to step 5, byte for byte |
@@ -150,9 +151,7 @@ Fan-out latency for this tick: `dashboard` reads the clock right after step 10, 
 
 1. No events in the batch: publish nothing and stop.
 2. Take `buildingId` and `ingestedAt` from the first event. Every event of one batch has the same building: the ingest check refuses a reading that names another one.
-3. For each event, build a `TelemetryReading`:
-   - `type`, `roomId`, `timestamp`, `value` from the event;
-   - `fields` = the plugin payload minus `buildingId`, `roomId` and `timestamp`, so nothing is sent twice.
+3. For each event, build a `TelemetryReading` from `metric`, `room_id`, `ts_ms` and `value`. The building stays on the envelope.
 4. Put the readings in one `TelemetryEnvelope` and serialise it.
 5. Publish it on `RAW_CHANNEL` (`telemetry:raw`).
 6. A failed publish is logged and counted, never returned as an error. The readings are already stored, so the batch stays accepted.
@@ -177,7 +176,7 @@ Fan-out latency for this tick: `dashboard` reads the clock right after step 10, 
         C --> O["PUBLISH original text"]
         O --> L["observe now minus ingestedAt"]
 
-Why the original text: routing only needs `buildingId`. Rebuilding the JSON would make `dashboard` responsible for fields it does not own, and one wrong change there would silently drop them.
+Why the original text: routing only needs `buildingId`. Rebuilding the JSON would make `dashboard` responsible for readings it does not own, and one wrong change there would silently drop data.
 
 ### Channel names
 
@@ -207,21 +206,24 @@ A channel without the prefix comes back unchanged: `notifications` gives `notifi
 
 ```json
 {"buildingId":"b1","roomId":"r1","buildingName":"HQ","roomName":"Lab 2",
- "co2":1200.0,"type":"airQuality","field":"co2","label":"CO2","unit":"ppm",
+ "type":"co2","value":1200.0,"label":"CO2","unit":"ppm",
  "direction":"high","threshold":1000.0,"timestamp":1700000000000}
 ```
 
-| Field | Meaning | If missing when parsing |
+`AlertEvent` is a plain serde derive. Every field below is required except `unit`; there are no fallbacks.
+
+| Field | Meaning | Rust name |
 |---|---|---|
-| `buildingId`, `roomId` | Where it happened. These are the keys | Error |
-| `buildingName`, `roomName` | Display names from the building's registration | Uses the id |
-| `type` | The metric | Error |
-| `field` | The payload field whose limit broke | Uses `type` |
-| *the field's own name*, here `co2` | The value that broke it | Error |
-| `label`, `unit` | Text for a person to read. `unit` absent when there is none, like AQI | `label` uses `type`; `unit` stays empty |
-| `direction` | `high` (over the limit) or `low` (under it) | Error |
-| `threshold` | The limit itself | Error |
-| `timestamp` | When the sensor measured | Error |
+| `buildingId`, `roomId` | Where it happened. These are the keys | `building_id`, `room_id` |
+| `buildingName`, `roomName` | Display names from the building's registration. Text only: ids stay the keys, because names repeat | `building_name`, `room_name` |
+| `type` | The metric id | `metric` |
+| `value` | The reading that broke the limit | `value` |
+| `label`, `unit` | Text for a person to read. `unit` is left out when there is none, like `indoor_aqi` | `label`, `unit` |
+| `direction` | `high` (over the limit) or `low` (under it) | `direction: BoundDirection` |
+| `threshold` | The end of the limit that was crossed | `threshold` |
+| `timestamp` | When the sensor measured | `ts_ms` |
+
+A reading has one value, so an alert has one `value`. It sits under `value`, never under the metric's name.
 
 ### A breach end to end
 
@@ -245,7 +247,7 @@ A channel without the prefix comes back unchanged: `notifications` gives `notifi
         Q->>L: record
         L->>L: handle: bytes to UTF-8 text
         L->>A: on_breach(text)
-        A->>A: serde_json::from_str into AlertEvent, runs visit_map
+        A->>A: serde_json::from_str into AlertEvent
         alt does not parse
             A-->>L: Invalid
             L->>Q: park on alerts.dlq
@@ -258,76 +260,33 @@ A channel without the prefix comes back unchanged: `notifications` gives `notifi
 - `accept` raises the breaches first, then calls `publish_telemetry`. So steps 1 to 7 happen before the tick reaches Redis.
 - Step 7 only queues the message. A spawned task waits for Kafka's answer and counts it as `ok`, `error` or `cancelled`. A slow broker never slows down a sensor batch.
 
-### Why the value sits under the field's name
+### How parsing and writing work
 
-One metric can have limits on several fields. Air quality has limits on `co2` and on `indoor_aqi`. So `type: airQuality` cannot say which one broke: `field` says it, and the value sits under that key.
+- Both are the ordinary serde derive on `AlertEvent`. Nothing is written by hand.
+- A missing required key, or a key of the wrong kind, fails the parse. `notification` then parks the message on `alerts.dlq`. No half-filled push reaches a person.
+- Writing gives the keys in struct order. `unit` is skipped when `None`.
+- A test checks that what `telemetry` writes is what `notification` reads back.
 
-A normal serde derive cannot read "the key that another field names". So `Serialize` and `Deserialize` are written by hand.
-
-### How parsing works, step by step
-
-`AlertEventVisitor::visit_map` reads the JSON object once, key by key:
-
-1. A known key (`buildingId`, `type`, `field`, …) is stored in its own slot.
-2. Any other key is kept aside as a **candidate**, with its value. One of these is the breaching value, but its name is not known yet.
-3. After the last key, `type`, `buildingId` and `roomId` must exist, or parsing fails with "missing field".
-4. Missing names fall back: `buildingName` to the building id, `roomName` to the room id.
-5. A missing `field` becomes `type`; a missing `label` also becomes `type`.
-6. Look for the candidate named like `field`. It must exist **and** be a number. Otherwise parsing fails with `alert carries no numeric "co2" value`.
-7. `direction`, `threshold` and `timestamp` must exist, or parsing fails.
-
-.mermaid
-    flowchart TD
-        S["next key"] --> Kn{"known key?"}
-        Kn -- yes --> Slot["store in its slot"]
-        Kn -- no --> Cand["keep as candidate"]
-        Slot --> More{"more keys?"}
-        Cand --> More
-        More -- yes --> S
-        More -- no --> Req{"type, buildingId, roomId present?"}
-        Req -- no --> E1["error: missing field"]
-        Req -- yes --> Fb["fill names, field, label from fallbacks"]
-        Fb --> V{"candidate named field, and a number?"}
-        V -- no --> E2["error: alert carries no numeric value"]
-        V -- yes --> R2{"direction, threshold, timestamp present?"}
-        R2 -- no --> E1
-        R2 -- yes --> Ok["AlertEvent"]
-
-**Example.** A message has `"type":"airQuality","field":"co2"` but carries the value under `"airQuality": 1200`.
-
-- Step 2 keeps `airQuality: 1200` as a candidate.
-- Step 6 looks for `co2`, finds nothing, and fails.
-- Result: `notification` parks the message on `alerts.dlq`. No half-filled push reaches a person.
-
-**Example, older message.** `{"type":"temperature","temperature":40.0,…}` with no `field`, `label` or names.
-
-- `field` and `label` become `temperature`; the names become `b1` and `r1`.
-- Step 6 finds `temperature: 40.0`. The message parses.
-
-The fallbacks exist for messages written before those fields existed. They still sit on the Kafka topic and can be read again.
-
-### How writing works
-
-`Serialize` writes the keys in a fixed order: ids, names, `<field>: value`, `type`, `field`, `label`, `unit` only when present, `direction`, `threshold`, `timestamp`. The value is written under `field`'s name, so a CO₂ breach has a `co2` key and no `airQuality` key.
+**Example.** A message that has no `value` key, or carries the number as `"1200"` text, fails to parse and lands on `alerts.dlq`.
 
 ### Helpers
 
 | Item | Gives | Why |
 |---|---|---|
 | `partition_key()` | `"{buildingId}:{roomId}"`, like `b1:r1` | `telemetry` uses it as the Kafka key. Kafka keeps messages with one key in order, so one room's breaches arrive in the order they happened |
-| `BoundDirection::wire_name()` | `high` or `low` | The same text serde writes, used as a metrics label in `telemetry`. A test checks the two agree |
+| `BoundDirection::wire_name()` | `high` or `low` | The same text serde writes, used as a metrics label in `telemetry` |
 | `is_alertable()` | `true` when `type` is in `ALERTABLE_METRICS` | `notification` drops and counts any other metric |
 | `ALERTS_TOPIC` | `alerts` | Topic for every breach |
 | `ALERTS_DLQ_TOPIC` | `alerts.dlq` | Where `notification` parks a message it cannot use |
 
 ### `ALERTABLE_METRICS`
 
-`temperature`, `airQuality`, `peopleCount`: the metrics `notification` can deliver.
+`temperature`, `people_count`, `co2`, `indoor_aqi`, `humidity`: the metrics `notification` can deliver.
 
-- `telemetry` has a test that compares this list to the plugins that declare limits. A new plugin with limits fails that test until it joins the list.
+- `telemetry` has a test that compares this list to the plugins that declare a limit. A new plugin with a limit fails that test until it joins the list.
 - `notification` uses the same list as the alert types a person can switch on or off. There is no second copy.
 
-**Example.** A humidity plugin gets limits. `every_plugin_with_bounds_is_alertable_and_nothing_else_is` in `telemetry/src/plugins.rs` fails. After `humidity` joins the list, `notification` delivers it and offers it as a choice, with no change in `notification`.
+**Example.** A new `noise` plugin declares a `max`. `every_plugin_with_a_limit_is_alertable_and_nothing_else_is` in `telemetry/src/plugins.rs` fails. After `noise` joins the list, `notification` delivers it and offers it as a choice, with no change in `notification`.
 
 ---
 
@@ -340,22 +299,31 @@ The fallbacks exist for messages written before those fields existed. They still
 ```json
 {"service":"telemetry","metrics":[
   {"kind":"temperature","label":"Temperature","interface":"ITemperature","unit":"°C",
-   "fields":[{"name":"temperature","type":"Finite","required":true}],
    "actions":[{"name":"setTarget","label":"Set target temperature",
                "parameters":[{"name":"target","type":"Finite","required":true}]}],
-   "bounds":[{"key":"maxTemp","field":"temperature","label":"Temperature","unit":"°C","direction":"high"},
-             {"key":"minTemp","field":"temperature","label":"Temperature","unit":"°C","direction":"low"}]}
+   "limit":{"min":18,"max":27}},
+  {"kind":"people_count","label":"People Count","interface":"IPeopleCount","unit":"people",
+   "actions":[],"limit":{"max":null}}
 ]}
 ```
 
 | Struct | Fields | Rules |
 |---|---|---|
 | `ServiceMetricsContract` | `service`, `metrics` | |
-| `MetricContract` | `kind`, `label`, `interface`, `unit`, `fields`, `actions`, `bounds`, `source` | `unit` always written, `null` when none. `actions` and `bounds` may be missing on read, then empty. `source` left out when empty |
-| `MetricFieldContract` | `name`, `type`, `required`, `description` | `description` left out when empty |
+| `MetricContract` | `kind`, `label`, `interface`, `unit`, `actions`, `limit`, `source` | `unit` always written, `null` when none. `actions` and `limit` may be missing on read, then empty. `source` left out when empty |
+| `LimitContract` | `min`, `max` | Which ends of the metric's limit can be set. See below |
 | `ActionContract` | `name`, `label`, `parameters` | A command a device accepts |
 | `ActionParameterContract` | `name`, `type`, `required` | |
-| `BoundContract` | `key`, `field`, `label`, `unit`, `direction` | A threshold the metric takes. `key` names it in a threshold body (`maxTemp`); `field` is the reading field it compares (`co2`, not always the value); `direction` `high` or `low`, as in an alert. Empty list = no thresholds, so a client asks for none |
+
+`limit` says which ends a metric has, so a client builds its inputs without knowing any metric by name:
+
+| JSON | Meaning |
+|---|---|
+| `{"min": 18, "max": 27}` | Both ends can be set. A new building starts at 18 and 27 |
+| `{"max": null}` | Only `max` can be set, with no starting value (`people_count`: it comes from room capacity) |
+| `{}` | No limit. A client offers no input |
+
+`LimitContract` keeps a present `null` apart from an absent end, so each end is an `Option<Option<f64>>`. One `Option` would lose that difference.
 
 ### A catalog request end to end
 
@@ -382,7 +350,7 @@ The fallbacks exist for messages written before those fields existed. They still
 
 `push_unique_metric` skips a metric when one already in the list has the same `kind`, `interface` **and** `source`. The same `kind` from two sources stays twice, once per source.
 
-**Example.** `telemetry` answers `temperature`, `airQuality`, `peopleCount`; `digital-twin` times out after 2 s. The browser gets 3 metrics after about 2 s, and `dashboard` logs `Failed to reach …`. The answer is still `200`.
+**Example.** `telemetry` answers 8 metrics; `digital-twin` times out after 2 s. The browser gets those 8 after about 2 s, and `dashboard` logs `Failed to reach …`. The answer is still `200`.
 
 ### How `dashboard` reads a catalog
 
@@ -433,12 +401,12 @@ What the tests here pin down:
 
 | Test file | Checks |
 |---|---|
-| `src/telemetry.rs` | Wire names; plugin fields survive; `20` reads as `20.0`; no envelope without `buildingId` or `readings`; channel round trip |
-| `src/alerts.rs` | Value keyed by field; `unit` left out when empty; old messages parse; wrong key fails and names the field; every required field required; `b1:r1` key |
-| `src/lib.rs` | Single-word names; `actions` optional on read; both catalog forms |
+| `src/telemetry.rs` | Wire names; `20` reads as `20.0`; no envelope without `buildingId` or `readings`; channel round trip |
+| `src/alerts.rs` | The wire shape carries `type` and `value`; `unit` left out when empty; `low` on the wire; write then read gives the same alert; `b1:r1` key; only listed metrics are alertable |
+| `src/lib.rs` | Single-word names; `actions` and `limit` optional on read; a present `null` end kept apart from a missing one; both catalog forms |
 | `telemetry_envelope_conformance.rs` | Every fixture tick re-serialises **byte for byte**; every rejected tick fails |
-| `metric_contract_conformance.rs` | The fixture parses, re-serialises byte for byte, keeps `"unit": null`; device counts list no bounds, temperature lists `maxTemp` and `minTemp` |
-| `*_schema.rs` | Accepted cases pass, rejected cases fail, plus the 500-reading cap and old field names refused |
+| `metric_contract_conformance.rs` | The fixture parses, re-serialises byte for byte, keeps `"unit": null`; device counts have `{}`, `people_count` has `{"max": null}`, temperature has `min` 18 and `max` 27 |
+| `*_schema.rs` | Accepted cases pass, rejected cases fail, plus the 500-reading cap, and a reading with any extra key refused |
 
 On the other side, `telemetry/src/adapters/driven/redis_fanout.rs` must publish each fixture tick byte for byte, and the frontend's `src/utils/commons/telemetry.ts` spec replays the same file.
 

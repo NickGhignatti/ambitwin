@@ -47,12 +47,16 @@ def test_contains_every_registered_sensor_metric(metrics_catalog: dict):
     ingested, stored, retained -- and unreachable.
     """
     keys = {metric["kind"] for metric in metrics_catalog["metrics"]}
-    assert "temperature" in keys
-    assert "airQuality" in keys
-    assert "peopleCount" in keys
-    assert "totalDeviceCount" in keys
-    assert "ratioDeviceCount" in keys
-    assert "estimatedOccupancy" in keys
+    assert {
+        "temperature",
+        "people_count",
+        "co2",
+        "indoor_aqi",
+        "humidity",
+        "total_device_count",
+        "ratio_device_count",
+        "estimated_occupancy",
+    } <= keys
 
 
 def test_every_metric_has_a_source(metrics_catalog: dict):

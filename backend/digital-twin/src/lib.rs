@@ -7,52 +7,31 @@ pub mod service;
 pub mod state;
 
 use state::AppState;
-use telemetry_schema::{MetricContract, MetricFieldContract, ServiceMetricsContract};
+use telemetry_schema::{LimitContract, MetricContract, ServiceMetricsContract};
 
 /// The dashboard's column catalog. Built from `telemetry_schema`, the same types
 /// telemetry's `/contracts` serves and the dashboard parses - a hand-rolled `json!`
 /// here is how `key`/`metricKey` once drifted and emptied the catalog at runtime.
 async fn contracts() -> Json<ServiceMetricsContract> {
-    fn field(name: &str, kind: &str) -> MetricFieldContract {
-        MetricFieldContract {
-            name: name.to_owned(),
-            r#type: kind.to_owned(),
-            required: true,
-            description: None,
-        }
-    }
-
+    let room_column = |kind: &str, label: &str, interface: &str, unit: &str| MetricContract {
+        kind: kind.to_owned(),
+        label: label.to_owned(),
+        interface: interface.to_owned(),
+        unit: Some(unit.to_owned()),
+        actions: vec![],
+        limit: LimitContract::default(),
+        source: None,
+    };
     Json(ServiceMetricsContract {
         service: "digital-twin".to_owned(),
         metrics: vec![
-            MetricContract {
-                kind: "roomName".to_owned(),
-                label: "Room Name".to_owned(),
-                interface: "IRoomName".to_owned(),
-                unit: Some("string".to_owned()),
-                fields: vec![
-                    field("buildingId", "string"),
-                    field("roomId", "string"),
-                    field("name", "string"),
-                ],
-                actions: vec![],
-                bounds: vec![],
-                source: None,
-            },
-            MetricContract {
-                kind: "roomMaxOccupancy".to_owned(),
-                label: "Room Max Occupancy".to_owned(),
-                interface: "IRoomMaxOccupancy".to_owned(),
-                unit: Some("people".to_owned()),
-                fields: vec![
-                    field("buildingId", "string"),
-                    field("roomId", "string"),
-                    field("maxOccupancy", "integer"),
-                ],
-                actions: vec![],
-                bounds: vec![],
-                source: None,
-            },
+            room_column("room_name", "Room Name", "IRoomName", "string"),
+            room_column(
+                "room_max_occupancy",
+                "Room Max Occupancy",
+                "IRoomMaxOccupancy",
+                "people",
+            ),
         ],
     })
 }
@@ -111,29 +90,16 @@ mod contracts_tests {
     }
 
     #[tokio::test]
-    async fn every_metric_carries_the_camel_case_names_the_dashboard_reads() {
+    async fn every_column_is_a_snake_case_id_with_no_limit() {
         let body = serde_json::to_value(contracts().await.0).unwrap();
         let metrics = body["metrics"].as_array().unwrap();
 
-        let keys: Vec<&str> = metrics
+        let kinds: Vec<&str> = metrics
             .iter()
             .map(|m| m["kind"].as_str().unwrap())
             .collect();
-        assert_eq!(keys, vec!["roomName", "roomMaxOccupancy"]);
-
-        for metric in metrics {
-            assert!(
-                metric["interface"].is_string(),
-                "interface missing: {metric}"
-            );
-            assert!(
-                metric["fields"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .all(|f| f["type"].is_string())
-            );
-        }
+        assert_eq!(kinds, vec!["room_name", "room_max_occupancy"]);
+        assert!(metrics.iter().all(|m| m["limit"] == serde_json::json!({})));
     }
 
     #[tokio::test]

@@ -24,7 +24,7 @@ export interface MetricDisplay {
 
 /** Occupancy bar fill, on the same bands as `getStatusByOccupants`. */
 export function percentColor(value: number, row: TableBody): string {
-  const max = row.roomMaxOccupancy || 0
+  const max = row.room_max_occupancy || 0
   if (max <= 0 || value <= 0) return 'var(--cv-outline)'
   const ratio = value / max
   if (ratio <= 0.5) return 'var(--cv-primary)'
@@ -33,12 +33,12 @@ export function percentColor(value: number, row: TableBody): string {
 }
 
 export const METRIC_DISPLAY: Record<string, MetricDisplay> = {
-  roomName: { renderer: 'room' },
-  roomMaxOccupancy: { renderer: 'text', icon: 'chair' },
-  peopleCount: {
+  room_name: { renderer: 'room' },
+  room_max_occupancy: { renderer: 'text', icon: 'chair' },
+  people_count: {
     renderer: 'bar',
     icon: 'users',
-    range: (row) => ({ min: 0, max: row.roomMaxOccupancy || 0 }),
+    range: (row) => ({ min: 0, max: row.room_max_occupancy || 0 }),
     color: percentColor,
   },
   temperature: {
@@ -47,7 +47,7 @@ export const METRIC_DISPLAY: Record<string, MetricDisplay> = {
     unit: '°C',
     color: (v) => roomColorByTemperature(v),
   },
-  airQuality: {
+  indoor_aqi: {
     renderer: 'gauge',
     icon: 'wind',
     unit: ' AQI',

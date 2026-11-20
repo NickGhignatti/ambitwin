@@ -15,14 +15,16 @@ from app.agent.tools.downstream import (
     get_with_retry,
 )
 
-SensorMetric = Literal["peopleCount", "temperature", "airQuality"]
+SensorMetric = Literal["people_count", "temperature", "co2", "indoor_aqi", "humidity"]
 TimeRange = Literal["1D", "1W", "1M"]
 Aggregation = Literal["avg", "sum", "min", "max"]
 
 _METRIC_METADATA: dict[str, dict[str, str]] = {
-    "peopleCount": {"label": "People Count", "unit": "people"},
+    "people_count": {"label": "People Count", "unit": "people"},
     "temperature": {"label": "Temperature", "unit": "C"},
-    "airQuality": {"label": "Indoor Air Quality Index", "unit": "AQI"},
+    "co2": {"label": "CO2", "unit": "ppm"},
+    "indoor_aqi": {"label": "Indoor Air Quality Index", "unit": "AQI"},
+    "humidity": {"label": "Humidity", "unit": "%"},
 }
 
 
@@ -63,7 +65,6 @@ def _validate_room(
 
 
 def _project_latest(
-    metric: SensorMetric,
     reading: dict[str, Any],
     rooms: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
@@ -72,24 +73,8 @@ def _project_latest(
         "room_id": room_id,
         "room_name": rooms.get(room_id, {}).get("name"),
         "timestamp": reading.get("timestamp"),
+        "value": reading.get("value"),
     }
-    if metric == "peopleCount":
-        payload["value"] = reading.get("peopleCount", reading.get("value"))
-    elif metric == "temperature":
-        payload["value"] = reading.get("temperature", reading.get("value"))
-    else:
-        payload.update(
-            {
-                "value": reading.get("indoor_aqi", reading.get("indoorAqi")),
-                "indoor_aqi": reading.get("indoor_aqi", reading.get("indoorAqi")),
-                "pm25": reading.get("pm25"),
-                "pm10": reading.get("pm10"),
-                "co2": reading.get("co2"),
-                "voc": reading.get("voc"),
-                "humidity": reading.get("humidity"),
-                "aqi": reading.get("aqi"),
-            }
-        )
     return {key: value for key, value in payload.items() if value is not None}
 
 
@@ -114,7 +99,7 @@ def _sensor_empty_payload(
 class GetLatestSensorDataArgs(BaseModel):
     building_id: str = Field(description="Building whose latest sensor readings are needed.")
     metric: SensorMetric = Field(
-        description="Sensor metric: peopleCount, temperature, or airQuality."
+        description="Sensor metric: people_count, temperature, co2, indoor_aqi or humidity."
     )
     room_id: str | None = Field(
         default=None,
@@ -183,7 +168,7 @@ class GetLatestSensorDataTool:
         else:
             raw_readings = raw_data if isinstance(raw_data, list) else []
         readings = [
-            _project_latest(args.metric, reading, rooms)
+            _project_latest(reading, rooms)
             for reading in raw_readings
             if isinstance(reading, dict)
             and _reading_matches_scope(
@@ -223,8 +208,8 @@ class ListSensorsTool:
     name = "list_sensors"
     description = (
         "List the physical sensor devices registered in one room or every room of an "
-        "authorized building: sensor id and sensor type (temperature, peopleCount, "
-        "airQuality). Use to check what a room can measure — e.g. whether it has a "
+        "authorized building: sensor id and sensor type (temperature, people_count, "
+        "air_quality, router). Use to check what a room can measure — e.g. whether it has a "
         "temperature sensor. This returns the device inventory only; for actual "
         "measurements use get_latest_sensor_data or get_sensor_history."
     )
@@ -294,7 +279,7 @@ class ListSensorsTool:
 class GetSensorHistoryArgs(BaseModel):
     building_id: str = Field(description="Building whose historical sensor data is needed.")
     metric: SensorMetric = Field(
-        description="Sensor metric: peopleCount, temperature, or airQuality."
+        description="Sensor metric: people_count, temperature, co2, indoor_aqi or humidity."
     )
     time_range: TimeRange = Field(description="Historical window: 1D, 1W, or 1M.")
     aggregation: Aggregation = Field(
@@ -308,8 +293,8 @@ class GetSensorHistoryArgs(BaseModel):
 
     @model_validator(mode="after")
     def reject_meaningless_sum(self) -> GetSensorHistoryArgs:
-        if self.metric != "peopleCount" and self.aggregation == "sum":
-            raise ValueError("sum aggregation is only meaningful for peopleCount")
+        if self.metric != "people_count" and self.aggregation == "sum":
+            raise ValueError("sum aggregation is only meaningful for people_count")
         return self
 
 

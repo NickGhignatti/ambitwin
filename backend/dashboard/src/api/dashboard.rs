@@ -107,6 +107,7 @@ mod tests {
 
     use crate::infra::claims::CLAIMS_HEADER;
     use crate::models::MetricContract;
+    use telemetry_schema::LimitContract;
 
     async fn authenticated_claims() -> GatewayClaims {
         let token = STANDARD.encode(r#"{"sub":"u1","memberships":[{"domain":"eng"}]}"#);
@@ -151,9 +152,8 @@ mod tests {
             label: format!("Label {}", kind),
             interface: interface.to_string(),
             unit: None,
-            fields: vec![],
             actions: vec![],
-            bounds: vec![],
+            limit: LimitContract::default(),
             source: Some(source.to_string()),
         }
     }

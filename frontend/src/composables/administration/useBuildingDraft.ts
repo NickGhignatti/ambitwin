@@ -4,8 +4,8 @@ import { useBuildingsStore } from '@/stores/digital-twin/buildings.ts'
 import type { BuildingDraft, RoomDraft } from '@/types/administration/buildingDraft.ts'
 import type { MetricContract } from '@/types/dashboard/table.ts'
 import {
-  CAPACITY_BOUND,
-  boundedMetrics,
+  CAPACITY_LIMIT,
+  limitedMetrics,
   defaultBuildingThresholds,
   thresholdWrites,
 } from '@/utils/administration/thresholds.ts'
@@ -22,7 +22,7 @@ export function useBuildingDraft() {
   const catalog = ref<MetricContract[]>([])
   const isSubmitting = ref(false)
   const hasData = computed(() => draft.value !== null)
-  const metricsWithBounds = computed(() => boundedMetrics(catalog.value))
+  const metricsWithLimits = computed(() => limitedMetrics(catalog.value))
 
   // the form offers only the thresholds telemetry declares, so it waits for the catalog
   const loadFromJson = async (raw: any): Promise<void> => {
@@ -37,7 +37,7 @@ export function useBuildingDraft() {
         position: room.position,
         dimensions: room.dimensions,
         color: room.color,
-        thresholds: { [CAPACITY_BOUND.kind]: { [CAPACITY_BOUND.key]: room.capacity ?? 0 } },
+        thresholds: { [CAPACITY_LIMIT.kind]: { [CAPACITY_LIMIT.end]: room.capacity ?? 0 } },
       })),
     }
   }
@@ -89,7 +89,7 @@ export function useBuildingDraft() {
 
   return {
     draft,
-    metricsWithBounds,
+    metricsWithLimits,
     hasData,
     isSubmitting,
     loadFromJson,

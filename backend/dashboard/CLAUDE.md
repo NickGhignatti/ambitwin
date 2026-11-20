@@ -35,7 +35,7 @@ and the reason the unit tests need no Mongo — but it is where a lost preferenc
 from.
 
 **Initialising a building is idempotent**: a second init keeps the existing columns; a new
-building gets exactly `room name` and `max occupancy`.
+building gets exactly `room_name` and `room_max_occupancy`.
 
 **Catalog collection is failure-tolerant and time-bounded**: one `reqwest::Client` with a
 2s per-request timeout, and any unreachable, slow or unparseable source yields an empty Vec

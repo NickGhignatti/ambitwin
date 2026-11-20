@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
 };
 
-const DEFAULT_COLUMNS: &[&str] = &["roomName", "roomMaxOccupancy"];
+const DEFAULT_COLUMNS: &[&str] = &["room_name", "room_max_occupancy"];
 
 pub async fn init_building_preferences(
     _claims: GatewayClaims,
@@ -73,8 +73,8 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         let cols = state.building_preferences.get("bldg-1").unwrap();
-        assert!(cols.contains(&"roomName".to_string()));
-        assert!(cols.contains(&"roomMaxOccupancy".to_string()));
+        assert!(cols.contains(&"room_name".to_string()));
+        assert!(cols.contains(&"room_max_occupancy".to_string()));
         assert_eq!(cols.len(), DEFAULT_COLUMNS.len());
     }
 
@@ -107,8 +107,8 @@ mod tests {
     #[tokio::test]
     async fn default_columns_contain_exactly_room_name_and_max_occupancy() {
         // Validates the constant itself, not just that the handler stores something.
-        assert!(DEFAULT_COLUMNS.contains(&"roomName"));
-        assert!(DEFAULT_COLUMNS.contains(&"roomMaxOccupancy"));
+        assert!(DEFAULT_COLUMNS.contains(&"room_name"));
+        assert!(DEFAULT_COLUMNS.contains(&"room_max_occupancy"));
         assert_eq!(DEFAULT_COLUMNS.len(), 2);
     }
 }
