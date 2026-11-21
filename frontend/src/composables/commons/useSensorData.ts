@@ -9,21 +9,11 @@ export interface ApiDataPoint {
   roomId: string
   value?: number
   building?: string
-  // Air Quality fields
-  pm25?: number
-  pm10?: number
-  co2?: number
-  voc?: number
-  temperature?: number
-  humidity?: number
-  aqi?: number
-  indoor_aqi?: number
-  indoorAqi?: number
 }
 
 export function getBuildingData(
   buildingId: Ref<string | undefined>,
-  apiType: 'peopleCount' | 'temperature' | 'airQuality',
+  apiType: 'people_count' | 'temperature' | 'indoor_aqi',
 ) {
   // shallowRef avoids deep reactivity on array contents — mutations are surfaced
   // manually via triggerRef, keeping Vue's scheduler out of the Three.js RAF loop.

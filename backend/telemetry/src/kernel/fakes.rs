@@ -6,64 +6,30 @@ use crate::kernel::ports::{
 use crate::types::building::RegisteredBuilding;
 use crate::types::event::{AlertPayload, TelemetryEvent};
 use crate::types::plugin::{
-    ActionSpec, BoundDirection, BoundSpec, FieldKind, FieldSpec, MetricDescriptor, SensorPlugin,
+    ActionSpec, FieldKind, FieldSpec, LimitSpec, MAX, MetricDescriptor, SensorPlugin,
+    validate_reading,
 };
 use crate::types::query::Bucket;
 use crate::types::reading::{BuildingTotal, Reading};
 use crate::types::sensor::{Command, Sensor, SensorChanges};
 use crate::types::simulation::SimulatedSensor;
-use crate::types::threshold::{Bounds, RoomTemperatureLimit, TemperatureLimits};
+use crate::types::threshold::{self, Bounds, RoomTemperatureLimit, TemperatureLimits};
 use async_trait::async_trait;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 static FAKE_DESCRIPTOR: MetricDescriptor = MetricDescriptor {
     key: "fake",
-    value_field: "fake",
     label: "Fake",
     interface_name: "IFake",
     unit: None,
-    fields: &[
-        FieldSpec {
-            name: "buildingId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "roomId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "timestamp",
-            kind: FieldKind::Finite,
-            required: true,
-        },
-        FieldSpec {
-            name: "fake",
-            kind: FieldKind::Finite,
-            required: true,
-        },
-    ],
+    value_kind: FieldKind::Finite,
+    limit: LimitSpec {
+        min: Some(None),
+        max: Some(None),
+    },
 };
-
-static FAKE_BOUNDS: &[BoundSpec] = &[
-    BoundSpec {
-        key: "maxFake",
-        field: "fake",
-        label: "Fake",
-        unit: None,
-        direction: BoundDirection::Above,
-    },
-    BoundSpec {
-        key: "minFake",
-        field: "fake",
-        label: "Fake",
-        unit: None,
-        direction: BoundDirection::Below,
-    },
-];
 
 pub struct FakePlugin {
     pub key: &'static str,
@@ -85,24 +51,10 @@ impl SensorPlugin for FakePlugin {
     }
 
     fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
-        let Some(value) = payload[self.key].as_f64() else {
-            return Err(vec![format!("{}: must be a finite number.", self.key)]);
-        };
-        Ok(Reading {
-            building_id: payload["buildingId"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned(),
-            room_id: payload["roomId"].as_str().unwrap_or_default().to_owned(),
+        validate_reading(&FAKE_DESCRIPTOR, payload).map(|reading| Reading {
             metric: self.key.to_owned(),
-            ts_ms: payload["timestamp"].as_f64().unwrap_or_default() as i64,
-            value,
-            payload: payload.as_object().cloned().unwrap_or_default(),
+            ..reading
         })
-    }
-
-    fn bounds(&self) -> &'static [BoundSpec] {
-        FAKE_BOUNDS
     }
 
     fn actions(&self) -> &'static [ActionSpec] {
@@ -117,7 +69,6 @@ pub fn reading(metric: &str, building_id: &str, room_id: &str, ts_ms: i64, value
         metric: metric.to_owned(),
         ts_ms,
         value,
-        payload: Map::default(),
     }
 }
 
@@ -300,8 +251,10 @@ impl ThresholdStore for FakeThresholds {
         Ok(keys
             .iter()
             .map(|(metric, room_id)| {
-                self.find(building_id, Some(room_id), metric)
-                    .or_else(|| self.find(building_id, None, metric))
+                threshold::resolve(
+                    self.find(building_id, Some(room_id), metric).as_ref(),
+                    self.find(building_id, None, metric).as_ref(),
+                )
             })
             .collect())
     }
@@ -358,7 +311,7 @@ impl ThresholdStore for FakeThresholds {
         if self.rooms.is_empty() && self.find(building_id, None, "temperature").is_none() {
             return Ok(None);
         }
-        let max_of = |bounds: Option<Bounds>| bounds.and_then(|b| b.get("maxTemp")?.as_f64());
+        let max_of = |bounds: Option<Bounds>| bounds.and_then(|b| b.get(MAX)?.as_f64());
         Ok(Some(TemperatureLimits {
             building_id: building_id.to_owned(),
             max_temperature: max_of(self.find(building_id, None, "temperature")),

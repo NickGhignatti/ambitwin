@@ -1,6 +1,7 @@
 use crate::kernel::ports::{BuildingStore, RegistrationEvents, ThresholdStore};
 use crate::types::building::{RegisteredBuilding, Room};
 use crate::types::error::DomainError;
+use crate::types::plugin::MAX;
 use crate::types::threshold::Bounds;
 use serde::Deserialize;
 use serde_json::Value;
@@ -50,7 +51,7 @@ impl Registration {
 
         if let Some(max_temperature) = request.max_temperature {
             let mut patch = Bounds::new();
-            patch.insert("maxTemp".to_owned(), max_temperature.into());
+            patch.insert(MAX.to_owned(), max_temperature.into());
             self.thresholds
                 .upsert(building_id, None, "temperature", &patch)
                 .await?;
@@ -140,7 +141,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(bounds["maxTemp"], 26.5);
+        assert_eq!(bounds["max"], 26.5);
     }
 
     #[tokio::test]

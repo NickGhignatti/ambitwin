@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use twin_schema::EstimatedOccupancy;
 
-const ESTIMATED_OCCUPANCY: &str = "estimatedOccupancy";
+const ESTIMATED_OCCUPANCY: &str = "estimated_occupancy";
 
-/// Stores digital-twin's room counts from one Wi-Fi tick as `estimatedOccupancy` readings.
+/// Stores digital-twin's room counts from one Wi-Fi tick as `estimated_occupancy` readings.
 pub struct Occupancy {
     pub ingest: Arc<Ingest>,
 }
@@ -22,7 +22,7 @@ impl Occupancy {
                     "type": ESTIMATED_OCCUPANCY,
                     "roomId": room,
                     "timestamp": occupancy.tick,
-                    ESTIMATED_OCCUPANCY: count,
+                    "value": count,
                 })
             })
             .collect();

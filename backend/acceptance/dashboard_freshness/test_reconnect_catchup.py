@@ -48,7 +48,7 @@ def test_reading_ingested_during_an_outage_is_available_after_reconnecting():
         dashboard.connect(SOCKET_URL, headers=headers)
         try:
             latest = telemetry.latest_temperature(client, building_id, room_id)
-            assert latest["temperature"] == 30.0, (
+            assert latest["value"] == 30.0, (
                 "dashboard must reflect the reading ingested during the outage, "
                 "not the pre-outage value, once connectivity is restored"
             )

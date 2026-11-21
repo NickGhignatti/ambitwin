@@ -10,7 +10,7 @@
     | Hop | One model call. It either answers or asks for tools | 3 hops: list, read, answer |
     | Chunk | One piece of a document, stored with its vector and its words | A table from `floor-plans.qd` |
     | Embedding | A list of 768 numbers that stands for a text's meaning | Close numbers = close meaning |
-    | Vector search | Find the chunks whose embedding is closest to the question's | "crowded" finds `peopleCount` |
+    | Vector search | Find the chunks whose embedding is closest to the question's | "crowded" finds `people_count` |
     | Keyword search | Find the chunks that contain the question's exact words | finds `flush_interval` |
     | Hybrid search | Do both, then merge the two lists | |
     | RRF | Reciprocal Rank Fusion: score = sum of `1 / (60 + rank)` over both lists | rank 1 and 3 give 0.0323 |
@@ -527,7 +527,7 @@ for call in calls:
 
 **Errors go back to the model as normal tool messages.** The model can retry with other arguments or give up. Nothing is raised to the caller. The `ctx.citations` list collects every chunk any tool found, which the final citation check uses.
 
-**Example.** The model asks `get_sensor_history` with `metric: temperature, aggregation: sum`. The Pydantic check refuses: sum is only allowed for `peopleCount`. The model gets `invalid arguments: …sum aggregation is only meaningful for peopleCount` and, on the next hop, usually asks again with `avg`.
+**Example.** The model asks `get_sensor_history` with `metric: temperature, aggregation: sum`. The Pydantic check refuses: sum is only allowed for `people_count`. The model gets `invalid arguments: …sum aggregation is only meaningful for people_count` and, on the next hop, usually asks again with `avg`.
 
 ### Streaming: the `done` frame wins
 
@@ -592,8 +592,8 @@ Ada, member of `eng`, asks "How many people are in Lab 2 of HQ?". HQ has id `b1`
 | 12, hop 0 | Tool message `{"buildings":[{"id":"b1","name":"HQ","domains":["eng"],"room_count":4}]}` |
 | 8, hop 1 | The model asks `list_rooms({"building_id":"b1"})` |
 | 12, hop 1 | `{"building_id":"b1","building_name":"HQ","rooms":[{"id":"r2","name":"Lab 2","capacity":30,…},…]}` |
-| 8, hop 2 | The model asks `get_latest_sensor_data({"building_id":"b1","metric":"peopleCount","room_id":"r2"})` |
-| 12, hop 2 | `{"metric":"peopleCount","label":"People Count","unit":"people","readings":[{"room_id":"r2","room_name":"Lab 2","timestamp":1700000000000,"value":12}]}` |
+| 8, hop 2 | The model asks `get_latest_sensor_data({"building_id":"b1","metric":"people_count","room_id":"r2"})` |
+| 12, hop 2 | `{"metric":"people_count","label":"People Count","unit":"people","readings":[{"room_id":"r2","room_name":"Lab 2","timestamp":1700000000000,"value":12}]}` |
 | 9, hop 3 | Token frames `Lab 2 `, `has 12 `, `people.` |
 | 14 | `{"type":"done","answer":"Lab 2 has 12 people.","citations":[],"retrieved_ids":[],"usage":{…},"idk":false,"decision":"answered","tool_calls":[3 entries],"hallucinated_citations":[]}` |
 
@@ -662,7 +662,7 @@ Registering a name twice fails at import. `schemas()` turns every `Args` class i
 | `get_sensor_history` | `building_id`, `metric`, `time_range` 1D, 1W, 1M, `aggregation` avg, sum, min, max, `room_id`? | `GET telemetry /{metric}/dashboard` | Time buckets |
 | `list_sensors` | `building_id`, `room_id`? | `GET telemetry /sensors/buildings/{id}[/rooms/{room}]` | Sensor id, type, room |
 
-`metric` is one of `peopleCount`, `temperature`, `airQuality`.
+`metric` is one of `people_count`, `temperature`, `co2`, `indoor_aqi`, `humidity`.
 
 ### One whole tool: `search_docs`
 
@@ -862,7 +862,7 @@ LIMIT :limit
 
 `websearch_to_tsquery` turns plain words into a text-search query (it understands quotes and `-`). `@@` means "matches". `ts_rank` scores how well. Both use `english` stemming, so "rooms" matches "room".
 
-Search by meaning misses rare exact words like `flush_interval`. Search by words misses rephrasing like "crowded" for `peopleCount`. Together they cover both.
+Search by meaning misses rare exact words like `flush_interval`. Search by words misses rephrasing like "crowded" for `people_count`. Together they cover both.
 
 ### The rights filter
 

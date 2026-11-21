@@ -68,7 +68,7 @@ static ACTIONS: &[ActionSpec] = &[
 
 Absolute (`setTarget`) and relative (`increase`/`decrease`) are **separate first-class actions**, not variants of one another. A device offering only +/- buttons is not a degraded `setTarget` — it is a device that implements two of the three.
 
-`SensorPlugin::actions()` defaults to `&[]`, so a metric with no actuator (peopleCount, airQuality) declares nothing and needs no code.
+`SensorPlugin::actions()` defaults to `&[]`, so a metric with no actuator (`people_count`, `co2`) declares nothing and needs no code.
 
 ### Layer 2 — the command
 
@@ -206,7 +206,7 @@ Step by step:
 The device's own status is never forwarded verbatim — its `503` becomes our `502`, because the failure is ours-talking-to-them, not the caller's request.
 
 .box {`200 accepted` means delivered, not applied} type:{note}
-    The response confirms the command reached the device, not that the room is 21 °C. Confirmation arrives seconds later through the ordinary read path: the boiler heats, the sensor reports 21.4, `POST /ingest` stores it, `telemetry:raw` reaches the browser, the chart moves. If the new value breaches `maxTemp`, the same ingest fires a record onto the `alerts` topic and the user is notified about the change they just made — no action-specific plumbing.
+    The response confirms the command reached the device, not that the room is 21 °C. Confirmation arrives seconds later through the ordinary read path: the boiler heats, the sensor reports 21.4, `POST /ingest` stores it, `telemetry:raw` reaches the browser, the chart moves. If the new value is over temperature's `max`, the same ingest fires a record onto the `alerts` topic and the user is notified about the change they just made — no action-specific plumbing.
 
 ---
 

@@ -245,15 +245,15 @@ mod tests {
     #[test]
     fn a_type_without_a_delivery_path_is_rejected() {
         assert!(matches!(
-            update("ada", "d1", Some("humidity")),
+            update("ada", "d1", Some("noise")),
             Err(DomainError::Validation(m))
-                if m == "type must be one of: temperature, airQuality, peopleCount"
+                if m == "type must be one of: temperature, people_count, co2, indoor_aqi, humidity"
         ));
     }
 
     #[test]
     fn every_alertable_metric_is_a_type() {
-        for metric in ["airQuality", "peopleCount"] {
+        for metric in ["co2", "people_count"] {
             assert_eq!(
                 update("ada", "d1", Some(metric)).unwrap().notification_type,
                 metric
@@ -403,11 +403,11 @@ mod tests {
 
     #[test]
     fn subscribe_also_refuses_a_type_without_a_delivery_path() {
-        let request = request(serde_json::json!({ "types": ["humidity"] }));
+        let request = request(serde_json::json!({ "types": ["noise"] }));
         assert!(matches!(
             request.resolve_lenient("ada", "d1"),
             Err(DomainError::Validation(m))
-                if m == "type must be one of: temperature, airQuality, peopleCount"
+                if m == "type must be one of: temperature, people_count, co2, indoor_aqi, humidity"
         ));
     }
 

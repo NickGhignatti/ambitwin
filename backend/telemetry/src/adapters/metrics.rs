@@ -355,13 +355,13 @@ mod tests {
     #[tokio::test]
     async fn breaches_are_counted_by_metric_and_direction() {
         record_breach("temperature", "high");
-        record_breach("peopleCount", "high");
+        record_breach("people_count", "high");
         let text = rendered_body().await;
         assert!(text.contains(
             r#"telemetry_threshold_breaches_total{direction="high",metric="temperature"} 1"#
         ));
         assert!(text.contains(
-            r#"telemetry_threshold_breaches_total{direction="high",metric="peopleCount"} 1"#
+            r#"telemetry_threshold_breaches_total{direction="high",metric="people_count"} 1"#
         ));
     }
 
