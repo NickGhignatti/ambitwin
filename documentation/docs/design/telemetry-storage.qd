@@ -26,45 +26,31 @@ Three mechanisms cut it. They are independent — each helps on its own, and the
 
 ## Lever 1 — Store Each Fact Once
 
-A temperature reading arrives at `POST /ingest`:
+A temperature reading arrives at `POST /ingest`, inside a batch that names `buildingId` once:
 
 ```json
 {
-  "buildingId": "b1",
+  "type": "temperature",
   "roomId": "r1",
   "timestamp": 1700000000000,
-  "temperature": 21.5
+  "value": 21.5
 }
 ```
 
-The naive row stores all of it twice — once in typed columns, once again in the `payload` JSON blob:
+A reading is one metric and one number, so every key of it has a column:
 
-| building_id | room_id | metric | ts | value | payload |
-|---|---|---|---|---|---|
-| b1 | r1 | temperature | 2023-11-14 22:13:20+00 | 21.5 | `{"buildingId":"b1","roomId":"r1","timestamp":1700000000000,"temperature":21.5}` |
+| building_id | room_id | metric | ts | value |
+|---|---|---|---|---|
+| b1 | r1 | temperature | 2023-11-14 22:13:20+00 | 21.5 |
 
-JSON stores **key names as text on every row**. `"buildingId"` is 12 bytes, repeated 288 000 times a day, for a value that is already in the column next to it.
+- `building_id` comes from the batch, `metric` from `type`, `ts` from `timestamp`.
+- No blob holds a second copy. JSON stores **key names as text on every row**: `"buildingId"` is 12 bytes, repeated 288 000 times a day, for a value that is already in a column.
+- A body with any other key is refused, so nothing can ride along and need a place to live.
 
-**Rule:** `payload` holds only what no column holds.
+`GET /{metric}/latest` builds its answer straight from the columns: `building`, `roomId`, `timestamp`, `value`.
 
-| metric | payload before | payload after |
-|---|---|---|
-| `temperature` | 4 keys | `{}` |
-| `peopleCount` | 4 keys | `{}` |
-| `airQuality` | 12 keys | 8 keys — `pm25`, `pm10`, `co2`, `voc`, `temperature`, `humidity`, `aqi`, `scenario` |
-
-The stored row becomes:
-
-| building_id | room_id | metric | ts | value | payload |
-|---|---|---|---|---|---|
-| b1 | r1 | temperature | 2023-11-14 22:13:20+00 | 21.5 | `{}` |
-
-Nothing is lost. `building_id`, `room_id` and `ts` are the columns; `value` is the measurement the plugin designated. `GET /{metric}/latest` reassembles the original envelope from the columns before answering.
-
-The list is not hand-maintained: `MetricDescriptor.fields` names every field a metric declares, and the plugin names the one that became `value`. Everything else is what gets kept.
-
-.box {The trim affects storage only, not the wire} type:{note}
-    The Redis `telemetry:raw` event still carries the **full** payload. This changes what is written to disk, not what is published — `dashboard` and the browser see no difference.
+.box {The stored row and the wire agree} type:{note}
+    The Redis `telemetry:raw` event carries the same four keys per reading. Storage and the live tick hold the same facts.
 
 ---
 
@@ -73,9 +59,9 @@ The list is not hand-maintained: `MetricDescriptor.fields` names every field a m
 Room `r1` writes 2 880 rows a day. Look at what they have in common:
 
 ```
-b1 | r1 | temperature | 22:13:20 | 21.5 | {}
-b1 | r1 | temperature | 22:13:50 | 21.6 | {}
-b1 | r1 | temperature | 22:14:20 | 21.6 | {}
+b1 | r1 | temperature | 22:13:20 | 21.5
+b1 | r1 | temperature | 22:13:50 | 21.6
+b1 | r1 | temperature | 22:14:20 | 21.6
 ...2877 more, all starting the same way
 ```
 
@@ -159,19 +145,19 @@ Decided entirely by the requested time range, in the adapter:
 
 | | one year of data |
 |---|---|
-| nothing applied | ~180 GB |
-| lever 1 — no duplicated payload | ~110 GB |
+| a copy of each body kept beside the columns | ~180 GB |
+| lever 1 — each fact stored once | ~110 GB |
 | \+ lever 2 — compression after 7 days | ~8 GB |
 | \+ lever 3 — 14-day raw, hourly rollup | **~2 GB** |
 
-Estimates, not measurements. `payload` width dominates and depends on the real airQuality mix. Verify with:
+Estimates, not measurements. Row width dominates. Verify with:
 
 ```sql
 select pg_size_pretty(hypertable_size('readings'));
 select * from hypertable_compression_stats('readings');
 ```
 
-A compression ratio below ~8× means `payload` is carrying more than it should.
+A compression ratio below ~8× means rows are less alike than expected, for example room ids that change between readings.
 
 ---
 
@@ -193,7 +179,7 @@ Three practical differences:
 - **Buckets were keyed on the wrong clock.** `timeField` was `createdAt` (ingest time) while every query filtered and sorted on `timestamp` (sensor event time), so Mongo could not skip buckets by time. Postgres has one `ts` column serving as both the partition key and the query key, so chunk exclusion works.
 - **No rollup equivalent.** Mongo deleted everything at 90 days via `expireAfterSeconds`. Here data older than 14 days survives as hourly summaries, indefinitely.
 
-Where Mongo was better: compression was immediate and unconditional, and typed schema fields meant no JSON key repetition — which is precisely the gap lever 1 closes.
+Where Mongo was better: compression was immediate and unconditional, and typed schema fields meant no JSON key repetition — which is the gap lever 1 closes by having no JSON blob at all.
 
 ---
 
@@ -204,7 +190,8 @@ Where Mongo was better: compression was immediate and unconditional, and typed s
 | tables, hypertable, compression, retention | `backend/telemetry/migrations/0002_timescale.up.sql` |
 | hourly rollup | `backend/telemetry/migrations/0003_rollup.up.sql` |
 | unique reading key | `backend/telemetry/migrations/0007_readings_key.up.sql` |
-| payload trim on write, envelope re-inflation on read | `backend/telemetry/src/adapters/driven/postgres/readings.rs` |
+| no payload column | `backend/telemetry/migrations/0008_one_value_per_reading.up.sql` |
+| one row per reading, written and read back | `backend/telemetry/src/adapters/driven/postgres/readings.rs` |
 | bucket size per range | `backend/telemetry/src/types/query.rs` |
 
 See also [Communication & Data Flow](../architecture/data-flow.qd).

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ambitwin.kubeet.dev/schemas/ingest-batch.schema.json",
   "title": "IngestBatch",
-  "description": "The body POSTed to /telemetry/ingest. Three producers build it by hand in three languages and telemetry walks it as raw JSON, so no compiler sees this shape. Field types mirror telemetry's FieldKind exactly: NonEmptyString, Finite (any JSON number) and NonNegativeInt (a number with no fractional part, which is what JSON Schema calls an integer).",
+  "description": "The body POSTed to /telemetry/ingest. Three producers build it by hand in three languages and telemetry walks it as raw JSON, so no compiler sees this shape. A reading is one metric and one number.",
   "type": "object",
   "required": ["buildingId", "readings"],
   "additionalProperties": false,
@@ -19,73 +19,42 @@
   "$defs": {
     "reading": {
       "type": "object",
-      "required": ["type", "roomId", "timestamp"],
-      "not": {
-        "required": ["buildingId"],
-        "$comment": "The batch owns buildingId. Telemetry stamps it onto every reading and rejects one that names a different building, so a reading carrying it can only agree or break."
-      },
+      "required": ["type", "roomId", "timestamp", "value"],
+      "additionalProperties": false,
+      "$comment": "No other keys: a device measuring several metrics sends one reading for each.",
       "properties": {
         "type": {
           "$comment": "The registry dispatches on this. An unknown value rejects the whole batch.",
           "enum": [
             "temperature",
-            "peopleCount",
-            "airQuality",
-            "totalDeviceCount",
-            "ratioDeviceCount",
-            "estimatedOccupancy"
+            "people_count",
+            "co2",
+            "indoor_aqi",
+            "humidity",
+            "total_device_count",
+            "ratio_device_count",
+            "estimated_occupancy"
           ]
         },
         "roomId": { "type": "string", "minLength": 1 },
-        "timestamp": { "type": "number", "description": "Epoch milliseconds." }
+        "timestamp": { "type": "number", "description": "Epoch milliseconds." },
+        "value": { "type": "number" }
       },
-      "$comment": "Extra keys are allowed: a plugin's own fields ride along and are flattened into the published reading.",
       "allOf": [
         {
-          "if": { "properties": { "type": { "const": "temperature" } } },
-          "then": {
-            "required": ["temperature"],
-            "properties": { "temperature": { "type": "number" } }
-          }
-        },
-        {
-          "if": { "properties": { "type": { "const": "peopleCount" } } },
-          "then": {
-            "required": ["peopleCount"],
-            "properties": { "peopleCount": { "type": "integer", "minimum": 0 } }
-          }
-        },
-        {
-          "if": { "properties": { "type": { "const": "totalDeviceCount" } } },
-          "then": {
-            "required": ["totalDeviceCount"],
-            "properties": { "totalDeviceCount": { "type": "integer", "minimum": 0 } }
-          }
-        },
-        {
-          "if": { "properties": { "type": { "const": "ratioDeviceCount" } } },
-          "then": {
-            "required": ["ratioDeviceCount"],
-            "properties": { "ratioDeviceCount": { "type": "integer", "minimum": 0 } }
-          }
-        },
-        {
-          "if": { "properties": { "type": { "const": "estimatedOccupancy" } } },
-          "then": {
-            "required": ["estimatedOccupancy"],
-            "properties": { "estimatedOccupancy": { "type": "integer", "minimum": 0 } }
-          }
-        },
-        {
-          "if": { "properties": { "type": { "const": "airQuality" } } },
-          "then": {
-            "$comment": "The one metric whose value field is not its own name: telemetry reads indoor_aqi, but only pm25 and co2 are required, so a reading without indoor_aqi is stored as zero rather than refused.",
-            "required": ["pm25", "co2"],
+          "if": {
             "properties": {
-              "pm25": { "type": "number" },
-              "co2": { "type": "number" }
+              "type": {
+                "enum": [
+                  "people_count",
+                  "total_device_count",
+                  "ratio_device_count",
+                  "estimated_occupancy"
+                ]
+              }
             }
-          }
+          },
+          "then": { "properties": { "value": { "type": "integer", "minimum": 0 } } }
         }
       ]
     }

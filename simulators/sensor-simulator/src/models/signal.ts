@@ -65,14 +65,9 @@ export const parseStart = (body: unknown): IBuilding => {
   };
 };
 
-export interface ISignalPeopleCount {
+/** One metric's number in one room; the batch adds `type`. */
+export interface ISignalReading {
   roomId: string;
   timestamp: number;
-  peopleCount: number;
-}
-
-export interface ISignalTemperature {
-  roomId: string;
-  timestamp: number;
-  temperature: number;
+  value: number;
 }

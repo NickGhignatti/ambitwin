@@ -176,8 +176,8 @@
     "expected_sources": [],
     "must_cite": false,
     "expected_keywords": [],
-    "key_facts": "Agent should locate a building (list_buildings to get an id, since it must never invent ids), then call get_latest_sensor_data with peopleCount and rank the returned room readings. No fabricated numbers.",
-    "ideal_answer": "Resolves a building via list_buildings, calls get_latest_sensor_data for peopleCount, and ranks named rooms using only the latest readings and their timestamps."
+    "key_facts": "Agent should locate a building (list_buildings to get an id, since it must never invent ids), then call get_latest_sensor_data with people_count and rank the returned room readings. No fabricated numbers.",
+    "ideal_answer": "Resolves a building via list_buildings, calls get_latest_sensor_data for people_count, and ranks named rooms using only the latest readings and their timestamps."
   },
   {
     "id": "cv-live-003",
@@ -187,8 +187,8 @@
     "expected_sources": [],
     "must_cite": false,
     "expected_keywords": [],
-    "key_facts": "Agent must call list_buildings to obtain a real building id, then combine get_latest_sensor_data peopleCount readings with structural room capacities. Ids and numbers must come from tool output, never prior knowledge.",
-    "ideal_answer": "Picks an accessible building, obtains structural capacities and latest peopleCount readings, and lists occupancy versus capacity with timestamps."
+    "key_facts": "Agent must call list_buildings to obtain a real building id, then combine get_latest_sensor_data people_count readings with structural room capacities. Ids and numbers must come from tool output, never prior knowledge.",
+    "ideal_answer": "Picks an accessible building, obtains structural capacities and latest people_count readings, and lists occupancy versus capacity with timestamps."
   },
   {
     "id": "cv-live-004",

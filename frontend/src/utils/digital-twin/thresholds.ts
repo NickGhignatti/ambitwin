@@ -8,8 +8,8 @@ export interface ThresholdPatch {
 
 const BASE = '/telemetry/thresholds/temperature/buildings'
 
-// Telemetry names the upper temperature bound `maxTemp`; any other key is refused as not a bound.
-const upperBound = (maxTemperature: number) => ({ maxTemp: maxTemperature })
+// a limit has two ends, `min` and `max`; telemetry refuses any other key
+const upperBound = (maxTemperature: number) => ({ max: maxTemperature })
 
 export const buildingTemperaturePatch = (
   buildingId: string,

@@ -84,28 +84,6 @@ def compute_all(conditions: EnvironmentConditions) -> dict[str, float]:
     }
 
 
-# AQI helper (US EPA standard — PM2.5 and PM10 only)
-
-_AQI_PM25_BREAKPOINTS = [
-    (0.0,   12.0,   0,   50),
-    (12.1,  35.4,  51,  100),
-    (35.5,  55.4, 101,  150),
-    (55.5, 150.4, 151,  200),
-    (150.5, 250.4, 201, 300),
-    (250.5, 350.4, 301, 400),
-    (350.5, 500.4, 401, 500),
-]
-
-def pm25_to_aqi(pm25: float) -> int:
-    """Convert a PM2.5 concentration (µg/m³) to US EPA AQI (0–500)."""
-    for c_lo, c_hi, aqi_lo, aqi_hi in _AQI_PM25_BREAKPOINTS:
-        if c_lo <= pm25 <= c_hi:
-            return round(
-                (aqi_hi - aqi_lo) / (c_hi - c_lo) * (pm25 - c_lo) + aqi_lo
-            )
-    return 500  # Beyond scale
-
-
 # Indoor AQI helper (custom weighted index)
 
 _INDOOR_AQI_LIMITS = {

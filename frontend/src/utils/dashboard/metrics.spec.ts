@@ -27,7 +27,7 @@ describe('the metric catalog the server serves', () => {
 
 describe('columns restored from saved preferences', () => {
   // Preferences store metric keys, and rows are filled by metric key, so a second name would never match.
-  it.each(['roomName', 'roomMaxOccupancy', 'totalDeviceCount'])(
+  it.each(['room_name', 'room_max_occupancy', 'total_device_count'])(
     '%s is keyed by itself',
     (metricKey) => {
       expect(metricKeyToHeader(metricKey)).toMatchObject({ key: metricKey, metricKey })

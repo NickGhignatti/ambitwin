@@ -189,7 +189,7 @@ components:
             ingestedAt: 1762596900000
             readings:
               - { type: temperature, roomId: G-Room-001, timestamp: 1762596899000, value: 21.4 }
-              - { type: peopleCount, roomId: G-Room-002, timestamp: 1762596899000, value: 12 }
+              - { type: people_count, roomId: G-Room-002, timestamp: 1762596899000, value: 12 }
 
     Devices:
       name: devices
@@ -247,7 +247,7 @@ components:
           description: The one domain room that receives it.
         metric:
           type: string
-          enum: [temperature, airQuality, peopleCount]
+          enum: [temperature, people_count, co2, indoor_aqi, humidity]
           description: Set on threshold breaches only. The browser hides one whose metric the account switched off.
         icon: { type: string }
 
@@ -267,12 +267,12 @@ components:
     TelemetryReading:
       type: object
       description: |
-        One room's reading. The four fixed fields are always there; the metric's own fields ride
-        alongside. Never repeats `buildingId` or `ingestedAt`, which belong to the envelope.
+        One metric and one number from one room. Exactly these four keys: no other measure
+        rides alongside. Never repeats `buildingId` or `ingestedAt`, which belong to the envelope.
       required: [type, roomId, timestamp, value]
-      additionalProperties: true
+      additionalProperties: false
       properties:
-        type: { type: string, minLength: 1, description: The metric. }
+        type: { type: string, minLength: 1, description: The metric id, in snake_case, like `people_count`. }
         roomId: { type: string, minLength: 1 }
         timestamp: { type: integer }
         value: { type: number }
