@@ -32,9 +32,9 @@ const buildingId = computed(() => props.building?.id)
 const userCanEdit = computed(() => (props.building ? canEdit(props.building.domains) : false))
 const rooms = computed(() => filterRooms(props.building?.rooms ?? [], query.value))
 
-const { data: people } = getBuildingData(buildingId, 'peopleCount')
+const { data: people } = getBuildingData(buildingId, 'people_count')
 const { data: temperatures } = getBuildingData(buildingId, 'temperature')
-const { data: airQuality } = getBuildingData(buildingId, 'airQuality')
+const { data: airQuality } = getBuildingData(buildingId, 'indoor_aqi')
 
 const byRoom = (points: ApiDataPoint[], read: (point: ApiDataPoint) => number | undefined) =>
   new Map(points.map((point) => [point.roomId, read(point)]))
@@ -42,7 +42,7 @@ const byRoom = (points: ApiDataPoint[], read: (point: ApiDataPoint) => number | 
 const readings = computed(() => ({
   people: byRoom(people.value ?? [], (p) => p.value),
   temperature: byRoom(temperatures.value ?? [], (p) => p.value),
-  airQuality: byRoom(airQuality.value ?? [], (p) => p.indoor_aqi ?? p.indoorAqi),
+  airQuality: byRoom(airQuality.value ?? [], (p) => p.value),
 }))
 
 watch(

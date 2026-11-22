@@ -50,22 +50,8 @@
           "type": "number"
         }
       },
-      "$comment": "Plugin fields ride alongside the four fixed names, so extra keys are allowed.",
-      "not": {
-        "anyOf": [
-          {
-            "required": [
-              "buildingId"
-            ]
-          },
-          {
-            "required": [
-              "ingestedAt"
-            ]
-          }
-        ],
-        "$comment": "The envelope owns both; a reading repeating them can only agree or contradict it."
-      }
+      "additionalProperties": false,
+      "$comment": "Exactly four names: one metric, one number. buildingId and ingestedAt belong to the envelope."
     }
   }
 }

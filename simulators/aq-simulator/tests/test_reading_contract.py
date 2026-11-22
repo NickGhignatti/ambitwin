@@ -14,37 +14,31 @@ _FIXTURE = json.loads(
 )
 
 
-def _pinned_reading() -> dict:
+def _pinned_readings() -> list[dict]:
     case = next(c for c in _FIXTURE["cases"] if c["producer"] == "aq-simulator")
-    return case["body"]["readings"][0]
+    return case["body"]["readings"]
 
 
-def _read_one() -> dict:
+def _read_one_tick() -> list[dict]:
     room = SimulationRoom(
         building_id="bldg-3f2b4c5d",
         room_id="room-lab-2",
         scenario=Scenario.OCCUPIED_OFFICE,
     )
-    return room.read(0.1).model_dump()
+    return [reading.model_dump() for reading in room.read(0.1)]
 
 
-def test_the_reading_carries_exactly_the_fields_the_fixture_pins():
-    assert sorted(_read_one()) == sorted(_pinned_reading())
+def test_a_tick_sends_one_reading_per_metric_the_fixture_pins():
+    assert [r["type"] for r in _read_one_tick()] == [r["type"] for r in _pinned_readings()]
+
+
+def test_every_reading_carries_exactly_the_fields_the_fixture_pins():
+    for reading, pinned in zip(_read_one_tick(), _pinned_readings()):
+        assert sorted(reading) == sorted(pinned)
 
 
 def test_the_reading_does_not_repeat_the_batchs_building():
     """`buildingId` belongs to the batch. Telemetry stamps it onto every reading and
     rejects one naming a different building, so sending it here can only agree or break.
     """
-    assert "buildingId" not in _read_one()
-
-
-def test_the_type_selects_the_plugin_the_fixture_names():
-    assert _read_one()["type"] == _pinned_reading()["type"] == "airQuality"
-
-
-def test_the_scenario_is_one_the_simulator_can_actually_produce():
-    """The fixture's scenario is a plain string to telemetry, which validates it only as a
-    non-empty string -- so nothing downstream would catch an invented value.
-    """
-    assert _pinned_reading()["scenario"] in {s.value for s in Scenario}
+    assert all("buildingId" not in reading for reading in _read_one_tick())

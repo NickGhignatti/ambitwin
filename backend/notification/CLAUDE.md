@@ -31,7 +31,7 @@ Any other metric is dropped and counted `unsupported_metric` (`BreachOutcome::la
 visible, never silently skipped.
 
 **Redelivery is expected, so delivery is cooldown-guarded**: a breach arms a Redis cooldown
-of `COOLDOWN_SECONDS` (300) keyed `alert:{metric}:{field}:{building}:{room}` — per field, so
+of `COOLDOWN_SECONDS` (300) keyed `alert:{metric}:{building}:{room}` — per metric, so
 metrics never silence each other; while it is active the lookup, the publish and the re-arm
 are all suppressed. Kafka redelivery and a renamed consumer group
 (which replays the topic from the beginning) are both absorbed by this.

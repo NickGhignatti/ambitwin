@@ -45,7 +45,6 @@ async fn wait_for(consumer: &StreamConsumer, room_id: &str) -> (String, serde_js
 fn alert(room_id: &str, metric: &str, value: f64, direction: BoundDirection) -> AlertPayload {
     AlertPayload {
         metric: metric.to_owned(),
-        field: metric.to_owned(),
         building_id: "b1".to_owned(),
         room_id: room_id.to_owned(),
         building_name: "HQ".to_owned(),
@@ -75,7 +74,7 @@ async fn a_breach_reaches_the_alerts_topic_keyed_by_building_and_room() {
     let (key, body) = wait_for(&consumer, &room_id).await;
     assert_eq!(key, format!("b1:{room_id}"));
     assert_eq!(body["type"], "temperature");
-    assert_eq!(body["temperature"], 26.0);
+    assert_eq!(body["value"], 26.0);
     assert_eq!(body["direction"], "high");
     assert_eq!(body["threshold"], 25.0);
     assert_eq!(body["timestamp"], 1_700_000_000_000i64);

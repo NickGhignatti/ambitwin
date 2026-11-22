@@ -115,7 +115,7 @@ mod tests {
     fn occupancy(readings: FakeReadings) -> (Occupancy, Arc<FakeReadings>) {
         let readings = Arc::new(readings);
         let registry = PluginRegistry::new(vec![Box::new(FakePlugin {
-            key: "estimatedOccupancy",
+            key: "estimated_occupancy",
         })])
         .unwrap();
         let occupancy = Occupancy {

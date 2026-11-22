@@ -43,7 +43,7 @@ components:
         allowed_columns:
           type: array
           items: { type: string }
-          example: ["roomName", "roomMaxOccupancy", "temperature"]
+          example: ["room_name", "room_max_occupancy", "temperature"]
 
     UpdatePreferencesRequest:
       type: object
@@ -52,7 +52,7 @@ components:
         allowed_columns:
           type: array
           items: { type: string }
-          example: ["roomName", "peopleCount", "airQuality"]
+          example: ["room_name", "people_count", "co2"]
 
     UpdatePreferencesResponse:
       type: object
@@ -62,14 +62,15 @@ components:
         building_id: { type: string, example: "42bc920a-8c39-48ae-b033-376739c8ebf0" }
         active_columns: { type: integer, example: 3 }
 
-    MetricField:
+    MetricLimit:
       type: object
-      required: [name, type, required]
+      description: >
+        Which ends of the metric's limit can be set. A present key means that end can be set: a
+        number is where a new building starts, `null` means no starting value. `{}` means no limit.
+      additionalProperties: false
       properties:
-        name: { type: string, example: temperature }
-        type: { type: string, example: number }
-        required: { type: boolean }
-        description: { type: string }
+        min: { type: [number, "null"], example: 18 }
+        max: { type: [number, "null"], example: 27 }
 
     MetricAction:
       type: object
@@ -90,18 +91,16 @@ components:
     MetricContract:
       type: object
       description: One metric. Built from `telemetry_schema::MetricContract`, the same type telemetry's `/contracts` serves.
-      required: [kind, label, interface, unit, fields, actions]
+      required: [kind, label, interface, unit, actions, limit]
       properties:
         kind: { type: string, example: "temperature" }
         label: { type: string, example: "Temperature" }
         interface: { type: string, example: "ITemperature" }
         unit: { type: [string, "null"], example: "°C" }
-        fields:
-          type: array
-          items: { $ref: '#/components/schemas/MetricField' }
         actions:
           type: array
           items: { $ref: '#/components/schemas/MetricAction' }
+        limit: { $ref: '#/components/schemas/MetricLimit' }
         source:
           type: string
           description: The service that declared the metric.
@@ -168,7 +167,7 @@ paths:
     post:
       summary: Give a new building its default columns
       description: |
-        Sets `roomName` and `roomMaxOccupancy` when the building has no columns yet. A building
+        Sets `room_name` and `room_max_occupancy` when the building has no columns yet. A building
         that already has columns keeps them, so calling twice is safe.
       tags: [Preferences]
       parameters:

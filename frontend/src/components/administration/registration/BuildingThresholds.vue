@@ -1,27 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { BuildingDraft, BuildingThresholdDraft } from '@/types/administration/buildingDraft.ts'
+import type { BuildingDraft } from '@/types/administration/buildingDraft.ts'
+import type { MetricContract } from '@/types/dashboard/table.ts'
 import FormField from '@/components/commons/forms/FormField.vue'
 import TextInput from '@/components/commons/forms/TextInput.vue'
-import RangeSlider from '@/components/commons/forms/RangeSlider.vue'
+import ThresholdInputs from '@/components/administration/registration/ThresholdInputs.vue'
 
-const props = defineProps<{ draft: BuildingDraft }>()
+defineProps<{ draft: BuildingDraft; metrics: MetricContract[] }>()
 
 const emit = defineEmits<{ update: [patch: Partial<Omit<BuildingDraft, 'rooms'>>] }>()
 
 const { t } = useI18n()
-
-// Air quality has only an upper threshold; the lower thumb is display-only.
-const aqiFloor = ref(0)
-
-const setThreshold = (patch: Partial<BuildingThresholdDraft>) =>
-  emit('update', { thresholds: { ...props.draft.thresholds, ...patch } })
 </script>
 
 <template>
-  <section class="grid gap-5 md:grid-cols-2">
-    <FormField v-slot="{ id }" class="md:col-span-2" :label="t('model.register.buildingName')">
+  <section class="space-y-5">
+    <FormField v-slot="{ id }" :label="t('model.register.buildingName')">
       <TextInput
         :id="id"
         :model-value="draft.name"
@@ -31,30 +25,13 @@ const setThreshold = (patch: Partial<BuildingThresholdDraft>) =>
       />
     </FormField>
 
-    <FormField :label="t('model.register.temperature')">
-      <RangeSlider
-        :min="0"
-        :max="50"
-        unit="°C"
-        color="var(--cv-warning)"
-        :label="t('model.register.temperature')"
-        :low="draft.thresholds.minTemp"
-        :high="draft.thresholds.maxTemp"
-        @update:low="setThreshold({ minTemp: $event })"
-        @update:high="setThreshold({ maxTemp: $event })"
+    <div class="space-y-2">
+      <p class="text-body-sm text-on-surface-variant">{{ t('model.register.thresholds') }}</p>
+      <ThresholdInputs
+        :metrics="metrics"
+        :values="draft.thresholds"
+        @update="emit('update', { thresholds: $event })"
       />
-    </FormField>
-
-    <FormField :label="t('model.register.indoorAqi')">
-      <RangeSlider
-        v-model:low="aqiFloor"
-        :min="0"
-        :max="200"
-        color="var(--cv-tertiary)"
-        :label="t('model.register.indoorAqi')"
-        :high="draft.thresholds.maxAqi"
-        @update:high="setThreshold({ maxAqi: $event })"
-      />
-    </FormField>
+    </div>
   </section>
 </template>

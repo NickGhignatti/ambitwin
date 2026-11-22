@@ -132,29 +132,24 @@ components:
           example: "5c1e0b7a-9f2d-4c1e-8a61-3b7e0d2f9c44"
         position: { $ref: "#/components/schemas/Coordinates" }
 
-    MetricFieldContract:
-      type: object
-      required: [name, type, required]
-      properties:
-        name: { type: string }
-        type: { type: string, example: string }
-        required: { type: boolean }
-        description: { type: string }
-
     MetricContract:
       type: object
-      required: [kind, label, interface, unit, fields, actions]
+      required: [kind, label, interface, unit, actions, limit]
       properties:
-        kind: { type: string, example: "roomName" }
-        label: { type: string, example: "Room" }
-        interface: { type: string, example: "IRoom" }
+        kind: { type: string, example: "room_name" }
+        label: { type: string, example: "Room Name" }
+        interface: { type: string, example: "IRoomName" }
         unit: { type: [string, "null"] }
-        fields:
-          type: array
-          items: { $ref: "#/components/schemas/MetricFieldContract" }
         actions:
           type: array
           items: { type: object }
+        limit:
+          type: object
+          description: Always `{}` here. A room's name and capacity are not readings, so nothing is held to a limit.
+          additionalProperties: false
+          properties:
+            min: { type: [number, "null"] }
+            max: { type: [number, "null"] }
 
 security:
   - sessionCookie: []

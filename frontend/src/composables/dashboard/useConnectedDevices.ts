@@ -17,7 +17,7 @@ export function useConnectedDevices(buildingId: Ref<string | undefined>) {
   // A report only signals "re-read": telemetry owns the sum, the browser never adds rooms.
   const { readings } = useBuildingReadings(
     buildingId,
-    computed(() => ['totalDeviceCount']),
+    computed(() => ['total_device_count']),
   )
   let inFlight: AbortController | null = null
 
@@ -48,7 +48,7 @@ export function useConnectedDevices(buildingId: Ref<string | undefined>) {
     { immediate: true },
   )
   watch(
-    [buildingId, () => readings.value.totalDeviceCount],
+    [buildingId, () => readings.value.total_device_count],
     ([id]) => {
       if (id) void load(id)
     },
