@@ -7,8 +7,8 @@ const STATUS = 'dashboard.table.rooms.status'
 
 const room = (roomId: string, capacity: number, status = `${STATUS}.empty`): TableBody => ({
   roomId,
-  roomName: `Room ${roomId}`,
-  roomMaxOccupancy: capacity,
+  room_name: `Room ${roomId}`,
+  room_max_occupancy: capacity,
   status,
 })
 
@@ -22,24 +22,17 @@ const point = (roomId: string, value: number) => ({ timestamp: 0, roomId, value 
 
 describe('the building summary above the table', () => {
   it('adds up people against the capacity of every room', () => {
-    const summary = summarize(rooms, { peopleCount: [point('a', 4), point('b', 20)] })
+    const summary = summarize(rooms, { people_count: [point('a', 4), point('b', 20)] })
     expect(summary).toMatchObject({ rooms: 3, people: 24, capacity: 40, occupancy: 0.6 })
   })
 
   it('averages temperature and air quality over the rooms that report them', () => {
     const summary = summarize(rooms, {
       temperature: [point('a', 20), point('b', 23)],
-      airQuality: [point('c', 42)],
+      indoor_aqi: [point('c', 42)],
     })
     expect(summary.averageTemperature).toBe(21.5)
     expect(summary.averageAqi).toBe(42)
-  })
-
-  it('reads an air quality reading that only carries its index', () => {
-    const summary = summarize(rooms, {
-      airQuality: [{ timestamp: 0, roomId: 'a', indoor_aqi: 30 }],
-    })
-    expect(summary.averageAqi).toBe(30)
   })
 
   it('has no average and no occupancy when nothing reports', () => {
@@ -52,7 +45,7 @@ describe('the building summary above the table', () => {
   })
 
   it('ignores readings for rooms that are not in the building', () => {
-    expect(summarize(rooms, { peopleCount: [point('zz', 99)] }).people).toBe(0)
+    expect(summarize(rooms, { people_count: [point('zz', 99)] }).people).toBe(0)
   })
 })
 
@@ -86,12 +79,12 @@ describe('the rows a building starts the table with', () => {
 
   it('has one empty row per room, named after it', () => {
     expect(roomsToRows([twinRoom('r1', ' Lab ')])).toEqual([
-      { roomId: 'r1', roomName: 'Lab', roomMaxOccupancy: 30, status: `${STATUS}.empty` },
+      { roomId: 'r1', room_name: 'Lab', room_max_occupancy: 30, status: `${STATUS}.empty` },
     ])
   })
 
   it('falls back to the room id for a blank name', () => {
-    expect(roomsToRows([twinRoom('r2', '  ')])[0]!.roomName).toBe('r2')
+    expect(roomsToRows([twinRoom('r2', '  ')])[0]!.room_name).toBe('r2')
   })
 })
 

@@ -2,22 +2,24 @@ import type { TableHeader } from '@/types/dashboard/table.ts'
 import type { MetricContract } from '@/types/dashboard/table.ts'
 
 export const METRIC_I18N_KEY: Record<string, string> = {
-  roomName: 'model.rooms.editRoom.name',
-  roomMaxOccupancy: 'dashboard.table.headers.capacity',
-  peopleCount: 'model.rooms.occupancy',
+  room_name: 'model.rooms.editRoom.name',
+  room_max_occupancy: 'dashboard.table.headers.capacity',
+  people_count: 'model.rooms.occupancy',
   temperature: 'model.rooms.temperature',
-  airQuality: 'dashboard.table.headers.indoorAqi',
-  totalDeviceCount: 'dashboard.table.headers.connectedDevices',
-  ratioDeviceCount: 'dashboard.table.headers.estimatedPeople',
-  estimatedOccupancy: 'dashboard.table.headers.estimatedOccupancy',
+  co2: 'dashboard.table.headers.co2',
+  indoor_aqi: 'dashboard.table.headers.indoorAqi',
+  humidity: 'dashboard.table.headers.humidity',
+  total_device_count: 'dashboard.table.headers.connectedDevices',
+  ratio_device_count: 'dashboard.table.headers.estimatedPeople',
+  estimated_occupancy: 'dashboard.table.headers.estimatedOccupancy',
   status: 'dashboard.table.headers.status',
 }
 
 export const METRIC_CELL_CLASS: Record<string, string> = {
-  roomName: 'min-w-48',
+  room_name: 'min-w-48',
   temperature: 'whitespace-nowrap',
-  roomMaxOccupancy: 'tabular-nums',
-  peopleCount: 'min-w-44',
+  room_max_occupancy: 'tabular-nums',
+  people_count: 'min-w-44',
 }
 
 /** Builds a TableHeader from a raw metric key string (as stored in dashboard preferences). */

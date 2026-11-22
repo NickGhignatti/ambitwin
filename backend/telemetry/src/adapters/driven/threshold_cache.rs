@@ -160,7 +160,7 @@ mod tests {
     }
 
     fn bounds(max: f64) -> Bounds {
-        json!({ "maxTemp": max }).as_object().cloned().unwrap()
+        json!({ "max": max }).as_object().cloned().unwrap()
     }
 
     #[async_trait]
@@ -235,7 +235,7 @@ mod tests {
         let keys: Vec<(&str, &str)> = vec![
             ("temperature", "r1"),
             ("temperature", "r2"),
-            ("peopleCount", "r3"),
+            ("people_count", "r3"),
         ];
 
         let bounds = cache.resolve("b1", &keys).await.unwrap();
@@ -293,7 +293,7 @@ mod tests {
         let (cache, inner) = cache(MAX_ENTRIES);
         resolve(&cache, "b1", "temperature", "r1").await;
         resolve(&cache, "b2", "temperature", "r1").await;
-        resolve(&cache, "b1", "peopleCount", "r1").await;
+        resolve(&cache, "b1", "people_count", "r1").await;
 
         cache
             .upsert("b1", Some("r1"), "temperature", &bounds(30.0))
@@ -301,7 +301,7 @@ mod tests {
             .unwrap();
 
         resolve(&cache, "b2", "temperature", "r1").await;
-        resolve(&cache, "b1", "peopleCount", "r1").await;
+        resolve(&cache, "b1", "people_count", "r1").await;
         assert_eq!(inner.resolve_count(), 3);
     }
 

@@ -6,11 +6,11 @@
     |---|---|---|
     | Reading | One value from one room at one moment | 24.5 °C in room `r2` |
     | Batch | One building's readings sent in one request | 40 readings, `POST /telemetry/ingest` |
-    | Metric | A kind of reading, handled by one plugin | `temperature`, `airQuality` |
-    | Plugin | One file that declares a metric: fields, unit, limits, commands | `plugins/temperature.rs` |
+    | Metric | A kind of reading, handled by one plugin | `temperature`, `co2` |
+    | Plugin | One file that declares a metric: label, unit, limit, commands | `plugins/temperature.rs` |
     | Device kind | What a sensor physically is. One device can report several metrics | `router` reports 3 counts |
-    | Bounds | The limits of one metric, as named numbers | `{"maxTemp": 28, "minTemp": 16}` |
-    | Breach | A field past its limit | 30 °C with `maxTemp` 28 |
+    | Limit | The ends a metric is held to: `min`, `max`, or both | `{"min": 16, "max": 28}` |
+    | Breach | A value past its limit | 30 °C with `max` 28 |
     | HMAC | A signature only the holder of a key can make | `x-signature` on every batch |
     | Device key | The key one building's devices sign with, derived from a master key | `hex(HMAC(master, "b1:3"))` |
     | Epoch | A counter per building. Bumping it changes the building's key | 3 |
@@ -33,7 +33,7 @@ Imagine the mail room of a big building.
 - **Sensors drop off parcels** (readings). A parcel must have the right label: which building, which room, which kind of sensor, and a value. A parcel with a wrong label is refused, and so is the *whole batch* it came in.
 - At the door, a **guard checks the seal** (the signature). Only a device that knows the building's key can make a valid seal.
 - Accepted parcels go in three places at once: into the **archive** (PostgreSQL), onto the **live belt** for the dashboards (Redis), and, if a value is past its limit, a **red slip** goes to the alarm office (the `alerts` topic on Kafka).
-- Each kind of sensor is a **plugin**: one small file that says "I am temperature, my value is in this field, my limits are `maxTemp` and `minTemp`". The mail room itself does not know what a temperature is. Adding a new kind of sensor means adding one file.
+- Each kind of sensor is a **plugin**: one small file that says "I am temperature, my unit is °C, my limit has a `min` and a `max`". The mail room itself does not know what a temperature is. Adding a new kind of sensor means adding one file.
 
 .mermaid
     flowchart LR
@@ -54,14 +54,14 @@ Ports and adapters around a **microkernel**. `tests/architecture.rs` fails the b
 
 | Path | What it holds | Must not import |
 |---|---|---|
-| `src/types/` | Plain shapes: `Reading`, `Sensor`, `Bounds`, `BoundSpec`, `SensorPlugin`, `DomainError` | anything else in the crate, any IO crate |
+| `src/types/` | Plain shapes: `Reading`, `Sensor`, `Bounds`, `LimitSpec`, `MetricDescriptor`, `SensorPlugin`, `DomainError` | anything else in the crate, any IO crate |
 | `src/kernel/` | The use cases: `ingest`, `observations`, `occupancy`, `readings`, `thresholds`, `sensors`, `actions`, `registration`, `simulation`, `devices`, `authz`, `registry`, plus `ports.rs` | `plugins`, `adapters`, IO crates |
-| `src/plugins/` | `temperature`, `air_quality`, `people_count`, `device_count`, `common` | `kernel`, `adapters`, IO crates, **another plugin** |
+| `src/plugins/` | `temperature`, `people_count`, `co2`, `indoor_aqi`, `humidity`, `device_count`, `common` | `kernel`, `adapters`, IO crates, **another plugin** |
 | `src/adapters/driven/` | `postgres/`, `redis_fanout`, `kafka_producer`, `twin_directory`, `dispatch`, `simulators`, `threshold_cache`, `building_cache` | |
 | `src/adapters/driving/` | `http_api/` (`controllers`, `claims`, `exceptions`), `kafka_consumer`, `occupancy_consumer` | `driven` |
 | `src/adapters/ingest_auth.rs` | Signature checks, device keys | |
 | `src/lib.rs`, `src/main.rs` | The router. Start-up wiring | |
-| `migrations/` | `0001` to `0007`, run at start | |
+| `migrations/` | `0001` to `0008`, run at start | |
 
 IO crates the kernel may never name: `sqlx`, `redis`, `rdkafka`, `axum`, `reqwest`, `prometheus`. The kernel is pure logic, so its tests run against in-memory fakes.
 
@@ -71,7 +71,7 @@ IO crates the kernel may never name: `sqlx`, `redis`, `rdkafka`, `axum`, `reqwes
         K --> T["types<br/>Reading, Bounds, SensorPlugin"]
         K --> P{{"ports"}}
         P -.-> A["adapters/driven<br/>Postgres, Redis, Kafka"]
-        M["main.rs"] --> PL["plugins<br/>temperature, airQuality, ..."]
+        M["main.rs"] --> PL["plugins<br/>temperature, co2, ..."]
         PL --> T
         M --> K
 
@@ -81,112 +81,126 @@ The kernel and the plugins **never import each other**. Only `main.rs` brings th
 
 ## Plugins: one file per kind of sensor
 
-A plugin has to answer five questions. They are the `SensorPlugin` trait in `types/plugin.rs`:
+A reading is **one metric and one number**, so every plugin checks readings the same way. A plugin is mostly data. The `SensorPlugin` trait is in `types/plugin.rs`:
 
 ```rust
 pub trait SensorPlugin: Send + Sync {
-    fn key(&self) -> &'static str;
     fn descriptor(&self) -> &MetricDescriptor;
-    fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>>;
-    fn bounds(&self) -> &'static [BoundSpec];
 
-    fn actions(&self) -> &'static [ActionSpec] {
-        &[]
+    fn key(&self) -> &'static str { self.descriptor().key }
+
+    fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
+        validate_reading(self.descriptor(), payload)
     }
+
+    fn actions(&self) -> &'static [ActionSpec] { &[] }
 }
 ```
 
+- `descriptor`: key, label, unit, what kind of number `value` is, and the limit.
 - `key`: its name (`temperature`). This is the `type` a reading carries.
-- `descriptor`: label, unit, and the list of fields a reading must have.
-- `validate`: turn raw JSON into a checked `Reading`, or a list of complaints.
-- `bounds`: which limits it has.
+- `validate`: turn raw JSON into a checked `Reading`, or a list of complaints. The default is the same for every metric.
 - `actions`: which commands a device can get (default: none).
 
-### The field specs
+### The descriptor
 
 ```rust
-pub enum FieldKind {
-    NonEmptyString,
-    Finite,
-    NonNegativeInt,
+pub struct MetricDescriptor {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub interface_name: &'static str,
+    pub unit: Option<&'static str>,
+    pub value_kind: FieldKind,
+    pub limit: LimitSpec,
 }
 
-pub struct FieldSpec {
-    pub name: &'static str,
-    pub kind: FieldKind,
-    pub required: bool,
-}
-
-fn accepts(kind: FieldKind, value: &Value) -> bool {
-    match kind {
-        FieldKind::NonEmptyString => value.as_str().is_some_and(|s| !s.is_empty()),
-        FieldKind::Finite => value.as_f64().is_some(),
-        FieldKind::NonNegativeInt => value.as_f64().is_some_and(|n| n >= 0.0 && n.fract() == 0.0),
-    }
+pub struct LimitSpec {
+    pub min: Option<Option<f64>>,
+    pub max: Option<Option<f64>>,
 }
 ```
 
-A field is a name, a kind and "required or not". `check_fields` runs every spec and collects messages like `temperature: must be a finite number.` A missing optional field (or `null`) is fine.
+- `value_kind` is `Finite` (any number) or `NonNegativeInt` (a whole count, 0 or more).
+- `LimitSpec`, per end:
+
+| Value | Meaning | Catalog JSON |
+|---|---|---|
+| `None` | The end cannot be set | key absent |
+| `Some(Some(27.0))` | Can be set; a new building starts at 27 | `"max": 27` |
+| `Some(None)` | Can be set; no starting value | `"max": null` |
+
+### One checker for all: `validate_reading`
+
+Every reading, whatever the metric, must be exactly these four keys once the kernel has stamped the batch's building on it:
+
+| Key | Kind |
+|---|---|
+| `buildingId` | non-empty string |
+| `roomId` | non-empty string |
+| `timestamp` | finite number |
+| `value` | the metric's `value_kind` |
+
+```rust
+pub const READING_FIELDS: &[&str] = &["buildingId", "roomId", "timestamp", "value"];
+```
+
+- Any other key is refused: `co2: not a field of people_count.` A second measure cannot ride along.
+- Every complaint is collected, not just the first: `value: must be a non-negative integer.`
+- The result is a `Reading`: building, room, metric, `ts_ms`, `value`. Nothing else is kept.
 
 ### A whole plugin: temperature
 
 ```rust
-static DESCRIPTOR: MetricDescriptor = MetricDescriptor {
-    value_field: "temperature",
-    key: "temperature",
-    label: "Temperature",
-    interface_name: "ITemperature",
-    unit: Some("C"),
-    fields: &[
-        FieldSpec { name: "buildingId", kind: FieldKind::NonEmptyString, required: true },
-        FieldSpec { name: "roomId",     kind: FieldKind::NonEmptyString, required: true },
-        FieldSpec { name: "timestamp",  kind: FieldKind::Finite,         required: true },
-        FieldSpec { name: "temperature",kind: FieldKind::Finite,         required: true },
-    ],
-};
-```
-
-What a temperature reading must contain. `value_field` says which field holds *the* value (the one stored in the `value` column).
-
-```rust
-static BOUNDS: &[BoundSpec] = &[
-    BoundSpec { key: "maxTemp", field: "temperature", label: "Temperature", unit: Some("°C"), direction: BoundDirection::Above },
-    BoundSpec { key: "minTemp", field: "temperature", label: "Temperature", unit: Some("°C"), direction: BoundDirection::Below },
-];
-```
-
-Two limits. `key` is the name of the limit in the stored bounds (`maxTemp`). `field` is the payload field it is compared with. `direction` says "breach when above" or "breach when below".
-
-```rust
-fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
-    let errors = check_fields(DESCRIPTOR.fields, payload);
-    if !errors.is_empty() {
-        return Err(errors);
+pub fn metric() -> Metric {
+    Metric {
+        descriptor: MetricDescriptor {
+            key: "temperature",
+            label: "Temperature",
+            interface_name: "ITemperature",
+            unit: Some("C"),
+            value_kind: FieldKind::Finite,
+            limit: LimitSpec { min: Some(Some(18.0)), max: Some(Some(27.0)) },
+        },
+        actions: ACTIONS,
     }
-    let value = payload[DESCRIPTOR.value_field].as_f64().unwrap_or_default();
-    Ok(reading(payload, DESCRIPTOR.key, value))
 }
 ```
 
-`validate` is short: check the fields, and if there are no complaints, read the value and build the `Reading`. The actions are `setTarget(target)`, `increase(step?)` and `decrease(step?)`.
+- `Metric` is the one struct in `plugins/common.rs` that every plugin file returns. It holds a descriptor and the actions.
+- The limit says: both ends can be set, a new building starts at 18 to 27.
+- The actions are `setTarget(target)`, `increase(step?)` and `decrease(step?)`.
+- A metric with no commands, like `people_count`, is the same call with `actions: &[]`.
 
 ### What each plugin declares
 
-| Plugin key | Value field | Bounds (key, field, direction) | Actions | Device kind |
+| Plugin key | Unit | Limit | Actions | Device kind |
 |---|---|---|---|---|
-| `temperature` | `temperature` | `maxTemp` high, `minTemp` low, both on `temperature` | `setTarget(target)`, `increase(step?)`, `decrease(step?)` | `temperature` (Thermostat) |
-| `airQuality` | `indoor_aqi` | `maxCo2` high on `co2`, `maxAqi` high on `indoor_aqi` | none | `airQuality` |
-| `peopleCount` | `peopleCount` | `maxPeople` high | none | `peopleCount` |
-| `totalDeviceCount` | `totalDeviceCount` | none | none | `router` |
-| `ratioDeviceCount` | `ratioDeviceCount` | none | none | `router` |
-| `estimatedOccupancy` | `estimatedOccupancy` | none | none | `router` |
+| `temperature` | °C | `min` 18, `max` 27 | `setTarget(target)`, `increase(step?)`, `decrease(step?)` | `temperature` (Thermostat) |
+| `people_count` | people | `max`, no start (each room's comes from its capacity) | none | `people_count` |
+| `co2` | ppm | `max` 1000 | none | `air_quality` |
+| `indoor_aqi` | none | `max` 75 | none | `air_quality` |
+| `humidity` | % | `min` 30, `max` 60 | none | `air_quality` |
+| `total_device_count` | devices | none | none | `router` |
+| `ratio_device_count` | people | none | none | `router` |
+| `estimated_occupancy` | devices | none | none | `router` |
 
 - `PluginRegistry::new` refuses two plugins with one key.
 - `DeviceCatalog::new` refuses a metric with no device, or with two. The service does not start.
-- A plugin with bounds must be in `telemetry_schema::ALERTABLE_METRICS`, or a test fails. See [Telemetry Schema](../packages/telemetry-schema.qd). That list is also how `notification` knows which metrics to deliver.
-- A **sensor is a device, not a metric**. A `router` is one device that reports three metrics. A sensor's actions are the union of its device's metrics' actions.
+- A plugin with a limit must be in `telemetry_schema::ALERTABLE_METRICS`, and nothing else may be, or a test fails. See [Telemetry Schema](../packages/telemetry-schema.qd). That list is also how `notification` knows which metrics to deliver.
+- A **sensor is a device, not a metric**. A `router` is one device that reports three metrics; the air station reports three (`co2`, `indoor_aqi`, `humidity`), each as its own reading. A sensor's actions are the union of its device's metrics' actions.
+- `/contracts` lists each plugin's `limit`. The `client` builds one input per limit end from it when a building is registered, so a metric with `{}` gets no inputs.
+- A metric belongs to one device kind. `temperature` comes from the thermostat, never from the air station.
 
-**Adding a metric** = a plugin file, plus its line in `plugins::all()`, plus a device in `plugins::devices()`.
+| Registration form | Sent |
+|---|---|
+| Building temperature min 18, max 27 | `PATCH /thresholds/temperature/buildings/b1` `{"min":18, "max":27}` |
+| Room `r1` temperature max 24, other rooms left empty | `PATCH /thresholds/temperature/buildings/b1/rooms` `{"r1":{"max":24}}` |
+| Room capacities 30 and 10 | `PATCH /thresholds/people_count/buildings/b1/rooms` `{"r1":{"max":30}, "r2":{"max":10}}` |
+
+- An end the metric does not declare is a `400`: `{"maxTemp": 30}` on `temperature` answers `maxTemp: not an end of temperature's limit.`
+- A room left empty is not sent: it falls back to the building's limit, one end at a time.
+
+**Adding a metric** = a plugin file, plus its line in `plugins::all()`, plus a device in `plugins::devices()`. Its limit ends then show up in the registration form with no `client` change. An end with no starting value in the catalog starts empty.
 
 ---
 
@@ -229,7 +243,7 @@ The edge strips `/telemetry`. Three **exact** paths are open at the edge and che
 | `POST` | `/ingest` | Devices, simulators | Body HMAC | Store a batch |
 | `POST` | `/observations` | `ap-collector` | Body HMAC | Count a Wi-Fi tick, pass it to Kafka |
 | `GET` | `/collector?buildingId=` | `ap-collector` | Timestamp HMAC | Routers to poll |
-| `GET` | `/contracts` | `dashboard` | none | Metric catalog |
+| `GET` | `/contracts` | `dashboard`, `client` | none | Metric catalog, with each metric's limit |
 | `GET` | `/devices` | `client` | none | Device kinds |
 | `GET` | `/health`, `/metrics` | Probes, Prometheus | none | |
 | `GET` | `/{metric}/latest?building=&roomId=` | `client` | read | Newest reading of one room |
@@ -238,9 +252,9 @@ The edge strips `/telemetry`. Three **exact** paths are open at the edge and che
 | `GET` | `/connected-devices/buildings/{id}` | `client` | read | Building device total |
 | `GET` | `/thresholds/buildings/{id}` | `client` | read | Temperature limits, building and rooms |
 | `PUT` | `/thresholds/buildings/{id}` | `digital-twin` | edit | Register name, rooms, optional `maxTemperature` |
-| `GET`, `PATCH` | `/thresholds/{metric}/buildings/{id}` | `client` | read, edit | Building bounds |
-| `PATCH` | `/thresholds/{metric}/buildings/{id}/rooms` | `client` | edit | Bounds of many rooms, all or nothing |
-| `PATCH` | `/thresholds/{metric}/buildings/{id}/rooms/{roomId}` | `client` | edit | Bounds of one room |
+| `GET`, `PATCH` | `/thresholds/{metric}/buildings/{id}` | `client` | read, edit | Building limit |
+| `PATCH` | `/thresholds/{metric}/buildings/{id}/rooms` | `client` | edit | Limits of many rooms, all or nothing |
+| `PATCH` | `/thresholds/{metric}/buildings/{id}/rooms/{roomId}` | `client` | edit | Limit of one room |
 | `GET`, `POST` | `/sensors/buildings/{id}` | `client` | read, edit | List. Apply a batch |
 | `GET` | `/sensors/buildings/{id}/rooms/{roomId}` | `client` | read | Sensors of one room |
 | `POST` | `/device-keys/buildings/{id}` | `client` | edit | New device key |
@@ -527,19 +541,19 @@ plugin.validate(&Value::Object(payload)).map_err(|messages| messages.join(" "))
 
 1. Not an object: `must be an object.`
 2. `type` missing or blank: `type: must be a non-empty string.`
-3. No plugin with that key: `type: unknown sensor type: humidity.`
+3. No plugin with that key: `type: unknown sensor type: pressure.`
 4. Copy the reading without `type`.
 5. If the reading names a **different** building from the batch: `buildingId: must match the batch's building (b1).` Otherwise the batch's `buildingId` is stamped in. `buildingId` rides on the batch, so producers stop sending the field that could disagree.
-6. Hand the payload to the **plugin**: `plugin.validate`. This is the only place the kernel meets a specific kind of sensor, and it does it through the trait.
+6. Hand the payload to the **plugin**: `plugin.validate`. This is the only place the kernel meets a specific kind of sensor, and it does it through the trait. The payload must be exactly `buildingId`, `roomId`, `timestamp` and `value`; any other key is a complaint.
 
-**Example.** A batch of 40 readings for `b1`. Reading 17 has no `roomId`. Reading 30 says `"type":"humidity"`.
+**Example.** A batch of 40 readings for `b1`. Reading 17 has no `roomId`. Reading 30 says `"type":"pressure"`.
 
 | Step | Result |
 |---|---|
 | Count | 40, under 500 |
 | Readings 0 to 16, 18 to 29, 31 to 39 | valid |
 | Reading 17 | error from the plugin, prefixed `readings[17]:` |
-| Reading 30 | `readings[30]: type: unknown sensor type: humidity.` |
+| Reading 30 | `readings[30]: type: unknown sensor type: pressure.` |
 | Answer | `400 {"type":"Validation Error","message":"readings[17]: … readings[30]: …"}`. 0 stored |
 
 ### Step 2: store and look up the limits at the same time
@@ -571,46 +585,36 @@ for (reading, bounds) in readings.iter().zip(resolved) {
 }
 ```
 
-For each reading, `resolved` holds its limits (or nothing). `resolve` picks the **room's** bounds when it has any, else the **building's**. Room bounds replace building bounds; they are not merged.
+For each reading, `resolved` holds its limit (or nothing). `resolve` merges the **room's** limit over the **building's**, one end at a time: an end the room sets wins, an end it leaves out comes from the building.
 
 ```rust
-pub fn breaches(spec: &[BoundSpec], bounds: &Bounds, payload: &Map<String, Value>) -> Vec<Breach> {
-    let mut found: Vec<Breach> = Vec::new();
-    for bound in spec {
-        if found.iter().any(|seen| seen.bound.field == bound.field) {
-            continue;
-        }
-        let threshold = bounds.get(bound.key).and_then(Value::as_f64);
-        let value = payload.get(bound.field).and_then(Value::as_f64);
-        let (Some(threshold), Some(value)) = (threshold, value) else { continue; };
-        let breached = match bound.direction {
-            BoundDirection::Above => value > threshold,
-            BoundDirection::Below => value < threshold,
-        };
-        if breached {
-            found.push(Breach { bound: *bound, value, threshold });
-        }
+pub fn breach(bounds: &Bounds, value: f64) -> Option<Breach> {
+    let end = |key: &str| bounds.get(key).and_then(Value::as_f64);
+    match (end(MAX), end(MIN)) {
+        (Some(max), _) if value > max => Some(crossed(BoundDirection::Above, max)),
+        (_, Some(min)) if value < min => Some(crossed(BoundDirection::Below, min)),
+        _ => None,
     }
-    found
 }
 ```
 
-For each limit the plugin declares, in order:
+A reading has one value, so it breaches **at most once**:
 
-- This `field` already breached? **Skip.** One alert per field, and the first listed limit wins.
-- The limit value or the payload value is missing? Skip.
-- `Above`: breach when value is greater than the limit. `Below`: breach when it is smaller.
+- Value above `max`: `high`, threshold is the `max`. Checked first.
+- Otherwise, value below `min`: `low`, threshold is the `min`.
+- An end that is missing or not a number is skipped. A value exactly on an end does not breach.
 
-A limit compares **its own** payload field, not the reading's main value. That is why air quality can limit `co2` and `indoor_aqi` separately.
+**Example.** Building `b1` has temperature `{"max":28}`. Room `r2` has `{"max":24,"min":16}`.
 
-**Example.** Building `b1` has `{"maxTemp":28}`. Room `r2` has `{"maxTemp":24,"minTemp":16}`.
-
-| Reading | Bounds used | Result |
+| Reading | Limit used | Result |
 |---|---|---|
 | `r1`, 25 °C | building: max 28 | none |
 | `r2`, 25 °C | room: max 24, min 16 | `high`, threshold 24 |
 | `r2`, 14 °C | room | `low`, threshold 16 |
-| `r1`, air quality `co2` 1200, `indoor_aqi` 160, building has `maxCo2` 1000, `maxAqi` 150 | building | **2** alerts: one on `co2`, one on `indoor_aqi` |
+| `r1`, `co2` 1200 ppm, building `co2` max 1000 | building | `high`, threshold 1000 |
+| `r1`, `indoor_aqi` 80, building `indoor_aqi` max 75 | building | `high`, threshold 75. A separate reading from the `co2` one, so a separate alert |
+
+**Example, one end at a time.** Building temperature 16 to 28. Room `r3` sets only `max` 26. Room `r3` is held to 16 to 26.
 
 ```rust
 // A failed lookup names the alert by its ids rather than dropping it.
@@ -620,11 +624,10 @@ let names = self.buildings.names_of(&reading.building_id).await.unwrap_or_else(|
 });
 let building_name = names.as_ref().map_or(&reading.building_id, |n| &n.name);
 let room_name = names.as_ref().and_then(|n| n.rooms.get(&reading.room_id)).unwrap_or(&reading.room_id);
-for breach in found {
-    let alert = AlertPayload { metric, field, building_id, room_id, building_name, room_name,
-        value: breach.value, label: breach.bound.label, unit, direction, threshold: breach.threshold, ts_ms: self.clock.now_ms() };
-    self.alerts.publish_breach(&alert).await;
-}
+let alert = AlertPayload { metric, building_id, room_id, building_name, room_name,
+    value: found.value, label: descriptor.label, unit, direction: found.direction,
+    threshold: found.threshold, ts_ms: self.clock.now_ms() };
+self.alerts.publish_breach(&alert).await;
 ```
 
 Each breach becomes **its own** alert, with the building and room names from the registration (cached 5 min). A failed name lookup, or an unregistered room, falls back to the ids: an alert with an ugly name beats no alert. The alert is queued to Kafka and not awaited.
@@ -665,8 +668,8 @@ All the readings become **one** tick on `telemetry:raw`. The answer is `202 {"ac
         and
             I->>PG: thresholds.resolve, through the 60 s cache
         end
-        loop each reading with bounds
-            I->>I: raise_breach: breaches(plugin.bounds, bounds, payload)
+        loop each reading with a limit
+            I->>I: raise_breach: breach(limit, reading.value)
             I->>K: publish_breach, queued, not awaited
         end
         I->>R: fanout.publish_telemetry, one tick on telemetry:raw
@@ -677,7 +680,7 @@ All the readings become **one** tick on `telemetry:raw`. The answer is `202 {"ac
 | Failure | Result |
 |---|---|
 | Insert fails | `500`. Nothing published, no alert. `telemetry_ingest_persist_failures_total` + 1 |
-| Bounds lookup fails | Logged as `threshold evaluation failed`. Readings stored and published, **no alerts** for that batch |
+| Limit lookup fails | Logged as `threshold evaluation failed`. Readings stored and published, **no alerts** for that batch |
 | Kafka refuses an alert | Logged, counted `telemetry_alerts_published_total{outcome="error"}`. The batch is still `202` |
 | Redis publish fails | Logged, counted. The batch is still `202` |
 | Same batch sent twice | The second insert stores nothing (unique key `building_id, metric, room_id, ts`). Alerts and the tick **are** sent again |
@@ -737,7 +740,7 @@ fn room_readings(tick: &WifiObservations, sensors: &[Sensor]) -> Vec<Value> {
     for (_, room) in loudest.into_values() {
         *counts.entry(room).or_default() += 1;
     }
-    // … one totalDeviceCount reading per room; ratioDeviceCount too when devicesPerPerson is set
+    // … one total_device_count reading per room; ratio_device_count too when devicesPerPerson is set
 }
 ```
 
@@ -745,8 +748,8 @@ fn room_readings(tick: &WifiObservations, sensors: &[Sensor]) -> Vec<Value> {
 2. For each connected phone on a mapped router, keep its **loudest** hearing: the largest `(signal, room)` pair. On equal signal the room id that sorts last wins.
 3. Start every room whose router **answered** at 0.
 4. Add 1 to the room of each phone's loudest hearing. A phone counts **once**.
-5. One `totalDeviceCount` reading per room, stamped with the tick time.
-6. When the tick has `devicesPerPerson`, also `ratioDeviceCount` = count ÷ factor, **rounded up**. The source says why: rounding down 0.4 of a person would report an occupied room as empty.
+5. One `total_device_count` reading per room, stamped with the tick time.
+6. When the tick has `devicesPerPerson`, also `ratio_device_count` = count ÷ factor, **rounded up**. The source says why: rounding down 0.4 of a person would report an occupied room as empty.
 
 **Example.** Routers `r1` in `lobby`, `r2` in `hall`. Both answered. Factor 2.5.
 
@@ -757,7 +760,7 @@ fn room_readings(tick: &WifiObservations, sensors: &[Sensor]) -> Vec<Value> {
 | C | `r1` −60 | `lobby` |
 | D | `out` (outdoor router) | nowhere |
 
-Readings: `totalDeviceCount` lobby 2, hall 1. `ratioDeviceCount` lobby ⌈2 ÷ 2.5⌉ = 1, hall ⌈1 ÷ 2.5⌉ = 1.
+Readings: `total_device_count` lobby 2, hall 1. `ratio_device_count` lobby ⌈2 ÷ 2.5⌉ = 1, hall ⌈1 ÷ 2.5⌉ = 1.
 
 | Rule | Why |
 |---|---|
@@ -804,11 +807,11 @@ for batch in readings.chunks(MAX_BATCH_READINGS) {
 }
 ```
 
-Each room becomes an `estimatedOccupancy` reading and goes through the same `Ingest`, in chunks of 500. It is **never** added to `totalDeviceCount`: the two place a phone differently.
+Each room becomes an `estimated_occupancy` reading and goes through the same `Ingest`, in chunks of 500. It is **never** added to `total_device_count`: the two place a phone differently.
 
 - Group `estimated-occupancy`, starts at the earliest offset, commits by hand. After an outage the missed counts are read from the topic.
 - An unreadable or refused message is dropped and committed. A store failure is not committed: the consumer reconnects after 5 s and reads it again.
-- `estimatedOccupancy` has no bounds and never alerts.
+- `estimated_occupancy` has no limit and never alerts.
 
 .mermaid
     sequenceDiagram
@@ -818,7 +821,7 @@ Each room becomes an `estimatedOccupancy` reading and goes through the same `Ing
         participant O as kernel::Occupancy
         participant I as Ingest::accept
         K->>C: EstimatedOccupancy for one building
-        C->>O: rooms to estimatedOccupancy readings
+        C->>O: rooms to estimated_occupancy readings
         loop each chunk of 500
             O->>I: accept(buildingId, chunk)
         end
@@ -851,7 +854,7 @@ pub async fn register(&self, building_id: &str, payload: &Value) -> Result<(), D
 
     if let Some(max_temperature) = request.max_temperature {
         let mut patch = Bounds::new();
-        patch.insert("maxTemp".to_owned(), max_temperature.into());
+        patch.insert(MAX.to_owned(), max_temperature.into());
         self.thresholds.upsert(building_id, None, "temperature", &patch).await?;
     }
     Ok(())
@@ -862,7 +865,7 @@ pub async fn register(&self, building_id: &str, payload: &Value) -> Result<(), D
 2. The name must not be blank.
 3. **No NUL character** in any name or id. PostgreSQL refuses a NUL in text, a store error would be retried for ever, and that would block the whole topic. So anything the database would refuse is checked first.
 4. Save the building and its rooms (an upsert, so registering twice gives the same rows).
-5. If `maxTemperature` came with it, save it as the building's `maxTemp`. (Twin does not send it over Kafka today, but the field stays: it is optional, not dead.)
+5. If `maxTemperature` came with it, save it as the building's temperature `max`. (Twin does not send it over Kafka today, but the field stays: it is optional, not dead.)
 
 ### The Kafka path
 
@@ -899,7 +902,7 @@ pub async fn register_from_event(&self, building_id: &str, payload: &Value) -> a
         G->>K: building-registration-completed, ready or failed
         C->>K: commit the offset
         Tw->>G: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature}
-        G->>PG: same upsert, plus building maxTemp when given
+        G->>PG: same upsert, plus building temperature max when given
 
 .mermaid
     flowchart TD
@@ -922,11 +925,11 @@ pub async fn register_from_event(&self, building_id: &str, payload: &Value) -> a
 
 | Route | Writes | Rule |
 |---|---|---|
-| `PATCH …/buildings/{id}` | Building bounds of one metric | Merged into what is stored (`bounds || patch`). A key not sent keeps its value |
-| `PATCH …/buildings/{id}/rooms` | `{roomId: bounds}` for many rooms | Every entry checked before any is written |
+| `PATCH …/buildings/{id}` | Building limit of one metric, `{"min"?: n, "max"?: n}` | Merged into what is stored (`bounds || patch`). An end not sent keeps its value |
+| `PATCH …/buildings/{id}/rooms` | `{roomId: limit}` for many rooms, like `{"r1": {"max": 12}}` | Every entry checked before any is written |
 | `PATCH …/rooms/{roomId}` | One room | |
 
-Each patch is checked by `Thresholds::checked`: every key must be a bound of that metric's plugin, and every value a number. `{"maxTmp": 28}` on `temperature` is `400 maxTmp: not a bound of temperature.` Because the check asks the **plugin** which keys exist, a new metric needs no change here.
+Each patch is checked by `Thresholds::checked`: every key must be an end (`min` or `max`) that the metric's limit declares, and every value a number. `{"maxTemp": 28}` on `temperature` is `400 maxTemp: not an end of temperature's limit.` So is `{"min": 5}` on `people_count`, which has no `min`. Because the check asks the **plugin** which ends exist, a new metric needs no change here.
 
 `CachedThresholds` sits in front of the store:
 
@@ -987,9 +990,9 @@ A batch of changes follows the same idea as ingest: **check everything, then wri
         Si->>Si: any simulator configured? building registered?
         Si->>Si: plan: each sensor to the simulator claiming its kind
         par join_all, 5 s timeout each
-            Si->>S1: POST /control/start {buildingId, sensors:[temperature, peopleCount]}
+            Si->>S1: POST /control/start {buildingId, sensors:[temperature, people_count]}
         and
-            Si->>S2: POST /control/start {buildingId, sensors:[airQuality]}
+            Si->>S2: POST /control/start {buildingId, sensors:[air_quality]}
         and
             Si->>S3: POST /control/start {buildingId, sensors:[]}
         end
@@ -1057,7 +1060,7 @@ The sensor is found by `(buildingId, sensorId)`, **never by room**, so an outdoo
 | `dashboard` | `{"data": [{"timestamp","value"}]}` |
 | `connected-devices` | `{buildingId, totalDeviceCount, timestamp}`. Never reported is `404` |
 
-A reading is answered **flat**: `building`, `roomId`, `timestamp`, `value`, plus every plugin field at the top level. The same names as the live tick, so a page that loads history and then live data handles one shape.
+A reading is answered **flat**: exactly `building`, `roomId`, `timestamp`, `value`. The same names as the live tick, bar `building`, so a page that loads history and then live data handles one shape.
 
 `dashboard` query:
 
@@ -1078,9 +1081,9 @@ A reading is answered **flat**: `building`, `roomId`, `timestamp`, `value`, plus
 
 | Table | Holds | Notes |
 |---|---|---|
-| `readings` | `building_id, room_id, metric, ts, value, payload` | Hypertable. Unique on `building_id, metric, room_id, ts`. Compressed after 7 days, dropped after 14 |
+| `readings` | `building_id, room_id, metric, ts, value` | Hypertable. Unique on `building_id, metric, room_id, ts`. Compressed after 7 days, dropped after 14 |
 | `readings_hourly` | Hourly summaries | Continuous aggregate, refreshed every hour over the last 3 days |
-| `thresholds` | `building_id, room_id, metric, bounds` | `room_id` null = the building row |
+| `thresholds` | `building_id, room_id, metric, bounds` | `bounds` is `{"min"?, "max"?}`. `room_id` null = the building row |
 | `sensors` | `sensor_id` (key), `building_id, room_id, name, sensor_type, driver, endpoint` | `room_id` null = outdoors |
 | `buildings`, `building_rooms` | Registration: names and rooms. `device_key_epoch` | |
 
@@ -1100,7 +1103,7 @@ The unique key `building_id, metric, room_id, ts` is what makes a repeated batch
 | `REDIS_URL` | `redis://redis:6379` | Tick fan-out |
 | `KAFKA_BROKERS` | `kafka:9092` | Registration, alerts, Wi-Fi, room counts |
 | `DIGITAL_TWIN_URL` | `http://digital-twin:3000` | Ownership lookup |
-| `SIMULATORS` | unset | JSON `{name: {url, kinds}}`. Compose gives `temperature`, `peopleCount` to `sensor-simulator`, `airQuality` to `aq-simulator`, `router` to `ap-simulator` |
+| `SIMULATORS` | unset | JSON `{name: {url, kinds}}`. Compose gives `temperature`, `people_count` to `sensor-simulator`, `air_quality` to `aq-simulator`, `router` to `ap-simulator` |
 | `PORT` | `3000` | HTTP port |
 
 ---

@@ -9,7 +9,7 @@ export interface ApiDataPoint {
 export function getBuildingHistory(
   buildingId: any,
   range: any,
-  apiType: 'peopleCount' | 'temperature' | 'airQuality',
+  apiType: 'people_count' | 'temperature' | 'indoor_aqi',
   aggMode: any,
 ) {
   const data = ref<ApiDataPoint[]>([])

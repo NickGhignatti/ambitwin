@@ -58,12 +58,11 @@ pub fn breach_message(alert: &AlertEvent) -> String {
     )
 }
 
-/// The Redis key throttling one field's alerts in one room, so metrics never silence each other.
+/// The Redis key throttling one metric's alerts in one room, so metrics never silence each other.
 pub fn breach_cooldown_key(alert: &AlertEvent) -> String {
     format!(
-        "alert:{}:{}:{}:{}",
+        "alert:{}:{}:{}",
         alert.metric,
-        alert.field,
         or_unknown(&alert.building_id),
         or_unknown(&alert.room_id)
     )
@@ -88,7 +87,6 @@ mod tests {
             building_name: "HQ".to_string(),
             room_name: "Lab 1".to_string(),
             metric: "temperature".to_string(),
-            field: "temperature".to_string(),
             value: 40.0,
             label: "Temperature".to_string(),
             unit: Some("°C".to_string()),
@@ -100,8 +98,7 @@ mod tests {
 
     fn co2() -> AlertEvent {
         AlertEvent {
-            metric: "airQuality".to_string(),
-            field: "co2".to_string(),
+            metric: "co2".to_string(),
             value: 1200.0,
             label: "CO2".to_string(),
             unit: Some("ppm".to_string()),
@@ -148,7 +145,6 @@ mod tests {
     #[test]
     fn a_field_without_a_unit_shows_the_bare_value() {
         let aqi = AlertEvent {
-            field: "indoor_aqi".to_string(),
             value: 162.0,
             label: "Air Quality".to_string(),
             unit: None,
@@ -164,9 +160,9 @@ mod tests {
     fn the_text_names_the_place_but_the_cooldown_key_uses_the_ids() {
         assert_eq!(
             breach_cooldown_key(&alert(BoundDirection::Above)),
-            "alert:temperature:temperature:b1:r1"
+            "alert:temperature:b1:r1"
         );
-        assert_eq!(breach_cooldown_key(&co2()), "alert:airQuality:co2:b1:r1");
+        assert_eq!(breach_cooldown_key(&co2()), "alert:co2:b1:r1");
     }
 
     #[test]
@@ -178,7 +174,7 @@ mod tests {
         };
         assert_eq!(
             breach_cooldown_key(&nowhere),
-            "alert:temperature:temperature:unknown:unknown"
+            "alert:temperature:unknown:unknown"
         );
     }
 

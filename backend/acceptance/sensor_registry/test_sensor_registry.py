@@ -43,7 +43,7 @@ def test_a_sensor_batch_creates_moves_and_removes_sensors(building: str) -> None
             headers=STAFF,
             json={"create": [
                 {"ref": "d1", "name": "Lab thermostat", "sensorType": "temperature", "roomId": "r1"},
-                {"ref": "d2", "name": "Router yard", "sensorType": "peopleCount", "roomId": None},
+                {"ref": "d2", "name": "Router yard", "sensorType": "people_count", "roomId": None},
             ]},
         )
         created.raise_for_status()

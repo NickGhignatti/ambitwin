@@ -25,9 +25,9 @@ impl Thresholds {
     ) -> Result<&'a dyn SensorPlugin, DomainError> {
         let plugin = self.plugin(metric)?;
         for (key, value) in patch {
-            if !plugin.bounds().iter().any(|bound| bound.key == key) {
+            if !plugin.descriptor().limit.has(key) {
                 return Err(DomainError::Validation(format!(
-                    "{key}: not a bound of {metric}."
+                    "{key}: not an end of {metric}'s limit."
                 )));
             }
             if value.as_f64().is_none() {
@@ -140,13 +140,13 @@ mod tests {
     async fn updating_a_room_threshold_is_readable_back_at_room_scope() {
         let h = harness(FakeThresholds::default());
         h.thresholds
-            .update_room("fake", "b1", "r1", &bounds(json!({ "maxFake": 30.0 })))
+            .update_room("fake", "b1", "r1", &bounds(json!({ "max": 30.0 })))
             .await
             .unwrap();
         let resolved = h.store.resolve("b1", &[("fake", "r1")]).await.unwrap()[0]
             .clone()
             .unwrap();
-        assert_eq!(resolved["maxFake"], 30.0);
+        assert_eq!(resolved["max"], 30.0);
     }
 
     #[tokio::test]
@@ -155,10 +155,10 @@ mod tests {
             "b1",
             None,
             "fake",
-            json!({ "maxFake": 25.0 }),
+            json!({ "max": 25.0 }),
         )]));
         h.thresholds
-            .update_room("fake", "b1", "r1", &bounds(json!({ "maxFake": 30.0 })))
+            .update_room("fake", "b1", "r1", &bounds(json!({ "max": 30.0 })))
             .await
             .unwrap();
         let building = h
@@ -167,11 +167,11 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(building["maxFake"], 25.0);
+        assert_eq!(building["max"], 25.0);
         let other_room = h.store.resolve("b1", &[("fake", "r9")]).await.unwrap()[0]
             .clone()
             .unwrap();
-        assert_eq!(other_room["maxFake"], 25.0);
+        assert_eq!(other_room["max"], 25.0);
     }
 
     #[tokio::test]
@@ -186,16 +186,16 @@ mod tests {
         );
         let stored = h
             .thresholds
-            .update_building("fake", "b1", &bounds(json!({ "maxFake": 25.0 })))
+            .update_building("fake", "b1", &bounds(json!({ "max": 25.0 })))
             .await
             .unwrap();
-        assert_eq!(stored["maxFake"], 25.0);
+        assert_eq!(stored["max"], 25.0);
         assert_eq!(
             h.thresholds
                 .get_building_threshold_by_metric("fake", "b1")
                 .await
                 .unwrap()
-                .unwrap()["maxFake"],
+                .unwrap()["max"],
             25.0
         );
     }
@@ -206,15 +206,15 @@ mod tests {
             "b1",
             None,
             "fake",
-            json!({ "maxFake": 25.0 }),
+            json!({ "max": 25.0 }),
         )]));
         let stored = h
             .thresholds
-            .update_building("fake", "b1", &bounds(json!({ "minFake": 18.0 })))
+            .update_building("fake", "b1", &bounds(json!({ "min": 18.0 })))
             .await
             .unwrap();
-        assert_eq!(stored["maxFake"], 25.0);
-        assert_eq!(stored["minFake"], 18.0);
+        assert_eq!(stored["max"], 25.0);
+        assert_eq!(stored["min"], 18.0);
     }
 
     #[tokio::test]
@@ -222,14 +222,14 @@ mod tests {
         let h = harness(FakeThresholds::default());
         assert!(matches!(
             h.thresholds
-                .get_building_threshold_by_metric("humidity", "b1")
+                .get_building_threshold_by_metric("noise", "b1")
                 .await
                 .unwrap_err(),
             DomainError::NotFound(_)
         ));
         assert!(matches!(
             h.thresholds
-                .update_building("humidity", "b1", &bounds(json!({ "maxFake": 1.0 })))
+                .update_building("noise", "b1", &bounds(json!({ "max": 1.0 })))
                 .await
                 .unwrap_err(),
             DomainError::NotFound(_)
@@ -254,7 +254,7 @@ mod tests {
         let h = harness(FakeThresholds::default());
         let error = h
             .thresholds
-            .update_room("fake", "b1", "r1", &bounds(json!({ "maxFake": "hot" })))
+            .update_room("fake", "b1", "r1", &bounds(json!({ "max": "hot" })))
             .await
             .unwrap_err();
         assert!(matches!(error, DomainError::Validation(_)));
@@ -268,7 +268,7 @@ mod tests {
                 "b1",
                 None,
                 "temperature",
-                json!({ "maxTemp": 25.0 }),
+                json!({ "max": 25.0 }),
             )]),
             rooms: vec!["r1".to_owned(), "r2".to_owned()],
             refuse: false,

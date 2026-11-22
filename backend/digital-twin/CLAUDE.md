@@ -53,7 +53,7 @@ ten minutes of ticks; replayed after an outage they would move dots backwards. T
 telemetry's: twin never creates it, so its 10 min retention holds. The Redis publish connects lazily and
 gives up after 2 s: twin starts without Redis, and a hung one never stalls the consumer.
 When a router answered, room counts (`twin_schema::EstimatedOccupancy`) go to Kafka
-`estimated-occupancy` for telemetry to store; never `totalDeviceCount`.
+`estimated-occupancy` for telemetry to store; never `total_device_count`.
 
 **`resync` republishes the request for a building that already exists** (needs an editing
 role). Use it when telemetry lost a registration, instead of re-uploading.

@@ -1,7 +1,6 @@
 use crate::adapters::metrics;
 use crate::kernel::ports::Fanout;
 use crate::types::event::TelemetryEvent;
-use crate::types::plugin::ENVELOPE_FIELDS;
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::MultiplexedConnection;
@@ -42,12 +41,6 @@ fn telemetry_json(event: &TelemetryEvent) -> Value {
         room_id: event.room_id.clone(),
         ts_ms: event.ts_ms,
         value: event.value,
-        fields: event
-            .payload
-            .iter()
-            .filter(|(key, _)| !ENVELOPE_FIELDS.contains(&key.as_str()))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
     };
     serde_json::to_value(reading).expect("a reading always serialises")
 }
@@ -83,111 +76,36 @@ impl Fanout for RedisFanout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    fn event(metric: &str, value: f64, payload: Value) -> TelemetryEvent {
+    fn event(metric: &str, value: f64) -> TelemetryEvent {
         TelemetryEvent {
             metric: metric.to_owned(),
             building_id: "b1".to_owned(),
             room_id: "r1".to_owned(),
             ts_ms: 1_699_999_000_000,
             value,
-            payload: payload.as_object().cloned().unwrap_or_default(),
             ingested_at_ms: 1_700_000_000_000,
         }
     }
 
     #[test]
-    fn a_temperature_event_keeps_the_node_wire_shape() {
-        let body = telemetry_json(&event(
-            "temperature",
-            21.5,
-            json!({ "buildingId": "b1", "roomId": "r1", "timestamp": 1, "temperature": 21.5 }),
-        ));
-        assert_eq!(body["type"], "temperature");
-        assert_eq!(body["roomId"], "r1");
-        assert_eq!(body["timestamp"], 1_699_999_000_000i64);
-        assert_eq!(body["value"], 21.5);
-        assert!(body.get("buildingId").is_none() && body.get("ingestedAt").is_none());
-    }
-
-    #[test]
-    fn the_envelope_is_never_duplicated_into_the_extras() {
-        let body = telemetry_json(&event(
-            "temperature",
-            21.5,
-            json!({ "buildingId": "other", "roomId": "other", "timestamp": 999, "temperature": 21.5 }),
-        ));
-        assert!(
-            body.get("buildingId").is_none(),
-            "the envelope owns the building"
-        );
-        assert_eq!(body["roomId"], "r1");
-        assert_eq!(body["timestamp"], 1_699_999_000_000i64);
-    }
-
-    #[test]
     fn a_batch_is_one_envelope_carrying_every_reading_of_the_tick() {
-        let body = telemetry_batch_json(&[
-            event("temperature", 21.5, json!({ "temperature": 21.5 })),
-            event("temperature", 19.0, json!({ "temperature": 19.0 })),
-        ]);
+        let body = telemetry_batch_json(&[event("temperature", 21.5), event("co2", 612.0)]);
 
         assert_eq!(body["buildingId"], "b1");
         assert_eq!(body["ingestedAt"], 1_700_000_000_000i64);
-        assert_eq!(body["readings"].as_array().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn every_reading_in_a_batch_keeps_the_single_event_wire_shape() {
-        let body =
-            telemetry_batch_json(&[event("temperature", 21.5, json!({ "temperature": 21.5 }))]);
-        let reading = &body["readings"][0];
-
-        assert_eq!(reading["type"], "temperature");
-        assert!(reading.get("buildingId").is_none());
-        assert_eq!(reading["roomId"], "r1");
-        assert_eq!(reading["value"], 21.5);
-    }
-
-    #[test]
-    fn the_envelope_carries_what_the_router_reads_and_nothing_that_shadows_a_reading() {
-        let body = telemetry_batch_json(&[event("temperature", 21.5, json!({}))]);
-        assert!(
-            body.get("buildingId").is_some(),
-            "the channel is keyed on it"
-        );
-        assert!(body.get("readings").is_some(), "dashboard gates on it");
         assert!(
             body.get("type").is_none(),
-            "`type` names a metric and belongs only to a reading"
+            "`type` belongs only to a reading"
         );
-        assert_eq!(body["readings"][0]["type"], "temperature");
-    }
-
-    #[test]
-    fn an_air_quality_event_carries_the_full_snapshot() {
-        let body = telemetry_json(&event(
-            "airQuality",
-            61.0,
-            json!({
-                "buildingId": "b1", "roomId": "r1", "timestamp": 1,
-                "indoor_aqi": 61.0, "pm25": 12.0, "pm10": 20.0, "co2": 800.0,
-                "voc": 0.3, "humidity": 41.0, "aqi": 55.0
-            }),
-        ));
-        assert_eq!(body["value"], 61.0);
-        for field in [
-            "indoor_aqi",
-            "pm25",
-            "pm10",
-            "co2",
-            "voc",
-            "humidity",
-            "aqi",
-        ] {
-            assert!(body.get(field).is_some(), "missing {field}");
-        }
+        let reading = &body["readings"][1];
+        assert_eq!(reading["type"], "co2");
+        assert_eq!(reading["roomId"], "r1");
+        assert_eq!(reading["value"], 612.0);
+        assert!(
+            reading.get("buildingId").is_none(),
+            "the envelope owns the building"
+        );
     }
 
     const WIRE: &str = include_str!("../../../../../schemas/fixtures/telemetry-envelope.json");
@@ -197,20 +115,13 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|r| {
-                let mut payload = r.as_object().unwrap().clone();
-                for derived in ["type", "value"] {
-                    payload.remove(derived);
-                }
-                TelemetryEvent {
-                    metric: r["type"].as_str().unwrap().to_owned(),
-                    building_id: tick["buildingId"].as_str().unwrap().to_owned(),
-                    room_id: r["roomId"].as_str().unwrap().to_owned(),
-                    ts_ms: r["timestamp"].as_i64().unwrap(),
-                    value: r["value"].as_f64().unwrap(),
-                    payload,
-                    ingested_at_ms: tick["ingestedAt"].as_i64().unwrap(),
-                }
+            .map(|r| TelemetryEvent {
+                metric: r["type"].as_str().unwrap().to_owned(),
+                building_id: tick["buildingId"].as_str().unwrap().to_owned(),
+                room_id: r["roomId"].as_str().unwrap().to_owned(),
+                ts_ms: r["timestamp"].as_i64().unwrap(),
+                value: r["value"].as_f64().unwrap(),
+                ingested_at_ms: tick["ingestedAt"].as_i64().unwrap(),
             })
             .collect()
     }

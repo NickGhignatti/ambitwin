@@ -42,7 +42,7 @@ describe('which notifications the bell shows', () => {
   })
 
   it('hides a breach the account never chose, since every switch is off by default', () => {
-    expect(isVisible({ ...breach, metric: 'airQuality' }, preferences)).toBe(false)
+    expect(isVisible({ ...breach, metric: 'co2' }, preferences)).toBe(false)
     expect(isVisible(breach, {})).toBe(false)
   })
 
