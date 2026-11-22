@@ -35,7 +35,7 @@ const withNew = () =>
   addSensor(emptyDraft(), {
     ref: 'd1',
     name: 'Router yard',
-    sensorType: 'peopleCount',
+    sensorType: 'people_count',
     roomId: null,
     position: point(4),
   })
@@ -54,7 +54,7 @@ describe('adding a sensor', () => {
     const draft = withNew()
     expect(changeCount(draft)).toBe(1)
     expect(toTelemetryBatch(draft).create).toEqual([
-      { ref: 'd1', name: 'Router yard', sensorType: 'peopleCount', roomId: null },
+      { ref: 'd1', name: 'Router yard', sensorType: 'people_count', roomId: null },
     ])
   })
 

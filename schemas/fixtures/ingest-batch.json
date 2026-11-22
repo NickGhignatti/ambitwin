@@ -2,8 +2,8 @@
   "description": "The body POSTed to /telemetry/ingest. Built by aq-simulator and sensor-simulator, and by telemetry itself when it counts a Wi-Fi tick; parsed by telemetry, which walks it as raw JSON rather than a type. One tick is one batch, all-or-nothing, at most 500 readings.",
   "rules": {
     "buildingId": "Carried once by the batch, never repeated on a reading. Telemetry stamps it onto every reading before validating; a reading naming a different building is rejected.",
-    "type": "Names the metric and selects the plugin that validates the reading.",
-    "valueField": "The reading's value lives under the plugin's `value_field`, which is the metric name for every plugin except airQuality, whose value is `indoor_aqi`."
+    "type": "The metric id, in snake_case. Selects the plugin that checks the reading.",
+    "value": "One number per reading. A device measuring several metrics sends one reading for each."
   },
   "cases": [
     {
@@ -16,45 +16,49 @@
             "type": "temperature",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "temperature": 21.5
+            "value": 21.5
           }
         ]
       }
     },
     {
-      "name": "peopleCount -- integer value, no actions",
+      "name": "people_count -- an integer value",
       "producer": "sensor-simulator",
       "body": {
         "buildingId": "bldg-3f2b4c5d",
         "readings": [
           {
-            "type": "peopleCount",
+            "type": "people_count",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "peopleCount": 14
+            "value": 14
           }
         ]
       }
     },
     {
-      "name": "airQuality -- value field is indoor_aqi, not the metric name",
+      "name": "an air station -- one reading per metric it measures",
       "producer": "aq-simulator",
       "body": {
         "buildingId": "bldg-3f2b4c5d",
         "readings": [
           {
-            "type": "airQuality",
+            "type": "co2",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "scenario": "occupied_office",
-            "pm25": 8.4,
-            "pm10": 12.1,
-            "co2": 612.0,
-            "voc": 45.0,
-            "temperature": 21.4,
-            "humidity": 44.0,
-            "aqi": 35,
-            "indoor_aqi": 41.2
+            "value": 612.0
+          },
+          {
+            "type": "indoor_aqi",
+            "roomId": "room-lab-2",
+            "timestamp": 1757251200000,
+            "value": 41.2
+          },
+          {
+            "type": "humidity",
+            "roomId": "room-lab-2",
+            "timestamp": 1757251200000,
+            "value": 44.0
           }
         ]
       }
@@ -66,16 +70,16 @@
         "buildingId": "bldg-3f2b4c5d",
         "readings": [
           {
-            "type": "totalDeviceCount",
+            "type": "total_device_count",
             "roomId": "ground-floor",
             "timestamp": 1757251200000,
-            "totalDeviceCount": 47
+            "value": 47
           },
           {
-            "type": "ratioDeviceCount",
+            "type": "ratio_device_count",
             "roomId": "ground-floor",
             "timestamp": 1757251200000,
-            "ratioDeviceCount": 24
+            "value": 24
           }
         ]
       }
@@ -90,25 +94,25 @@
             "type": "temperature",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "temperature": 21.5
+            "value": 21.5
           },
           {
-            "type": "peopleCount",
+            "type": "people_count",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "peopleCount": 14
+            "value": 14
           },
           {
             "type": "temperature",
             "roomId": "room-aula-magna",
             "timestamp": 1757251200000,
-            "temperature": 19.0
+            "value": 19.0
           },
           {
-            "type": "peopleCount",
+            "type": "people_count",
             "roomId": "room-aula-magna",
             "timestamp": 1757251200000,
-            "peopleCount": 132
+            "value": 132
           }
         ]
       }
@@ -123,32 +127,32 @@
         "readings": [
           {
             "type": "temperature",
-            "buildingId": "bldg-someone-else",
             "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "temperature": 21.5
+            "value": 21.5,
+            "buildingId": "bldg-someone-else"
           }
         ]
       }
     },
     {
       "name": "a metric the registry does not know",
-      "reason": "type: unknown sensor type: deviceCount -- the key that actually drifted",
+      "reason": "type: unknown sensor type: airQuality -- a combined reading no plugin accepts",
       "body": {
         "buildingId": "bldg-3f2b4c5d",
         "readings": [
           {
-            "type": "deviceCount",
-            "roomId": "ground-floor",
+            "type": "airQuality",
+            "roomId": "room-lab-2",
             "timestamp": 1757251200000,
-            "deviceCount": 9
+            "value": 41.2
           }
         ]
       }
     },
     {
-      "name": "a reading missing the value its type names",
-      "reason": "temperature: required",
+      "name": "a reading without a value",
+      "reason": "value: required",
       "body": {
         "buildingId": "bldg-3f2b4c5d",
         "readings": [
@@ -161,9 +165,43 @@
       }
     },
     {
+      "name": "a measure riding along on another metric's reading",
+      "reason": "co2: not a field of indoor_aqi -- one reading, one number",
+      "body": {
+        "buildingId": "bldg-3f2b4c5d",
+        "readings": [
+          {
+            "type": "indoor_aqi",
+            "roomId": "room-lab-2",
+            "timestamp": 1757251200000,
+            "value": 41.2,
+            "co2": 612.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a fractional count",
+      "reason": "value: must be a whole number",
+      "body": {
+        "buildingId": "bldg-3f2b4c5d",
+        "readings": [
+          {
+            "type": "people_count",
+            "roomId": "room-lab-2",
+            "timestamp": 1757251200000,
+            "value": 14.5
+          }
+        ]
+      }
+    },
+    {
       "name": "an empty batch",
       "reason": "readings: must not be empty",
-      "body": { "buildingId": "bldg-3f2b4c5d", "readings": [] }
+      "body": {
+        "buildingId": "bldg-3f2b4c5d",
+        "readings": []
+      }
     }
   ]
 }

@@ -34,7 +34,7 @@ fn batch(readings: &[(&str, i64, f64)]) -> serde_json::Value {
         "buildingId": "b1",
         "readings": readings.iter().map(|(room, ts_ms, value)| json!({
             "type": "temperature", "roomId": room,
-            "timestamp": ts_ms, "temperature": value
+            "timestamp": ts_ms, "value": value
         })).collect::<Vec<_>>(),
     })
 }
@@ -91,7 +91,7 @@ async fn a_reader_cannot_edit() {
             "PATCH",
             "/thresholds/temperature/buildings/b1",
             Some(&customer()),
-            json!({ "maxTemp": 25.0 }),
+            json!({ "max": 25.0 }),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -149,13 +149,13 @@ async fn ingesting_an_unknown_sensor_type_names_the_reading_that_carried_it() {
     let app = test_app(fresh_db("ingest_unknown").await, vec!["eng"]).await;
     let (status, body) = app
         .ingest(json!({ "buildingId": "b1", "readings": [
-            { "type": "humidity", "roomId": "r1", "timestamp": BASE_MS, "temperature": 21.5 }
+            { "type": "noise", "roomId": "r1", "timestamp": BASE_MS, "value": 21.5 }
         ]}))
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     let details = body["details"][0].as_str().unwrap();
     assert!(details.contains("readings[0]"), "got {details}");
-    assert!(details.contains("humidity"), "got {details}");
+    assert!(details.contains("noise"), "got {details}");
 }
 
 #[tokio::test]
@@ -170,7 +170,7 @@ async fn ingesting_an_invalid_payload_is_rejected_with_the_offending_fields() {
     assert_eq!(body["error"], "Payload validation failed.");
     let details = body["details"][0].as_str().unwrap();
     assert!(details.contains("timestamp"));
-    assert!(details.contains("temperature"));
+    assert!(details.contains("value"));
 }
 
 #[tokio::test]
@@ -227,7 +227,7 @@ async fn a_batch_with_one_bad_reading_persists_nothing() {
         .ingest(json!({
             "buildingId": "b1",
             "readings": [
-                { "type": "temperature", "roomId": "r1", "timestamp": BASE_MS, "temperature": 21.5 },
+                { "type": "temperature", "roomId": "r1", "timestamp": BASE_MS, "value": 21.5 },
                 { "type": "temperature", "roomId": "r2", "timestamp": BASE_MS }
             ]
         }))
@@ -254,7 +254,7 @@ async fn a_batch_cannot_smuggle_a_reading_for_another_building() {
             "buildingId": "b1",
             "readings": [
                 { "type": "temperature", "buildingId": "b2", "roomId": "r1",
-                  "timestamp": BASE_MS, "temperature": 21.5 }
+                  "timestamp": BASE_MS, "value": 21.5 }
             ]
         }))
         .await;
@@ -268,7 +268,7 @@ async fn ingest_rejects_a_non_string_building_and_a_non_numeric_reading() {
 
     let (status, body) = app
         .ingest(json!({ "buildingId": {}, "readings": [
-            { "type": "temperature", "roomId": 123, "timestamp": BASE_MS, "temperature": "warm" }
+            { "type": "temperature", "roomId": 123, "timestamp": BASE_MS, "value": "warm" }
         ]}))
         .await;
 
@@ -276,7 +276,7 @@ async fn ingest_rejects_a_non_string_building_and_a_non_numeric_reading() {
     let details = body["details"][0].as_str().unwrap();
     assert!(details.contains("buildingId"), "got {details}");
     assert!(details.contains("roomId"), "got {details}");
-    assert!(details.contains("temperature"), "got {details}");
+    assert!(details.contains("value"), "got {details}");
 }
 
 #[tokio::test]
@@ -324,45 +324,27 @@ async fn entire_building_returns_one_row_per_room() {
 }
 
 #[tokio::test]
-async fn a_read_carries_the_same_flat_metric_fields_the_socket_event_does() {
+async fn a_read_carries_one_metric_and_its_number() {
     let app = test_app(fresh_db("read_shape").await, vec!["eng"]).await;
     app.ingest(json!({ "buildingId": "b1", "readings": [
-        { "type": "airQuality", "roomId": "r1", "timestamp": BASE_MS,
-          "pm25": 8.0, "co2": 700.0, "indoor_aqi": 42.5 }
+        { "type": "co2", "roomId": "r1", "timestamp": BASE_MS, "value": 700.0 }
     ]}))
     .await;
 
     let (status, body) = app
-        .get(
-            "/airQuality/latest?building=b1&roomId=r1",
-            Some(&customer()),
-        )
+        .get("/co2/latest?building=b1&roomId=r1", Some(&customer()))
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let data = &body["data"];
     assert_eq!(
-        data["indoor_aqi"], 42.5,
-        "the value field must be readable under its own name, not only as `value`"
-    );
-    assert_eq!(
-        data["pm25"], 8.0,
-        "every other measurement must survive the round trip at the top level"
-    );
-    assert_eq!(data["co2"], 700.0);
-    assert_eq!(data["building"], "b1");
-    assert_eq!(data["roomId"], "r1");
-    assert_eq!(data["timestamp"], BASE_MS);
-    assert_eq!(data["value"], 42.5);
-    assert!(
-        data.get("payload").is_none(),
-        "a nested payload is the shape the dashboard cannot read"
+        body["data"],
+        json!({ "building": "b1", "roomId": "r1", "timestamp": BASE_MS, "value": 700.0 })
     );
 
     let (_, body) = app
-        .get("/airQuality/entireBuilding?building=b1", Some(&customer()))
+        .get("/co2/entireBuilding?building=b1", Some(&customer()))
         .await;
-    assert_eq!(body["data"][0]["indoor_aqi"], 42.5);
+    assert_eq!(body["data"][0]["value"], 700.0);
 }
 
 #[tokio::test]
@@ -427,35 +409,35 @@ async fn a_people_count_room_threshold_is_readable_back() {
     let (status, body) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1/rooms/r1",
+            "/thresholds/people_count/buildings/b1/rooms/r1",
             Some(&staff()),
-            json!({ "maxPeople": 12 }),
+            json!({ "max": 12 }),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["maxPeople"], 12);
+    assert_eq!(body["data"]["max"], 12);
 
     app.send_json(
         "PATCH",
-        "/thresholds/peopleCount/buildings/b1",
+        "/thresholds/people_count/buildings/b1",
         Some(&staff()),
-        json!({ "maxPeople": 50 }),
+        json!({ "max": 50 }),
     )
     .await;
 
     let (_, building) = app
-        .get("/thresholds/peopleCount/buildings/b1", Some(&customer()))
+        .get("/thresholds/people_count/buildings/b1", Some(&customer()))
         .await;
-    assert_eq!(building["data"]["maxPeople"], 50);
+    assert_eq!(building["data"]["max"], 50);
 
     app.ingest(json!({ "buildingId": "b1", "readings": [
-        { "type": "peopleCount", "roomId": "r1", "timestamp": BASE_MS, "peopleCount": 20 }
+        { "type": "people_count", "roomId": "r1", "timestamp": BASE_MS, "value": 20 }
     ]}))
     .await;
 
     let alerts = app.alerts.published.lock().unwrap();
     assert_eq!(alerts.len(), 1);
-    assert_eq!(alerts[0].metric, "peopleCount");
+    assert_eq!(alerts[0].metric, "people_count");
     assert_eq!(alerts[0].threshold, 12.0);
 }
 
@@ -465,7 +447,7 @@ async fn a_bound_the_metric_does_not_declare_is_rejected() {
     let (status, _) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1",
+            "/thresholds/people_count/buildings/b1",
             Some(&staff()),
             json!({ "maxTemp": 25.0 }),
         )
@@ -536,8 +518,8 @@ fn devices_tick(ts_ms: i64, rooms: &[(&str, u32)]) -> serde_json::Value {
     json!({
         "buildingId": "b1",
         "readings": rooms.iter().map(|(room, count)| json!({
-            "type": "totalDeviceCount", "roomId": room,
-            "timestamp": ts_ms, "totalDeviceCount": count
+            "type": "total_device_count", "roomId": room,
+            "timestamp": ts_ms, "value": count
         })).collect::<Vec<_>>(),
     })
 }
@@ -693,7 +675,7 @@ async fn a_sensor_batch_returns_server_ids_and_the_list_shows_them() {
             json!({ "create": [
                 { "ref": "d1", "name": "Lab thermostat", "sensorType": "temperature", "roomId": "r1",
                   "sensorId": "chosen-by-client" },
-                { "ref": "d2", "name": "Router hall", "sensorType": "peopleCount", "roomId": null },
+                { "ref": "d2", "name": "Router hall", "sensorType": "people_count", "roomId": null },
             ]}),
         )
         .await;
@@ -770,7 +752,11 @@ async fn a_router_is_registered_as_one_device() {
 #[tokio::test]
 async fn a_metric_the_router_produces_is_not_a_sensor_type() {
     let app = sensor_app("sensormetric").await;
-    for metric in ["totalDeviceCount", "ratioDeviceCount", "estimatedOccupancy"] {
+    for metric in [
+        "total_device_count",
+        "ratio_device_count",
+        "estimated_occupancy",
+    ] {
         let (status, body) = app
             .send_json(
                 "POST",
@@ -852,7 +838,7 @@ async fn sensors_are_listed_by_name_with_the_actions_their_driver_supports() {
         SENSORS_B1,
         Some(&staff()),
         json!({ "create": [
-            { "ref": "d2", "name": "B counter", "sensorType": "peopleCount", "roomId": "r1" },
+            { "ref": "d2", "name": "B counter", "sensorType": "people_count", "roomId": "r1" },
             { "ref": "d1", "name": "A thermostat", "sensorType": "temperature", "roomId": "r1",
               "driver": "tp-simulator", "endpoint": "http://device.local" },
         ]}),
@@ -992,9 +978,13 @@ async fn the_device_catalog_lists_each_kind_with_the_metrics_it_reports() {
     assert_eq!(router["label"], "Router");
     assert_eq!(
         router["metrics"],
-        json!(["totalDeviceCount", "ratioDeviceCount", "estimatedOccupancy"])
+        json!([
+            "total_device_count",
+            "ratio_device_count",
+            "estimated_occupancy"
+        ])
     );
-    assert!(devices.iter().all(|d| d["kind"] != "totalDeviceCount"));
+    assert!(devices.iter().all(|d| d["kind"] != "total_device_count"));
 }
 
 #[tokio::test]
@@ -1022,7 +1012,7 @@ async fn the_contract_advertises_metrics_and_their_actions() {
     assert_eq!(body["service"], "telemetry");
 
     let metrics = body["metrics"].as_array().unwrap();
-    assert_eq!(metrics.len(), 6);
+    assert_eq!(metrics.len(), 8);
     let temperature = metrics
         .iter()
         .find(|metric| metric["kind"] == "temperature")
@@ -1034,7 +1024,7 @@ async fn the_contract_advertises_metrics_and_their_actions() {
 
     let people = metrics
         .iter()
-        .find(|metric| metric["kind"] == "peopleCount")
+        .find(|metric| metric["kind"] == "people_count")
         .unwrap();
     assert_eq!(people["actions"], json!([]));
 }
@@ -1060,8 +1050,7 @@ async fn the_catalog_deserialises_into_the_shape_dashboard_parses() {
         contract
             .metrics
             .iter()
-            .flat_map(|metric| &metric.fields)
-            .any(|field| field.name == "buildingId")
+            .any(|metric| metric.limit.max.is_some())
     );
 }
 
@@ -1231,10 +1220,10 @@ async fn a_wifi_tick_counts_each_rooms_phones_once() {
     );
     let latest = |metric: &str, room: &str| format!("/{metric}/latest?building=b1&roomId={room}");
     let (_, lab) = app
-        .get(&latest("totalDeviceCount", "r2"), Some(&customer()))
+        .get(&latest("total_device_count", "r2"), Some(&customer()))
         .await;
     let (_, people) = app
-        .get(&latest("ratioDeviceCount", "r2"), Some(&customer()))
+        .get(&latest("ratio_device_count", "r2"), Some(&customer()))
         .await;
     assert_eq!(lab["data"]["value"], 2.0);
     assert_eq!(people["data"]["value"], 2.0, "2 phones / 1.4, rounded up");
@@ -1322,7 +1311,7 @@ async fn a_body_that_is_not_an_envelope_is_rejected() {
     let (status, _) = app
         .ingest(
             json!({ "type": "temperature", "buildingId": "b1", "roomId": "r1",
-                        "timestamp": BASE_MS, "temperature": 21.5 }),
+                        "timestamp": BASE_MS, "value": 21.5 }),
         )
         .await;
     assert_eq!(
@@ -1337,7 +1326,7 @@ async fn a_reading_without_a_type_names_its_index() {
     let app = test_app(fresh_db("ingest_notype").await, vec!["eng"]).await;
     let (status, body) = app
         .ingest(json!({ "buildingId": "b1", "readings": [
-            { "roomId": "r1", "timestamp": BASE_MS, "temperature": 21.5 }
+            { "roomId": "r1", "timestamp": BASE_MS, "value": 21.5 }
         ]}))
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1347,39 +1336,27 @@ async fn a_reading_without_a_type_names_its_index() {
 }
 
 #[tokio::test]
-async fn the_type_field_is_not_stored_as_a_payload_extra() {
-    let app = test_app(fresh_db("ingest_typestrip").await, vec!["eng"]).await;
-    app.ingest(temperature("r1", BASE_MS, 21.5)).await;
-
-    let payload: serde_json::Value = sqlx::query_scalar("select payload from readings")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-    assert_eq!(payload, json!({}));
-}
-
-#[tokio::test]
 async fn every_room_threshold_can_be_set_in_one_request() {
     let app = test_app(fresh_db("bulkrooms").await, vec!["eng"]).await;
 
     let (status, body) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1/rooms",
+            "/thresholds/people_count/buildings/b1/rooms",
             Some(&staff()),
-            json!({ "r1": { "maxPeople": 12 }, "r2": { "maxPeople": 20 } }),
+            json!({ "r1": { "max": 12 }, "r2": { "max": 20 } }),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["r1"]["maxPeople"], 12);
-    assert_eq!(body["data"]["r2"]["maxPeople"], 20);
+    assert_eq!(body["data"]["r1"]["max"], 12);
+    assert_eq!(body["data"]["r2"]["max"], 20);
 
     // There is no GET for a single room's threshold, so prove both were stored the way the
     // system actually uses them: breach each one and expect its own alert.
     app.ingest(json!({ "buildingId": "b1", "readings": [
-        { "type": "peopleCount", "roomId": "r1", "timestamp": BASE_MS, "peopleCount": 20 },
-        { "type": "peopleCount", "roomId": "r2", "timestamp": BASE_MS, "peopleCount": 30 }
+        { "type": "people_count", "roomId": "r1", "timestamp": BASE_MS, "value": 20 },
+        { "type": "people_count", "roomId": "r2", "timestamp": BASE_MS, "value": 30 }
     ]}))
     .await;
 
@@ -1398,9 +1375,9 @@ async fn one_bad_room_rejects_the_whole_batch_and_writes_nothing() {
     let (status, _) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1/rooms",
+            "/thresholds/people_count/buildings/b1/rooms",
             Some(&staff()),
-            json!({ "r1": { "maxPeople": 12 }, "r2": { "maxTemp": 25.0 } }),
+            json!({ "r1": { "max": 12 }, "r2": { "maxTemp": 25.0 } }),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1408,7 +1385,7 @@ async fn one_bad_room_rejects_the_whole_batch_and_writes_nothing() {
     // r1 was valid and came first. If the batch wrote as it went, its threshold would now
     // exist and this reading would breach it.
     app.ingest(json!({ "buildingId": "b1", "readings": [
-        { "type": "peopleCount", "roomId": "r1", "timestamp": BASE_MS, "peopleCount": 99 }
+        { "type": "people_count", "roomId": "r1", "timestamp": BASE_MS, "value": 99 }
     ]}))
     .await;
 
@@ -1423,9 +1400,9 @@ async fn a_bulk_room_patch_needs_edit_rights_on_the_building() {
     let (status, _) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1/rooms",
+            "/thresholds/people_count/buildings/b1/rooms",
             Some(&customer()),
-            json!({ "r1": { "maxPeople": 12 } }),
+            json!({ "r1": { "max": 12 } }),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1438,7 +1415,7 @@ async fn an_empty_bulk_room_patch_is_accepted_and_changes_nothing() {
     let (status, body) = app
         .send_json(
             "PATCH",
-            "/thresholds/peopleCount/buildings/b1/rooms",
+            "/thresholds/people_count/buildings/b1/rooms",
             Some(&staff()),
             json!({}),
         )
@@ -1460,8 +1437,8 @@ async fn simulation_app(label: &str, sensor: &MockServer, aq: &MockServer) -> Te
     let pool = fresh_db(label).await;
     seed_building(&pool, "b1", &["r1", "r2"]).await;
     let simulators = json!({
-        "sensor-simulator": { "url": sensor.uri(), "kinds": ["temperature", "peopleCount"] },
-        "aq-simulator": { "url": aq.uri(), "kinds": ["airQuality"] },
+        "sensor-simulator": { "url": sensor.uri(), "kinds": ["temperature", "people_count"] },
+        "aq-simulator": { "url": aq.uri(), "kinds": ["air_quality"] },
     });
     test_app_with_simulators(pool, vec!["eng"], &simulators.to_string()).await
 }
@@ -1491,7 +1468,7 @@ async fn starting_sends_each_simulator_only_the_room_sensors_it_simulates() {
             Some(&staff()),
             json!({ "create": [
                 { "ref": "t", "name": "Lab thermostat", "sensorType": "temperature", "roomId": "r1" },
-                { "ref": "a", "name": "Aula AQ", "sensorType": "airQuality", "roomId": "r2" },
+                { "ref": "a", "name": "Aula AQ", "sensorType": "air_quality", "roomId": "r2" },
                 { "ref": "rt", "name": "Hall AP", "sensorType": "router", "roomId": "r1" },
                 { "ref": "o", "name": "Roof thermometer", "sensorType": "temperature", "roomId": null },
             ]}),
@@ -1521,7 +1498,7 @@ async fn starting_sends_each_simulator_only_the_room_sensors_it_simulates() {
     assert_eq!(
         received(&aq, "/control/start").await,
         vec![json!({ "buildingId": "b1", "sensors": [
-            { "sensorId": id("a"), "sensorType": "airQuality", "roomId": "r2" }
+            { "sensorId": id("a"), "sensorType": "air_quality", "roomId": "r2" }
         ]})]
     );
 }

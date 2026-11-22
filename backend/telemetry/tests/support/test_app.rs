@@ -64,7 +64,7 @@ pub async fn test_app_with_simulators(
     let registry = Arc::new(PluginRegistry::new(telemetry::plugins::all()).unwrap());
 
     let devices = Arc::new(DeviceCatalog::new(telemetry::plugins::devices(), &registry).unwrap());
-    let readings_store = Arc::new(PgReadings::new(pool.clone(), registry.clone()));
+    let readings_store = Arc::new(PgReadings::new(pool.clone()));
     let thresholds_store = Arc::new(PgThresholds::new(pool.clone()));
     let sensors_store = Arc::new(PgSensors::new(pool.clone()));
     let buildings_store = Arc::new(PgBuildings::new(pool.clone()));

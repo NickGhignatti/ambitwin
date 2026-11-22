@@ -1,406 +1,55 @@
-use crate::plugins::common::reading;
-use crate::types::plugin::{
-    BoundSpec, FieldKind, FieldSpec, MetricDescriptor, SensorPlugin, check_fields,
-};
-use crate::types::reading::Reading;
-use serde_json::Value;
+use crate::plugins::common::Metric;
+use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
 
-/// Devices a router hears; its rooms add up to the building's total.
-pub const TOTAL_DEVICE_COUNT: &str = "totalDeviceCount";
+// counts of devices a router hears; a phone count is no measure to alert on, so no limit
 
-static TOTAL_DESCRIPTOR: MetricDescriptor = MetricDescriptor {
-    value_field: TOTAL_DEVICE_COUNT,
-    key: TOTAL_DEVICE_COUNT,
-    label: "Total Device Count",
-    interface_name: "ITotalDeviceCount",
-    unit: Some("devices"),
-    fields: &[
-        FieldSpec {
-            name: "buildingId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
+pub fn total_device_count() -> Metric {
+    Metric {
+        descriptor: MetricDescriptor {
+            key: "total_device_count",
+            label: "Total Device Count",
+            interface_name: "ITotalDeviceCount",
+            unit: Some("devices"),
+            value_kind: FieldKind::NonNegativeInt,
+            limit: LimitSpec {
+                min: None,
+                max: None,
+            },
         },
-        FieldSpec {
-            name: "roomId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "timestamp",
-            kind: FieldKind::Finite,
-            required: true,
-        },
-        FieldSpec {
-            name: "totalDeviceCount",
-            kind: FieldKind::NonNegativeInt,
-            required: true,
-        },
-    ],
-};
-
-/// No device count alerts: one fires on a room full of laptops, and the estimates beside it
-/// would alert on a guess. Occupancy alerting stays with `peopleCount`.
-static NO_BOUNDS: &[BoundSpec] = &[];
-
-static RATIO_DESCRIPTOR: MetricDescriptor = MetricDescriptor {
-    value_field: "ratioDeviceCount",
-    key: "ratioDeviceCount",
-    label: "Estimated People Count",
-    interface_name: "IRatioDeviceCount",
-    unit: Some("people"),
-    fields: &[
-        FieldSpec {
-            name: "buildingId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "roomId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "timestamp",
-            kind: FieldKind::Finite,
-            required: true,
-        },
-        FieldSpec {
-            name: "ratioDeviceCount",
-            kind: FieldKind::NonNegativeInt,
-            required: true,
-        },
-    ],
-};
-
-/// Connected devices digital-twin placed in the room by position; never mixed into the total.
-pub const ESTIMATED_OCCUPANCY: &str = "estimatedOccupancy";
-
-static OCCUPANCY_DESCRIPTOR: MetricDescriptor = MetricDescriptor {
-    value_field: ESTIMATED_OCCUPANCY,
-    key: ESTIMATED_OCCUPANCY,
-    label: "Estimated Occupancy",
-    interface_name: "IEstimatedOccupancy",
-    unit: Some("devices"),
-    fields: &[
-        FieldSpec {
-            name: "buildingId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "roomId",
-            kind: FieldKind::NonEmptyString,
-            required: true,
-        },
-        FieldSpec {
-            name: "timestamp",
-            kind: FieldKind::Finite,
-            required: true,
-        },
-        FieldSpec {
-            name: ESTIMATED_OCCUPANCY,
-            kind: FieldKind::NonNegativeInt,
-            required: true,
-        },
-    ],
-};
-
-pub struct TotalDeviceCountPlugin;
-
-impl SensorPlugin for TotalDeviceCountPlugin {
-    fn key(&self) -> &'static str {
-        TOTAL_DESCRIPTOR.key
-    }
-
-    fn descriptor(&self) -> &MetricDescriptor {
-        &TOTAL_DESCRIPTOR
-    }
-
-    fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
-        validate_against(&TOTAL_DESCRIPTOR, payload)
-    }
-
-    fn bounds(&self) -> &'static [BoundSpec] {
-        NO_BOUNDS
+        actions: &[],
     }
 }
 
-pub struct RatioDeviceCountPlugin;
-
-impl SensorPlugin for RatioDeviceCountPlugin {
-    fn key(&self) -> &'static str {
-        RATIO_DESCRIPTOR.key
-    }
-
-    fn descriptor(&self) -> &MetricDescriptor {
-        &RATIO_DESCRIPTOR
-    }
-
-    fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
-        validate_against(&RATIO_DESCRIPTOR, payload)
-    }
-
-    fn bounds(&self) -> &'static [BoundSpec] {
-        NO_BOUNDS
+pub fn ratio_device_count() -> Metric {
+    Metric {
+        descriptor: MetricDescriptor {
+            key: "ratio_device_count",
+            label: "Estimated People Count",
+            interface_name: "IRatioDeviceCount",
+            unit: Some("people"),
+            value_kind: FieldKind::NonNegativeInt,
+            limit: LimitSpec {
+                min: None,
+                max: None,
+            },
+        },
+        actions: &[],
     }
 }
 
-pub struct EstimatedOccupancyPlugin;
-
-impl SensorPlugin for EstimatedOccupancyPlugin {
-    fn key(&self) -> &'static str {
-        OCCUPANCY_DESCRIPTOR.key
-    }
-
-    fn descriptor(&self) -> &MetricDescriptor {
-        &OCCUPANCY_DESCRIPTOR
-    }
-
-    fn validate(&self, payload: &Value) -> Result<Reading, Vec<String>> {
-        validate_against(&OCCUPANCY_DESCRIPTOR, payload)
-    }
-
-    fn bounds(&self) -> &'static [BoundSpec] {
-        NO_BOUNDS
-    }
-}
-
-fn validate_against(
-    descriptor: &'static MetricDescriptor,
-    payload: &Value,
-) -> Result<Reading, Vec<String>> {
-    let errors = check_fields(descriptor.fields, payload);
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-    let value = payload[descriptor.value_field].as_f64().unwrap_or_default();
-    Ok(reading(payload, descriptor.key, value))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn total_payload() -> Value {
-        json!({
-            "buildingId": "b1",
-            "roomId": "lobby",
-            "timestamp": 1_700_000_000_000i64,
-            "totalDeviceCount": 9
-        })
-    }
-
-    fn ratio_payload() -> Value {
-        json!({
-            "buildingId": "b1",
-            "roomId": "lobby",
-            "timestamp": 1_700_000_000_000i64,
-            "ratioDeviceCount": 4
-        })
-    }
-
-    #[test]
-    fn a_valid_total_payload_becomes_a_reading_carrying_the_device_count() {
-        let reading = TotalDeviceCountPlugin.validate(&total_payload()).unwrap();
-        assert_eq!(reading.metric, "totalDeviceCount");
-        assert_eq!(reading.building_id, "b1");
-        assert_eq!(reading.room_id, "lobby");
-        assert_eq!(reading.ts_ms, 1_700_000_000_000);
-        assert_eq!(reading.value, 9.0);
-    }
-
-    #[test]
-    fn a_valid_ratio_payload_becomes_a_reading_carrying_the_estimate() {
-        let reading = RatioDeviceCountPlugin.validate(&ratio_payload()).unwrap();
-        assert_eq!(reading.metric, "ratioDeviceCount");
-        assert_eq!(reading.room_id, "lobby");
-        assert_eq!(reading.value, 4.0);
-    }
-
-    #[test]
-    fn the_three_metrics_are_distinct_keys() {
-        let keys = [
-            TotalDeviceCountPlugin.key(),
-            RatioDeviceCountPlugin.key(),
-            EstimatedOccupancyPlugin.key(),
-        ];
-        assert_eq!(
-            keys.iter().collect::<std::collections::BTreeSet<_>>().len(),
-            3
-        );
-    }
-
-    #[test]
-    fn a_valid_occupancy_payload_becomes_a_reading_carrying_the_placed_devices() {
-        let reading = EstimatedOccupancyPlugin
-            .validate(&json!({
-                "buildingId": "b1",
-                "roomId": "lobby",
-                "timestamp": 1_700_000_000_000i64,
-                "estimatedOccupancy": 3
-            }))
-            .unwrap();
-        assert_eq!(reading.metric, "estimatedOccupancy");
-        assert_eq!(reading.room_id, "lobby");
-        assert_eq!(reading.value, 3.0);
-    }
-
-    #[test]
-    fn no_device_count_alerts() {
-        for plugin in [
-            &TotalDeviceCountPlugin as &dyn SensorPlugin,
-            &RatioDeviceCountPlugin,
-            &EstimatedOccupancyPlugin,
-        ] {
-            assert!(plugin.bounds().is_empty(), "{}", plugin.key());
-        }
-    }
-
-    #[test]
-    fn each_plugin_names_its_value_field_after_its_key() {
-        // Wi-Fi tick counting emits {"type": key, key: value}; the registry dispatches on `type`.
-        // Drift between the two rejects every batch it sends.
-        for descriptor in [&TOTAL_DESCRIPTOR, &RATIO_DESCRIPTOR, &OCCUPANCY_DESCRIPTOR] {
-            assert_eq!(descriptor.key, descriptor.value_field);
-        }
-    }
-
-    #[test]
-    fn an_empty_zone_is_a_valid_reading_for_both() {
-        let mut total = total_payload();
-        total["totalDeviceCount"] = json!(0);
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&total).unwrap().value,
-            0.0,
-            "zero is real data: the zone is empty"
-        );
-
-        let mut ratio = ratio_payload();
-        ratio["ratioDeviceCount"] = json!(0);
-        assert_eq!(RatioDeviceCountPlugin.validate(&ratio).unwrap().value, 0.0);
-    }
-
-    #[test]
-    fn a_negative_count_is_rejected() {
-        let mut payload = total_payload();
-        payload["totalDeviceCount"] = json!(-1);
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["totalDeviceCount: must be a non-negative integer."]
-        );
-    }
-
-    #[test]
-    fn a_fractional_count_is_rejected() {
-        let mut payload = ratio_payload();
-        payload["ratioDeviceCount"] = json!(3.5);
-        assert_eq!(
-            RatioDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["ratioDeviceCount: must be a non-negative integer."]
-        );
-    }
-
-    #[test]
-    fn a_quoted_count_is_rejected() {
-        let mut payload = total_payload();
-        payload["totalDeviceCount"] = json!("9");
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["totalDeviceCount: must be a non-negative integer."]
-        );
-    }
-
-    #[test]
-    fn a_null_count_is_rejected() {
-        let mut payload = total_payload();
-        payload["totalDeviceCount"] = json!(null);
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["totalDeviceCount: must be a non-negative integer."]
-        );
-    }
-
-    #[test]
-    fn a_payload_missing_its_count_is_rejected() {
-        let mut payload = ratio_payload();
-        payload.as_object_mut().unwrap().remove("ratioDeviceCount");
-        assert_eq!(
-            RatioDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["ratioDeviceCount: must be a non-negative integer."]
-        );
-    }
-
-    #[test]
-    fn a_total_reading_without_a_room_is_rejected_rather_than_stored_unattributed() {
-        // `common::reading` reads roomId unconditionally: undeclared, it becomes "" in a
-        // not-null column -- a zone reading attributed to nowhere.
-        let mut payload = total_payload();
-        payload.as_object_mut().unwrap().remove("roomId");
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["roomId: must be a non-empty string."]
-        );
-    }
-
-    #[test]
-    fn a_ratio_reading_without_a_room_is_rejected_too() {
-        let mut payload = ratio_payload();
-        payload.as_object_mut().unwrap().remove("roomId");
-        assert_eq!(
-            RatioDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["roomId: must be a non-empty string."]
-        );
-    }
-
-    #[test]
-    fn an_empty_room_id_is_rejected() {
-        let mut payload = total_payload();
-        payload["roomId"] = json!("");
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["roomId: must be a non-empty string."]
-        );
-    }
-
-    #[test]
-    fn a_payload_missing_the_building_is_rejected() {
-        let mut payload = total_payload();
-        payload.as_object_mut().unwrap().remove("buildingId");
-        assert_eq!(
-            TotalDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["buildingId: must be a non-empty string."]
-        );
-    }
-
-    #[test]
-    fn a_non_numeric_timestamp_is_rejected() {
-        let mut payload = ratio_payload();
-        payload["timestamp"] = json!("recent");
-        assert_eq!(
-            RatioDeviceCountPlugin.validate(&payload).unwrap_err(),
-            vec!["timestamp: must be a finite number."]
-        );
-    }
-
-    #[test]
-    fn the_whole_payload_is_carried_through_untouched() {
-        let reading = TotalDeviceCountPlugin.validate(&total_payload()).unwrap();
-        assert_eq!(reading.payload["totalDeviceCount"], json!(9));
-        assert_eq!(reading.payload["roomId"], json!("lobby"));
-        assert_eq!(reading.payload["buildingId"], json!("b1"));
-    }
-
-    #[test]
-    fn neither_metric_carries_a_threshold() {
-        // Occupancy alerting belongs to `peopleCount`, which measures people, not devices.
-        assert!(TotalDeviceCountPlugin.bounds().is_empty());
-        assert!(RatioDeviceCountPlugin.bounds().is_empty());
-    }
-
-    #[test]
-    fn neither_plugin_exposes_an_action() {
-        assert!(TotalDeviceCountPlugin.actions().is_empty());
-        assert!(RatioDeviceCountPlugin.actions().is_empty());
+pub fn estimated_occupancy() -> Metric {
+    Metric {
+        descriptor: MetricDescriptor {
+            key: "estimated_occupancy",
+            label: "Estimated Occupancy",
+            interface_name: "IEstimatedOccupancy",
+            unit: Some("devices"),
+            value_kind: FieldKind::NonNegativeInt,
+            limit: LimitSpec {
+                min: None,
+                max: None,
+            },
+        },
+        actions: &[],
     }
 }

@@ -1,25 +1,12 @@
 import type { Coordinates, RoomDimensions } from '../digital-twin/building.ts'
-
-export interface RoomThresholdDraft {
-  minTemp: number
-  maxTemp: number
-  maxAqi: number
-  maxCo2: number
-  maxPeople: number
-}
-
-export interface BuildingThresholdDraft {
-  minTemp: number
-  maxTemp: number
-  maxAqi: number
-  maxCo2: number
-}
+import type { ThresholdValues } from '@/utils/administration/thresholds.ts'
 
 export interface RoomDraft {
   id: string
   name: string
   capacity: number
-  thresholds: RoomThresholdDraft
+  /** Only the values this room sets itself; the rest fall back to the building's. */
+  thresholds: ThresholdValues
   position: Coordinates
   dimensions: RoomDimensions
   color?: string
@@ -27,6 +14,6 @@ export interface RoomDraft {
 
 export interface BuildingDraft {
   name: string
-  thresholds: BuildingThresholdDraft
+  thresholds: ThresholdValues
   rooms: RoomDraft[]
 }

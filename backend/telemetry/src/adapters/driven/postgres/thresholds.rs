@@ -59,7 +59,6 @@ impl ThresholdStore for PgThresholds {
                     scoped.get(&((*metric).to_owned(), Some((*room_id).to_owned()))),
                     scoped.get(&((*metric).to_owned(), None)),
                 )
-                .cloned()
             })
             .collect())
     }
@@ -109,7 +108,7 @@ impl ThresholdStore for PgThresholds {
         building_id: &str,
     ) -> anyhow::Result<Option<TemperatureLimits>> {
         let building: Option<Value> = sqlx::query_scalar(
-            "select coalesce(t.bounds -> 'maxTemp', 'null'::jsonb)
+            "select coalesce(t.bounds -> 'max', 'null'::jsonb)
              from buildings b
              left join thresholds t
                on t.building_id = b.id and t.metric = 'temperature' and t.room_id is null
@@ -124,7 +123,7 @@ impl ThresholdStore for PgThresholds {
         };
 
         let rows = sqlx::query(
-            "select r.room_id, t.bounds -> 'maxTemp' as max_temperature
+            "select r.room_id, t.bounds -> 'max' as max_temperature
              from building_rooms r
              left join thresholds t
                on t.building_id = r.building_id and t.room_id = r.room_id

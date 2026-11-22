@@ -17,6 +17,7 @@
 - [Real-Time Client Communication](./docs/design/tunneling.qd)
 - [Telemetry Storage & Retention](./docs/design/telemetry-storage.qd)
 - [Sensor Actions & the Device ACL](./docs/design/sensor-actions.qd)
+- [Metric Readings & Limits](./docs/design/metric-readings.qd)
 - [Floor Plans as Building Models](./docs/design/floor-plans.qd)
 - [Wireless People Flow](./docs/design/wireless-flow.qd)
 

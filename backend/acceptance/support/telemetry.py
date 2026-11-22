@@ -65,7 +65,7 @@ def ingest_temperature(
                 "timestamp": timestamp_ms
                 if timestamp_ms is not None
                 else int(time.time() * 1000),
-                "temperature": value,
+                "value": value,
             }
         ],
     }

@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use twin_schema::WifiObservations;
 
-const TOTAL_DEVICE_COUNT: &str = "totalDeviceCount";
-const RATIO_DEVICE_COUNT: &str = "ratioDeviceCount";
+pub const TOTAL_DEVICE_COUNT: &str = "total_device_count";
+const RATIO_DEVICE_COUNT: &str = "ratio_device_count";
 
 /// Checks a building's Wi-Fi tick, counts its phones per router room, then hands on the bytes.
 pub struct Observations {
@@ -67,7 +67,7 @@ fn room_readings(tick: &WifiObservations, sensors: &[Sensor]) -> Vec<Value> {
         *counts.entry(room).or_default() += 1;
     }
 
-    let reading = |metric: &str, room: &str, value: u64| json!({ "type": metric, "roomId": room, "timestamp": tick.tick, metric: value });
+    let reading = |metric: &str, room: &str, value: u64| json!({ "type": metric, "roomId": room, "timestamp": tick.tick, "value": value });
     let mut readings: Vec<Value> = counts
         .iter()
         .map(|(room, count)| reading(TOTAL_DEVICE_COUNT, room, *count))

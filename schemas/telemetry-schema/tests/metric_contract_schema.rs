@@ -42,9 +42,18 @@ fn the_schema_refuses_the_pre_rename_field_names() {
 }
 
 #[test]
-fn the_schema_refuses_a_field_kind_that_is_not_one_telemetry_emits() {
+fn the_schema_refuses_a_parameter_kind_that_is_not_one_telemetry_emits() {
     let mut fixture = fixture();
-    fixture["metrics"][0]["fields"][0]["type"] = serde_json::json!("String");
+    fixture["metrics"][0]["actions"][0]["parameters"][0]["type"] = serde_json::json!("String");
+
+    assert!(!validator().is_valid(&fixture));
+}
+
+// a limit has two ends; the old per-metric names (`maxTemp`) must not slip back in
+#[test]
+fn the_schema_refuses_a_limit_end_other_than_min_or_max() {
+    let mut fixture = fixture();
+    metric(&mut fixture).insert("limit".to_owned(), serde_json::json!({ "maxTemp": 27 }));
 
     assert!(!validator().is_valid(&fixture));
 }

@@ -15,8 +15,10 @@
     "notificationType": {
       "enum": [
         "temperature",
-        "airQuality",
-        "peopleCount"
+        "people_count",
+        "co2",
+        "indoor_aqi",
+        "humidity"
       ]
     },
     "reply": {

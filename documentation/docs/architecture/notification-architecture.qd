@@ -6,7 +6,7 @@
     |---|---|---|
     | Breach | A value outside its limit | 31 °C, limit 28 °C |
     | Alert | What a person receives about a breach | "Room 2 is too hot" |
-    | Cooldown | A pause during which repeats of one alert are muted | 5 minutes per room and field |
+    | Cooldown | A pause during which repeats of one alert are muted | 5 minutes per room and metric |
     | Web Push | Browser notifications that arrive with no tab open | Phone lock screen |
     | Push subscription | One device's address for Web Push | Ada's laptop |
     | Dead-letter topic | Where messages that cannot be handled wait | `alerts.dlq` |
@@ -75,7 +75,7 @@ Two ways in, one alert logic. A test alert and a real breach go through the same
 
 .mermaid
     flowchart TD
-        In["Breach from Kafka"] --> M{"Muted? Same room and field in the last 5 min"}
+        In["Breach from Kafka"] --> M{"Muted? Same room and metric in the last 5 min"}
         M -- "yes" --> Stop["Done, nothing sent"]
         M -- "no" --> L{"Who owns the building?"}
         L -- "lookup failed" --> DLQ["Parked on alerts.dlq, not muted"]
