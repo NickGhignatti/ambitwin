@@ -14,11 +14,13 @@ fn the_fixture_parses_into_the_catalog_every_service_serves() {
         kinds,
         vec![
             "temperature",
-            "peopleCount",
-            "airQuality",
-            "totalDeviceCount",
-            "ratioDeviceCount",
-            "estimatedOccupancy"
+            "people_count",
+            "co2",
+            "indoor_aqi",
+            "humidity",
+            "total_device_count",
+            "ratio_device_count",
+            "estimated_occupancy"
         ]
     );
 }
@@ -41,7 +43,6 @@ fn the_wire_names_are_the_single_words_the_frontend_reads() {
     assert_eq!(metric["kind"], "temperature");
     assert_eq!(metric["interface"], "ITemperature");
     assert_eq!(metric["source"], "telemetry");
-    assert_eq!(metric["fields"][0]["type"], "NonEmptyString");
     assert_eq!(metric["actions"][0]["parameters"][0]["type"], "Finite");
 }
 
@@ -50,14 +51,36 @@ fn the_wire_names_are_the_single_words_the_frontend_reads() {
 #[test]
 fn a_unitless_metric_carries_an_explicit_null() {
     let raw: serde_json::Value = serde_json::from_str(FIXTURE).expect("fixture parses");
-    let air_quality = raw["metrics"]
+    let indoor_aqi = raw["metrics"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|metric| metric["kind"] == "airQuality")
+        .find(|metric| metric["kind"] == "indoor_aqi")
         .expect("the fixture covers a unitless metric");
 
-    assert_eq!(air_quality["unit"], serde_json::Value::Null);
+    assert_eq!(indoor_aqi["unit"], serde_json::Value::Null);
+}
+
+// A client offers only the ends a metric lists: none for a device count, a max with no start
+// for people (it comes from each room's capacity), both with a start for temperature.
+#[test]
+fn a_limit_says_which_ends_a_metric_takes_and_where_they_start() {
+    let catalog: ServiceMetricsContract = serde_json::from_str(FIXTURE).expect("fixture parses");
+    let limit_of = |kind: &str| {
+        &catalog
+            .metrics
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .unwrap()
+            .limit
+    };
+
+    assert_eq!(limit_of("total_device_count").min, None);
+    assert_eq!(limit_of("total_device_count").max, None);
+    assert_eq!(limit_of("people_count").max, Some(None));
+    assert_eq!(limit_of("people_count").min, None);
+    assert_eq!(limit_of("temperature").min, Some(Some(18.0)));
+    assert_eq!(limit_of("temperature").max, Some(Some(27.0)));
 }
 
 #[test]
@@ -80,7 +103,7 @@ fn the_fixtures_metrics_alone_decode_as_the_bare_array_variant() {
         serde_json::from_value(raw["metrics"].clone()).expect("a bare array is a valid answer");
 
     match decoded {
-        MetricsDiscoveryResponse::Metrics(metrics) => assert_eq!(metrics.len(), 6),
+        MetricsDiscoveryResponse::Metrics(metrics) => assert_eq!(metrics.len(), 8),
         MetricsDiscoveryResponse::ServiceContract(_) => {
             panic!("a bare array must not decode as the service variant")
         }

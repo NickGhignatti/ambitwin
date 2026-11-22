@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         DeviceCatalog::new(plugins::devices(), &registry)
             .map_err(|error| anyhow::anyhow!(error))?,
     );
-    let readings_store = Arc::new(PgReadings::new(pool.clone(), registry.clone()));
+    let readings_store = Arc::new(PgReadings::new(pool.clone()));
     // Wrapped once and shared: writes have to travel the same instance as
     // reads or the cache would never learn that a threshold changed.
     let thresholds_store = Arc::new(CachedThresholds::new(Arc::new(PgThresholds::new(

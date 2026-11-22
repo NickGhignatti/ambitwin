@@ -8,7 +8,7 @@ info:
     - Threshold breaches do not come through here: telemetry sends them on Kafka, and this
       service delivers them by Web Push and to the in-app bell.
     - Alert switches are per account, per domain, per metric. The metrics are closed:
-      `temperature`, `airQuality`, `peopleCount`.
+      `temperature`, `people_count`, `co2`, `indoor_aqi`, `humidity`.
     - The account always comes from the caller's claims; an `accountName` in a body is ignored.
     - When rate limiting is on, more than 300 requests a minute from one IP get `429` with an
       empty body.
@@ -35,7 +35,7 @@ components:
   schemas:
     Metric:
       type: string
-      enum: [temperature, airQuality, peopleCount]
+      enum: [temperature, people_count, co2, indoor_aqi, humidity]
 
     PushSubscription:
       type: object
@@ -203,7 +203,7 @@ paths:
                 value: { domainName: eng, type: temperature, enabled: false }
               severalMetrics:
                 summary: Several metrics, one value
-                value: { domainName: eng, types: [temperature, airQuality], enabled: true }
+                value: { domainName: eng, types: [temperature, indoor_aqi], enabled: true }
               eachItsOwn:
                 summary: Each switch its own value
                 value: { domainName: eng, preferences: [{ type: temperature, enabled: false }] }

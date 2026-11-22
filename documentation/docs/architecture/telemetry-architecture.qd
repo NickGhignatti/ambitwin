@@ -6,7 +6,7 @@
     |---|---|---|
     | Reading | One value from one sensor at one moment | 24.5 °C in room 2 |
     | Tick | Everything one building reports at one moment | 40 readings in one batch |
-    | Metric | A kind of reading | temperature, peopleCount |
+    | Metric | A kind of reading | temperature, people_count |
     | Plugin | One metric's own rules, in one place | The temperature plugin |
     | Microkernel | A small core that knows no metric, plus plugins that add them | Like a phone and its apps |
     | Limit | The value a metric must stay within | Over 28 °C is a breach |
@@ -66,9 +66,9 @@ Two things change often, and for different reasons. Each has its own pattern.
         end
         subgraph Plugins
             T1["temperature"]
-            T2["peopleCount"]
-            T3["airQuality"]
-            T4["deviceCount"]
+            T2["people_count"]
+            T3["co2, indoor_aqi, humidity"]
+            T4["device counts"]
         end
         subgraph Out["Driven adapters"]
             PG["PostgreSQL"]
@@ -85,7 +85,8 @@ Two things change often, and for different reasons. Each has its own pattern.
         P -.-> PG & R & KP & TW & DV
 
 - **The kernel never names a metric.** It asks the registry for the right plugin. A new metric is one new plugin plus one line to register it.
-- **A plugin declares everything about its metric:** fields, unit, limits, and the commands its devices accept.
+- **A plugin declares everything about its metric:** id, label, unit, the kind of number, its limit, and the commands its devices accept.
+- **A reading is one metric and one number.** Every plugin checks the same four keys, so a device that measures several things sends one reading for each.
 - **The catalog and the check read the same declaration.** What `telemetry` says it accepts is exactly what it accepts.
 - A test fails the build if the kernel imports a plugin or a technology, or a plugin imports another plugin.
 
@@ -122,11 +123,13 @@ Two things change often, and for different reasons. Each has its own pattern.
 
 ## Limits
 
-- A limit is set for a building, and may be set for one room. The room's limit wins.
+- A limit has two ends, `min` and `max`. A metric says which it has.
+- A limit is set for a building, and may be set for one room. The room's end wins over the building's, one end at a time.
+- A reading breaches at most once: above `max` is checked before below `min`.
 - Registering a building sets every room's limits in one request, all checked before any is written.
-- `deviceCount` never raises a breach. A room full of laptops is not a crowd, and the Wi-Fi estimate is a guess. Crowding stays with `peopleCount`.
+- The device counts (`total_device_count`, `ratio_device_count`, `estimated_occupancy`) never raise a breach. A room full of laptops is not a crowd, and the Wi-Fi estimate is a guess. Crowding stays with `people_count`.
 
-**Example.** The building limit for temperature is 28 °C. Room 2, a server room, has its own: 24 °C. A reading of 25 °C breaches in room 2 only.
+**Example.** The building limit for temperature is 16 to 28 °C. Room 2, a server room, sets only a `max` of 24 °C, so it is held to 16 to 24 °C. A reading of 25 °C breaches in room 2 only.
 
 ---
 

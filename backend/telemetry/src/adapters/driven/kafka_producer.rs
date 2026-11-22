@@ -158,7 +158,6 @@ mod tests {
     fn alert(metric: &str, value: f64, direction: BoundDirection, threshold: f64) -> AlertPayload {
         AlertPayload {
             metric: metric.to_owned(),
-            field: metric.to_owned(),
             building_id: "b1".to_owned(),
             room_id: "r1".to_owned(),
             building_name: "HQ".to_owned(),
@@ -177,7 +176,7 @@ mod tests {
         let body = alert_json(&alert("temperature", 26.0, BoundDirection::Above, 25.0));
         assert_eq!(body["buildingId"], "b1");
         assert_eq!(body["roomId"], "r1");
-        assert_eq!(body["temperature"], 26.0);
+        assert_eq!(body["value"], 26.0);
         assert_eq!(body["type"], "temperature");
         assert_eq!(body["direction"], "high");
         assert_eq!(body["threshold"], 25.0);
@@ -188,13 +187,6 @@ mod tests {
     fn a_low_breach_reports_the_direction_as_low() {
         let body = alert_json(&alert("temperature", 14.0, BoundDirection::Below, 18.0));
         assert_eq!(body["direction"], "low");
-    }
-
-    #[test]
-    fn another_metric_names_its_value_field_after_itself() {
-        let body = alert_json(&alert("peopleCount", 20.0, BoundDirection::Above, 12.0));
-        assert_eq!(body["peopleCount"], 20.0);
-        assert_eq!(body["type"], "peopleCount");
     }
 
     #[tokio::test]

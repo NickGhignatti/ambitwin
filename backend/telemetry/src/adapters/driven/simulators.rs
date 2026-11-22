@@ -298,9 +298,9 @@ mod tests {
     fn config_names_each_simulator_and_the_kinds_it_claims() {
         let (_, specs) = HttpSimulators::from_json(
             r#"{ "sensor-simulator": { "url": "http://sensor-simulator:3000",
-                                       "kinds": ["temperature", "peopleCount"] },
+                                       "kinds": ["temperature", "people_count"] },
                  "aq-simulator":     { "url": "http://aq-simulator:3000",
-                                       "kinds": ["airQuality"] } }"#,
+                                       "kinds": ["air_quality"] } }"#,
         )
         .unwrap();
         let mut specs: Vec<(String, Vec<String>)> =
@@ -309,10 +309,10 @@ mod tests {
         assert_eq!(
             specs,
             vec![
-                ("aq-simulator".to_owned(), vec!["airQuality".to_owned()]),
+                ("aq-simulator".to_owned(), vec!["air_quality".to_owned()]),
                 (
                     "sensor-simulator".to_owned(),
-                    vec!["temperature".to_owned(), "peopleCount".to_owned()]
+                    vec!["temperature".to_owned(), "people_count".to_owned()]
                 ),
             ]
         );

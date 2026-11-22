@@ -20,13 +20,10 @@ const EMPTY_STATUS = 'dashboard.table.rooms.status.empty'
 
 const round = (value: number) => Math.round(value * 10) / 10
 
-// Air quality points carry their index under whichever name the producing plugin used.
-const valueOf = (point: ApiDataPoint) => point.value ?? point.indoorAqi ?? point.indoor_aqi
-
 function valuesFor(points: ApiDataPoint[] | undefined, roomIds: Set<string>): number[] {
   return (points ?? [])
     .filter((point) => roomIds.has(point.roomId))
-    .map(valueOf)
+    .map((point) => point.value)
     .filter((value): value is number => typeof value === 'number')
 }
 
@@ -39,8 +36,8 @@ export function summarize(
   readings: Record<string, ApiDataPoint[]>,
 ): BuildingSummary {
   const roomIds = new Set(rows.map((row) => row.roomId))
-  const people = valuesFor(readings.peopleCount, roomIds).reduce((sum, v) => sum + v, 0)
-  const capacity = rows.reduce((sum, row) => sum + (row.roomMaxOccupancy || 0), 0)
+  const people = valuesFor(readings.people_count, roomIds).reduce((sum, v) => sum + v, 0)
+  const capacity = rows.reduce((sum, row) => sum + (row.room_max_occupancy || 0), 0)
 
   return {
     rooms: rows.length,
@@ -48,7 +45,7 @@ export function summarize(
     capacity,
     occupancy: capacity > 0 ? people / capacity : null,
     averageTemperature: average(valuesFor(readings.temperature, roomIds)),
-    averageAqi: average(valuesFor(readings.airQuality, roomIds)),
+    averageAqi: average(valuesFor(readings.indoor_aqi, roomIds)),
     alerts: rows.filter((row) => isAlertStatus(row.status)).length,
   }
 }
@@ -60,7 +57,7 @@ export function filterRows(rows: TableBody[], query: string, filter: RowFilter):
     if (filter === 'alerts' && !isAlertStatus(row.status)) return false
     return (
       !needle ||
-      row.roomName.toLowerCase().includes(needle) ||
+      row.room_name.toLowerCase().includes(needle) ||
       row.roomId.toLowerCase().includes(needle)
     )
   })
@@ -70,8 +67,8 @@ export function filterRows(rows: TableBody[], query: string, filter: RowFilter):
 export const roomsToRows = (rooms: Room[]): TableBody[] =>
   rooms.map((room) => ({
     roomId: room.id,
-    roomName: room.name?.trim() || room.id,
-    roomMaxOccupancy: room.capacity,
+    room_name: room.name?.trim() || room.id,
+    room_max_occupancy: room.capacity,
     status: getStatusByOccupants(0, room.capacity),
   }))
 

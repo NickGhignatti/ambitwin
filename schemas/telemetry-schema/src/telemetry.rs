@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 pub const RAW_CHANNEL: &str = "telemetry:raw";
 pub const FILTERED_CHANNEL_PREFIX: &str = "telemetry:filtered:";
@@ -15,8 +15,9 @@ pub fn building_of_filtered_channel(channel: &str) -> &str {
         .unwrap_or(channel)
 }
 
+/// One metric, one number. A device measuring several metrics sends one reading for each.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TelemetryReading {
     #[serde(rename = "type")]
     pub metric: String,
@@ -24,8 +25,6 @@ pub struct TelemetryReading {
     #[serde(rename = "timestamp")]
     pub ts_ms: i64,
     pub value: f64,
-    #[serde(flatten)]
-    pub fields: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,7 +53,6 @@ mod tests {
             room_id: "r1".to_string(),
             ts_ms: 1_700_000_000_000,
             value: 21.5,
-            fields: Map::new(),
         }
     }
 
@@ -72,33 +70,15 @@ mod tests {
     }
 
     #[test]
-    fn a_plugins_own_fields_ride_alongside_and_survive_a_round_trip() {
-        let mut reading = reading();
-        reading.metric = "air_quality".to_string();
-        reading.fields.insert("indoorAqi".to_string(), json!(42.0));
-        reading.fields.insert("pm25".to_string(), json!(9.5));
-
-        let encoded = serde_json::to_value(&reading).unwrap();
-        assert_eq!(encoded["indoorAqi"], 42.0);
-        assert_eq!(encoded["pm25"], 9.5);
-        assert_eq!(
-            serde_json::from_value::<TelemetryReading>(encoded).unwrap(),
-            reading,
-        );
-    }
-
-    #[test]
     fn an_integer_value_is_read_as_a_number() {
         let raw = json!({
-            "type": "peopleCount",
+            "type": "people_count",
             "roomId": "r1",
             "timestamp": 1_700_000_000_000i64,
             "value": 20,
-            "peopleCount": 20,
         });
         let parsed: TelemetryReading = serde_json::from_value(raw).unwrap();
         assert_eq!(parsed.value, 20.0);
-        assert_eq!(parsed.fields["peopleCount"], 20);
     }
 
     #[test]

@@ -922,10 +922,10 @@ The edge strips `/twin`. Every route except the public ones needs `x-gateway-cla
 | `GET` | `/domain/{building}` | Any signed-in caller | Domains owning the building, by id then by name | `["eng"]` |
 | `GET` | `/building/{id}/placements` | Member, or `system:ap-simulator` | Sensor positions, sorted by id | `[{sensorId, position}]` |
 | `PUT` | `/building/{id}/placements` | Editor in one of its domains | Add, move, remove positions in one batch | `204` |
-| `GET` | `/contracts` | Public | The metric catalog: `roomName`, `roomMaxOccupancy` | `ServiceMetricsContract` |
+| `GET` | `/contracts` | Public | The metric catalog: `room_name`, `room_max_occupancy` | `ServiceMetricsContract` |
 | `GET` | `/health`, `/metrics` | Public | Liveness, Prometheus | |
 
-`/contracts` is how `dashboard` learns which columns this service can fill. It is built from the shared `telemetry_schema` types, because a hand-written `json!` once drifted from the reader and emptied the catalog at runtime.
+`/contracts` is how `dashboard` learns which columns this service can fill. Both columns have `"limit": {}`: they are text and capacity, not readings, so nothing is held to a limit. It is built from the shared `telemetry_schema` types, because a hand-written `json!` once drifted from the reader and emptied the catalog at runtime.
 
 ```rust
 async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {

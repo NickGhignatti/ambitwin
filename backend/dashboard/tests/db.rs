@@ -31,14 +31,14 @@ async fn test_col(name: &str) -> Collection<PreferenceDocument> {
 async fn upsert_then_load_returns_the_document() {
     let col = test_col("upsert_and_load").await;
 
-    upsert_preference(&col, "building-1", &["roomName".to_string()])
+    upsert_preference(&col, "building-1", &["room_name".to_string()])
         .await
         .unwrap();
 
     let all = load_all(&col).await.unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].building_id, "building-1");
-    assert_eq!(all[0].allowed_columns, vec!["roomName"]);
+    assert_eq!(all[0].allowed_columns, vec!["room_name"]);
 }
 
 /// Upsert, not insert: the unique index on building_id means a second write for
@@ -47,7 +47,7 @@ async fn upsert_then_load_returns_the_document() {
 async fn upsert_replaces_the_existing_document_for_a_building() {
     let col = test_col("upsert_replaces").await;
 
-    upsert_preference(&col, "building-1", &["roomName".to_string()])
+    upsert_preference(&col, "building-1", &["room_name".to_string()])
         .await
         .unwrap();
     upsert_preference(&col, "building-1", &["co2".to_string(), "temp".to_string()])
