@@ -37,6 +37,7 @@ services:
     image: caddy:2.11.9
     volumes:
       - ../../Caddyfile:/etc/caddy/Caddyfile:z
+      - ../../Caddyfile.routes:/etc/caddy/Caddyfile.routes:z
     # /gateway/* is the one prefix Caddy proxies without require_gateway_auth,
     # so this proves the Caddyfile parsed AND is routing — not merely listening.
     healthcheck:

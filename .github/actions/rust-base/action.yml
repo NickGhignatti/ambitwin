@@ -1,11 +1,12 @@
 name: rust-base
 description: >-
-  Publishes the rust-base build image to GHCR when missing and returns its ref.
-  The caller must be logged in to GHCR with packages write.
+  Publishes the rust-base build image for this runner's CPU to GHCR when missing and
+  returns its ref without the CPU suffix. The caller must be logged in to GHCR with
+  packages write.
 
 outputs:
   ref:
-    description: Image ref every Rust Dockerfile builds FROM
+    description: Image ref every Rust Dockerfile builds FROM, once "-amd64" or "-arm64" is appended
     value: ${{ steps.tag.outputs.ref }}
 
 runs:
@@ -22,14 +23,22 @@ runs:
         RUST_VERSION=$(sed -n 's/^rust = "\(.*\)"$/\1/p' .mise.toml)
         HASH=$(sha256sum docker/rust-base/Dockerfile | cut -c1-12)
         OWNER_LOWERCASE=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+        case "$RUNNER_ARCH" in
+          X64) ARCH=amd64 ;;
+          ARM64) ARCH=arm64 ;;
+          *) echo "unsupported runner CPU: $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        REF="ghcr.io/$OWNER_LOWERCASE/ambitwin-rust-base:$RUST_VERSION-$HASH"
         echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
-        echo "ref=ghcr.io/$OWNER_LOWERCASE/ambitwin-rust-base:$RUST_VERSION-$HASH" >> "$GITHUB_OUTPUT"
+        echo "arch=$ARCH" >> "$GITHUB_OUTPUT"
+        echo "ref=$REF" >> "$GITHUB_OUTPUT"
+        echo "arch_ref=$REF-$ARCH" >> "$GITHUB_OUTPUT"
 
     - name: Check for published rust-base
       id: exists
       shell: bash
       env:
-        REF: ${{ steps.tag.outputs.ref }}
+        REF: ${{ steps.tag.outputs.arch_ref }}
       run: |
         if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
           echo "found=true" >> "$GITHUB_OUTPUT"
@@ -44,6 +53,6 @@ runs:
         context: docker/rust-base
         push: true
         build-args: RUST_VERSION=${{ steps.tag.outputs.rust_version }}
-        tags: ${{ steps.tag.outputs.ref }}
-        cache-from: type=gha,scope=rust-base
-        cache-to: type=gha,mode=max,scope=rust-base
+        tags: ${{ steps.tag.outputs.arch_ref }}
+        cache-from: type=gha,scope=rust-base-${{ steps.tag.outputs.arch }}
+        cache-to: type=gha,mode=max,scope=rust-base-${{ steps.tag.outputs.arch }}

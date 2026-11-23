@@ -217,7 +217,7 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
 
 ## Images on a pull request
 
-`ci-docker.yml` runs after the legs, once per changed image, when no leg failed.
+`ci-docker.yml` runs after the legs, once per changed image and per CPU, when no leg failed.
 
 .mermaid
     sequenceDiagram
@@ -226,20 +226,33 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
         participant B as ci-docker rust-base
         participant W as ci-docker build
         participant T as Trivy
+        participant I as ci-docker index
         participant R as GHCR
         G->>B: matrix holds a rust image
-        B->>R: ambitwin-rust-base RUSTPIN-HASH exists? push it if not
-        G->>W: matrix entry ambitwin-telemetry, backend/telemetry/Dockerfile, context .
-        W->>W: buildx build with rust-base, load locally, gha cache scope ambitwin-telemetry
+        B->>R: ambitwin-rust-base RUSTPIN-HASH-CPU exists? push it if not
+        G->>W: matrix entry ambitwin-telemetry, backend/telemetry/Dockerfile, context ., one leg per CPU
+        W->>W: buildx build with rust-base, load locally, gha cache scope ambitwin-telemetry-CPU
         W->>T: scan OS packages, HIGH and CRITICAL with a fix
         alt finding
             T-->>W: exit 1, the leg fails, nothing is pushed
         else clean
-            W->>R: push ambitwin-telemetry:pr-HEADSHA
+            W->>R: push ambitwin-telemetry:pr-HEADSHA-CPU
         end
+        G->>I: every build leg passed
+        I->>R: imagetools create pr-HEADSHA from pr-HEADSHA-amd64 and pr-HEADSHA-arm64
 
 - Every image builds from its own `Dockerfile`, with the same context `cd-registry` uses: `cd_context` and `dockerfile` from `services.json`, else the service folder and its `Dockerfile`.
 - The `rust-base` job runs only when a Rust image is in the matrix. The build job runs when it succeeded or was skipped.
+- Every image is built for two CPUs, each on a runner of that CPU: `amd64` on `ubuntu-latest`, `arm64` on `ubuntu-24.04-arm`. A Rust release build under emulation runs many times slower.
+- The `index` job joins the two builds under one tag. `docker pull` then takes the build that matches the machine. It runs only when every build leg passed.
+
+**Example.** A PR that touches telemetry, head commit `abc123`, leaves three tags on `ambitwin-telemetry`:
+
+| Tag | Holds |
+|---|---|
+| `pr-abc123-amd64` | The x86 build, scanned |
+| `pr-abc123-arm64` | The ARM build, scanned |
+| `pr-abc123` | A list that points at the two above |
 - `if: !cancelled() && !contains(needs.*.result, 'failure')` on the gate's `docker` job: a skipped leg in `needs` would otherwise skip it too, and some leg is skipped on nearly every PR.
 - Every image except Go and Rust builds with `no-cache`, so the `apk upgrade` / `apt upgrade` in its Dockerfile runs every time instead of reusing an old layer. Go and Rust ship distroless, with no upgrade step.
 
@@ -253,41 +266,49 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
         participant M as master
         participant C as cd-registry changes
         participant B as rust-base
-        participant P as build-and-push
+        participant W as build
+        participant P as publish
         participant R as GHCR
         M->>C: push after the squash merge
         C->>C: filter-services on the pushed commit
         C->>C: build the matrix from services.json
         C->>B: any image selected
-        B->>R: ambitwin-rust-base RUSTPIN-HASH exists?
+        B->>R: ambitwin-rust-base RUSTPIN-HASH-CPU exists?
         alt missing
             B->>R: build docker/rust-base and push it
         end
-        C->>P: one job per image
-        P->>P: gh api commits/SHA/pulls gives the PR head SHA
-        P->>R: does ambitwin-telemetry:pr-HEADSHA exist?
-        alt found
-            P->>P: Trivy scan of the pr image, SARIF to the Security tab
-            P->>R: imagetools create --prefer-index=false, latest and SHA tags, no rebuild
-            P->>R: every manifest under latest still resolves?
-        else not found
-            P->>P: build from backend/telemetry/Dockerfile with rust-base
-            P->>P: Trivy scan
-            P->>R: push latest and SHA
+        C->>W: one job per image and CPU
+        W->>R: does ambitwin-telemetry:pr-HEADSHA exist, with both CPUs?
+        alt not found
+            W->>W: build from backend/telemetry/Dockerfile with rust-base
+            W->>W: Trivy scan
+            W->>R: push SHA-CPU
         end
+        C->>P: one job per image
+        P->>R: does ambitwin-telemetry:pr-HEADSHA exist, with both CPUs?
+        alt found
+            P->>P: Trivy scan of each CPU of the pr image, SARIF to the Security tab
+            P->>R: imagetools create --prefer-index=false, latest and SHA tags, no rebuild
+        else not found
+            P->>R: imagetools create latest and SHA from SHA-amd64 and SHA-arm64
+        end
+        P->>R: every manifest under latest still resolves?
 
 | Step | Detail |
 |---|---|
 | 3 | `workflow_dispatch` with `service: all` or a list such as `twin,frontend`. A change to `services.json` or `cd-registry.yml` selects every image |
-| 5 | Tag = `rust` pin from `.mise.toml` + first 12 characters of the sha256 of `docker/rust-base/Dockerfile`. An unchanged base is never rebuilt |
-| 8 | A squash merge makes a new commit, so the PR's head SHA is looked up through the API |
-| 10 | Same Trivy settings as on the PR; the result also goes to the Security tab |
-| 11 | A carbon copy: `latest`, the SHA and `pr-HEADSHA` end up on one registry version, the very image scanned on the PR |
-| 12 | Fails the job if `latest` points at a manifest that is gone |
-| 15 | Happens on a manual run, or when the PR image is missing. `frontend` gets `VITE_VAPID_PUBLIC_KEY` as a build arg |
+| 5 | Tag = `rust` pin from `.mise.toml` + first 12 characters of the sha256 of `docker/rust-base/Dockerfile` + the CPU. An unchanged base is never rebuilt |
+| 8, 13 | A squash merge makes a new commit, so the PR's head SHA is looked up through the API. A PR image that holds one CPU only counts as missing |
+| 9–11 | Happens on a manual run, or when the PR image is missing. `frontend` gets `VITE_VAPID_PUBLIC_KEY` as a build arg. The image pushed is the one that was scanned |
+| 14 | Same Trivy settings as on the PR, once per CPU: `TRIVY_PLATFORM` picks which build of the list to read. The results also go to the Security tab |
+| 15 | A carbon copy: `latest`, the SHA and `pr-HEADSHA` end up on one registry version, the very list built on the PR |
+| 16 | Fails when a build leg pushed no tag, so `latest` never holds one CPU only |
+| 17 | Fails the job if `latest` points at a manifest that is gone |
+
+- `publish` runs even when a `build` leg failed. Each image checks its own tags, so one broken image does not hold back the others.
 
 .box {Never delete the pr version after promoting it} type:{warning}
-    A promotion that wrote a new index would borrow the `pr-HEADSHA` version's manifests. Deleting that version then left `latest` pointing at nothing: `docker pull` fails with `manifests/sha256:… not found`. That is why the copy is exact and no step deletes the pr tag. `maint-cleanup.yml` uses `dataaxiom/ghcr-cleanup-action`, which keeps every manifest a kept tag still needs.
+    A promotion that wrote a new index would borrow the `pr-HEADSHA` version's manifests. Deleting that version then left `latest` pointing at nothing: `docker pull` fails with `manifests/sha256:… not found`. That is why the copy is exact and no step deletes the pr tag. The same holds for the `-amd64` and `-arm64` tags: `pr-HEADSHA`, and so `latest`, point at their manifests. `maint-cleanup.yml` uses `dataaxiom/ghcr-cleanup-action`, which keeps every manifest a kept tag still needs.
 
 ---
 
