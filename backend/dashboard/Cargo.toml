@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
-base64 = "0.22"
+base64 = "0.23"
 claims-schema = { path = "../../schemas/claims-schema" }
 dashmap = "6.2.1"
 env_logger = { version = "0.11.10", default-features = false, features = ["humantime"] }
