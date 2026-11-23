@@ -215,7 +215,7 @@ async fn temperature_subscribers_get_each_new_metric_switched_on_exactly_once() 
         ("ada", "temperature", true),
         ("grace", "temperature", false),
         ("linus", "temperature", true),
-        ("linus", "airQuality", false),
+        ("linus", "co2", false),
     ] {
         preferences
             .set(&update(account, "eng", kind, enabled))
@@ -225,17 +225,17 @@ async fn temperature_subscribers_get_each_new_metric_switched_on_exactly_once() 
 
     preferences.switch_on_new_metrics_once().await.unwrap();
 
-    assert_eq!(subscribed(&preferences, "airQuality").await, vec!["ada"]);
+    assert_eq!(subscribed(&preferences, "co2").await, vec!["ada"]);
     assert_eq!(
-        subscribed(&preferences, "peopleCount").await,
+        subscribed(&preferences, "people_count").await,
         vec!["ada", "linus"]
     );
 
     preferences
-        .set(&update("ada", "eng", "airQuality", false))
+        .set(&update("ada", "eng", "co2", false))
         .await
         .unwrap();
     preferences.switch_on_new_metrics_once().await.unwrap();
 
-    assert!(subscribed(&preferences, "airQuality").await.is_empty());
+    assert!(subscribed(&preferences, "co2").await.is_empty());
 }

@@ -15,8 +15,8 @@ Ambitwin ships three simulators. They are not microservices: they stand in for h
 
 | Simulator | Location | Image | Pretends to be |
 |---|---|---|---|
-| Sensor | `simulators/sensor-simulator/`, Node | `ambitwin-simulator` | Thermostats (`temperature`), people counters (`peopleCount`) |
-| Air quality | `simulators/aq-simulator/`, Python | `ambitwin-aq-simulator` | Air-quality stations (`airQuality`) |
+| Sensor | `simulators/sensor-simulator/`, Node | `ambitwin-simulator` | Thermostats (`temperature`), people counters (`people_count`) |
+| Air quality | `simulators/aq-simulator/`, Python | `ambitwin-aq-simulator` | Air-quality stations (`air_quality`) |
 | Routers | `simulators/ap-simulator/`, Python | `ambitwin-ap-simulator` | OpenWrt routers (`router`), polled by `devices/ap-collector` |
 
 ---
@@ -36,9 +36,9 @@ Ambitwin ships three simulators. They are not microservices: they stand in for h
 | Device kind | Simulator | Each tick, per sensor |
 |---|---|---|
 | `temperature` | sensor-simulator | One `temperature` reading, in the sensor's room |
-| `peopleCount` | sensor-simulator | One `peopleCount` reading, in the sensor's room |
-| `airQuality` | aq-simulator | One `airQuality` reading, in the sensor's room, with its own drifting state |
-| `router` | ap-simulator | No reading: it answers ubus calls with station lists. `ap-collector` turns them into a Wi-Fi tick, and `telemetry` counts it into `totalDeviceCount` and `ratioDeviceCount` |
+| `people_count` | sensor-simulator | One `people_count` reading, in the sensor's room |
+| `air_quality` | aq-simulator | Three readings in the sensor's room, `co2`, `indoor_aqi` and `humidity`, from its own drifting state |
+| `router` | ap-simulator | No reading: it answers ubus calls with station lists. `ap-collector` turns them into a Wi-Fi tick, and `telemetry` counts it into `total_device_count` and `ratio_device_count` |
 
 - **Outdoor sensors** (no room) are never simulated: readings are keyed by room.
 - **Two sensors of one kind in one room** give two readings for that room each tick.
@@ -201,10 +201,13 @@ sensor-simulator's numbers are fixed in `simulatorService.ts`; a change needs a 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `delay` | 10000 ms | Time between batches |
-| `peopleCountRange` | 0 to 50 | Random headcount per people counter per tick |
+| `peopleCountRange` | 0 to 50 | Random `people_count` per people counter per tick |
 | `temperatureRange` | 18.0 to 30.0 | Random °C per thermostat per tick, 2 decimals |
 
 aq-simulator's physics, scenarios and sensor errors live in `physics.py`, `scenarios.py` and `errors.py`. Its tick is 10 s.
+
+- It keeps `pm25`, `pm10` and `voc` inside, only to work out `indoor_aqi`. They are never sent: a reading is one metric and one number.
+- It does not send `temperature`. The thermostat does.
 
 ---
 

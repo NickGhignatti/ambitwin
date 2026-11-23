@@ -399,7 +399,7 @@ mod tests {
 
         call(&harness.state, post("/subscribe", Some("ada"), body)).await;
 
-        for metric in ["temperature", "airQuality", "peopleCount"] {
+        for metric in ["temperature", "co2", "people_count"] {
             assert_eq!(
                 harness.accounts("eng", Some(metric)).await,
                 vec!["ada".to_string()],

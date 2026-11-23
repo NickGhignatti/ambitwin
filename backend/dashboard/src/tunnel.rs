@@ -51,7 +51,6 @@ async fn listen_and_fanout(
     }
     let mut stream = pubsub.on_message();
 
-    // Hot loop: Awaits raw telemetry
     while let Some(msg) = stream.next().await {
         let payload: String = match msg.get_payload() {
             Ok(p) => p,

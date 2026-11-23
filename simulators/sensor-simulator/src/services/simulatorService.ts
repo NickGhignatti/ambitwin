@@ -1,13 +1,12 @@
 import { createHmac } from "node:crypto";
 import {
   mySimulationBuildings,
-  type ISignalPeopleCount,
-  type ISignalTemperature,
+  type ISignalReading,
   type IBuilding,
   type ISimulatedSensor,
 } from "../models/signal.js";
 
-type Reading = (ISignalTemperature | ISignalPeopleCount) & { type: string };
+type Reading = ISignalReading & { type: string };
 
 const INGEST_SECRET = process.env.TELEMETRY_INGEST_SECRET ?? "";
 const INGEST_URL =
@@ -123,9 +122,9 @@ export class Simulator {
           return [
             { ...this.temperatureFor(sensor.roomId), type: "temperature" },
           ];
-        case "peopleCount":
+        case "people_count":
           return [
-            { ...this.peopleCountFor(sensor.roomId), type: "peopleCount" },
+            { ...this.peopleCountFor(sensor.roomId), type: "people_count" },
           ];
         default:
           return [];
@@ -133,11 +132,11 @@ export class Simulator {
     });
   }
 
-  private temperatureFor(roomId: string): ISignalTemperature {
+  private temperatureFor(roomId: string): ISignalReading {
     return {
       roomId,
       timestamp: Date.now(),
-      temperature: parseFloat(
+      value: parseFloat(
         (
           Math.random() *
             (this.temperatureRange[1] - this.temperatureRange[0]) +
@@ -147,11 +146,11 @@ export class Simulator {
     };
   }
 
-  private peopleCountFor(roomId: string): ISignalPeopleCount {
+  private peopleCountFor(roomId: string): ISignalReading {
     return {
       roomId,
       timestamp: Date.now(),
-      peopleCount:
+      value:
         Math.floor(
           Math.random() *
             (this.peopleCountRange[1] - this.peopleCountRange[0] + 1),

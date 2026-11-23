@@ -4,9 +4,9 @@
 .glossary
     | Word | Meaning | Example |
     |---|---|---|
-    | Column | One field the dashboard table shows for a building | `temperature`, `roomName` |
-    | Preferences | The list of columns one building shows | `["roomName","roomMaxOccupancy","temperature"]` |
-    | Catalog | Every metric any service can report. It fills the column picker | temperature, airQuality, peopleCount |
+    | Column | One field the dashboard table shows for a building | `temperature`, `room_name` |
+    | Preferences | The list of columns one building shows | `["room_name","room_max_occupancy","temperature"]` |
+    | Catalog | Every metric any service can report. It fills the column picker | temperature, co2, people_count |
     | Tick | Everything one building reports at one moment, as one message | See Telemetry Schema |
     | Envelope | The outer part of a tick: which building, when it arrived, and the readings inside | `buildingId`, `ingestedAtMs` |
     | Tunnel | The background loop that reads every tick and forwards it to its building's channel | `tunnel.rs` |
@@ -81,7 +81,7 @@ pub struct AppState {
 
 `AppState` is what every handler and the tunnel share.
 
-- `building_preferences` maps a building id to its column names, for example `"b1" -> ["roomName", "temperature"]`. `DashMap` lets many requests read and write at once. `Arc` lets all of them hold the same one.
+- `building_preferences` maps a building id to its column names, for example `"b1" -> ["room_name", "temperature"]`. `DashMap` lets many requests read and write at once. `Arc` lets all of them hold the same one.
 - `mongo_col` is the handle to the MongoDB collection.
 - `#[derive(Clone)]` means copying an `AppState` is cheap: the `Arc` just adds one more owner, it does **not** copy the map. A test confirms it: a clone sees what the original inserts.
 
@@ -391,8 +391,8 @@ The edge strips `/dashboard` (`handle_path` in the `Caddyfile`), so `/dashboard/
 
 | Step | Data |
 |---|---|
-| 1 | `{"allowed_columns":["roomName","roomMaxOccupancy","temperature"]}` |
-| 4 | `DashMap["b1"] = ["roomName","roomMaxOccupancy","temperature"]` |
+| 1 | `{"allowed_columns":["room_name","room_max_occupancy","temperature"]}` |
+| 4 | `DashMap["b1"] = ["room_name","room_max_occupancy","temperature"]` |
 | 6 | `active_columns` is `3` |
 | 7 | MongoDB `{_id, building_id:"b1", allowed_columns:[…]}`, one document per building |
 
@@ -405,7 +405,7 @@ The edge strips `/dashboard` (`handle_path` in the `Caddyfile`), so `/dashboard/
 ## Starting columns
 
 ```rust
-const DEFAULT_COLUMNS: &[&str] = &["roomName", "roomMaxOccupancy"];
+const DEFAULT_COLUMNS: &[&str] = &["room_name", "room_max_occupancy"];
 
 pub async fn init_building_preferences(
     _claims: GatewayClaims,
@@ -436,7 +436,7 @@ pub async fn init_building_preferences(
 ```
 
 1. `entry(…).or_insert_with(…)` is one atomic step: "if this building has no entry, run the closure and store what it returns". The closure runs **only** when the key is missing, and sets `is_new = true` on the way.
-2. A new building gets `roomName` and `roomMaxOccupancy`, and the same fire-and-forget MongoDB write as a save.
+2. A new building gets `room_name` and `room_max_occupancy`, and the same fire-and-forget MongoDB write as a save.
 3. A building that already had columns is left alone, and nothing is written.
 
 Calling it twice is safe: the second call finds the entry and does nothing.
@@ -452,7 +452,7 @@ Calling it twice is safe: the second call finds the entry and does nothing.
         I->>S: entry(b1), or_insert_with(DEFAULT_COLUMNS)
         alt b1 was not there
             I->>I: tokio::spawn(upsert_preference)
-            I->>Mo: upsert ["roomName","roomMaxOccupancy"]
+            I->>Mo: upsert ["room_name","room_max_occupancy"]
         else b1 already had columns
             I->>I: keep them, write nothing
         end
@@ -749,7 +749,7 @@ async fn process_and_publish(
 
 1. Count one received tick.
 2. Pick the channel. `None`: stop (the tick is counted as received, not as published).
-3. `PUBLISH` the **original text**, byte for byte. The tick is not parsed into readings and written out again. Each reading's fields belong to whichever plugin made them, and `dashboard` has no business knowing them. It needs the building id to route, and that is all.
+3. `PUBLISH` the **original text**, byte for byte. The tick is not parsed into readings and written out again. The readings belong to `telemetry`, and `dashboard` has no business knowing their shape. It needs the building id to route, and that is all.
 4. Measure how long the tick took since `telemetry` stamped it (`ingestedAtMs`), and record it. `.max(0)` stops a clock that runs a little behind from making a negative number.
 5. Count one published tick. The result of `PUBLISH` is **ignored**: a failed publish is not logged, and still counts as published.
 
@@ -851,7 +851,7 @@ just test dashboard-integration   # tests/*.rs against throwaway MongoDB and Red
 | Where | What it checks |
 |---|---|
 | `src/tunnel.rs` | `resolve_channel`: own building's channel. Any metric forwarded. Unknown building dropped. Never another building's channel. A non-tick does not parse |
-| `src/api/data.rs`, `init.rs` | Save stores, overwrites, accepts an empty list. Init gives exactly `roomName` and `roomMaxOccupancy`. A second init keeps the columns |
+| `src/api/data.rs`, `init.rs` | Save stores, overwrites, accepts an empty list. Init gives exactly `room_name` and `room_max_occupancy`. A second init keeps the columns |
 | `src/api/dashboard.rs` | `push_unique_metric` cases. Both catalog shapes fill `source`. An unparseable, unreachable or slow source is skipped while the others stay |
 | `src/infra/claims.rs` | Valid claims. URL-safe base64. Missing, malformed, no `sub`: `401` |
 | `src/infra/discovery.rs` | Only `*_METRICS_URL` keys are read |

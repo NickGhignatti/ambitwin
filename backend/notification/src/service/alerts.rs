@@ -287,7 +287,6 @@ mod tests {
             building_name: "HQ".to_string(),
             room_name: "Lab 1".to_string(),
             metric: "temperature".to_string(),
-            field: "temperature".to_string(),
             value: 40.0,
             label: "Temperature".to_string(),
             unit: Some("°C".to_string()),
@@ -299,8 +298,7 @@ mod tests {
 
     fn co2() -> AlertEvent {
         AlertEvent {
-            metric: "airQuality".to_string(),
-            field: "co2".to_string(),
+            metric: "co2".to_string(),
             value: 1200.0,
             label: "CO2".to_string(),
             unit: Some("ppm".to_string()),
@@ -316,7 +314,6 @@ mod tests {
     fn breach_of(metric: &str, value: f64) -> String {
         serde_json::to_string(&AlertEvent {
             metric: metric.to_string(),
-            field: metric.to_string(),
             value,
             label: metric.to_string(),
             unit: None,
@@ -352,7 +349,6 @@ mod tests {
             building_name: "Innovation Hub".to_string(),
             room_name: "Lab 2".to_string(),
             metric: "temperature".to_string(),
-            field: "temperature".to_string(),
             value: 31.4,
             label: "Temperature".to_string(),
             unit: Some("°C".to_string()),
@@ -444,7 +440,7 @@ mod tests {
     async fn a_metric_with_no_delivery_path_is_dropped_and_said_so() {
         let fixture = fixture(StubDirectory::returning("b1", &["domain-a"]));
 
-        let outcome = fixture.alerts.on_breach(&breach_of("humidity", 80.0)).await;
+        let outcome = fixture.alerts.on_breach(&breach_of("noise", 80.0)).await;
 
         assert_eq!(outcome, BreachOutcome::Unsupported);
         assert_eq!(outcome.label(), "unsupported_metric");
@@ -469,7 +465,7 @@ mod tests {
             "HQ : Lab 1 CO2 is 1200 ppm (above maximum)"
         );
         assert_eq!(published[0].title, "CO2 Alert - HQ");
-        assert_eq!(published[0].metric.as_deref(), Some("airQuality"));
+        assert_eq!(published[0].metric.as_deref(), Some("co2"));
         assert!(
             fixture.sender.endpoints().is_empty(),
             "ada opted into temperature only"
@@ -484,7 +480,7 @@ mod tests {
             .active
             .lock()
             .unwrap()
-            .push("alert:airQuality:co2:b1:r1".to_string());
+            .push("alert:co2:b1:r1".to_string());
 
         let outcome = fixture.alerts.on_breach(&breach()).await;
 
@@ -513,7 +509,7 @@ mod tests {
 
         assert_eq!(
             *fixture.cooldown.started.lock().unwrap(),
-            vec![("alert:temperature:temperature:b1:r1".to_string(), 300)]
+            vec![("alert:temperature:b1:r1".to_string(), 300)]
         );
     }
 
@@ -525,7 +521,7 @@ mod tests {
             .active
             .lock()
             .unwrap()
-            .push("alert:temperature:temperature:b1:r1".to_string());
+            .push("alert:temperature:b1:r1".to_string());
 
         fixture.alerts.on_breach(&breach()).await;
 
@@ -569,7 +565,7 @@ mod tests {
             .active
             .lock()
             .unwrap()
-            .push("alert:temperature:temperature:b1:r1".to_string());
+            .push("alert:temperature:b1:r1".to_string());
 
         let outcome = fixture.alerts.on_breach(&breach()).await;
 

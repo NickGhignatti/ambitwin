@@ -90,11 +90,11 @@ describe('groupByType', () => {
   it('counts each type present, ordered by type', () => {
     const sensors = [
       sensor('s1', 'temperature'),
-      sensor('s2', 'peopleCount'),
+      sensor('s2', 'people_count'),
       sensor('s3', 'temperature'),
     ]
     expect(groupByType(sensors)).toEqual([
-      { sensorType: 'peopleCount', count: 1 },
+      { sensorType: 'people_count', count: 1 },
       { sensorType: 'temperature', count: 2 },
     ])
   })
@@ -111,7 +111,7 @@ describe('sensorIcon', () => {
 
   it("gives a router its own icon, not a metric's", () => {
     expect(sensorIcon('router')).not.toBe(sensorIcon('unheard-of'))
-    expect(sensorIcon('router')).not.toBe(sensorIcon('peopleCount'))
+    expect(sensorIcon('router')).not.toBe(sensorIcon('people_count'))
   })
 
   it('falls back to a generic icon for a type it does not know', () => {

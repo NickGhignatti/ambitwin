@@ -15,7 +15,7 @@ import KpiStrip from '@/components/dashboard/kpi/KpiStrip.vue'
 import TelemetryPanel from '@/components/dashboard/table/TelemetryPanel.vue'
 import ChartsPanel from '@/components/dashboard/charts/ChartsPanel.vue'
 
-const SUMMARY_METRICS = ['peopleCount', 'temperature', 'airQuality']
+const SUMMARY_METRICS = ['people_count', 'temperature', 'indoor_aqi']
 
 const { options, selectedId, rooms, isLoading } = useDashboardBuildings()
 const { readings, isLoading: readingsLoading } = useBuildingReadings(
