@@ -54,5 +54,5 @@ with nothing running. Unit tests build an `AppState` against a `Collection` hand
 connecting (the driver connects lazily, the write path is fire-and-forget).
 
 `tests/db.rs` covers the Mongo adapter, `tests/tunnel.rs` the fan-out against a real Redis.
-CI runs them via `scripts/test/rust-integration-tests.sh`, with Mongo and Redis started from
+CI runs them via `scripts/rust-integration-tests.sh`, with Mongo and Redis started from
 `needs_mongo`/`needs_redis` in `.github/services.json`.

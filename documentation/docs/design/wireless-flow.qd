@@ -287,7 +287,7 @@ evacuation or an incident, and the alert path is already built.
 
 ### Registration
 
-`devices/`, not `simulators/`. A simulator is a fake you throw away; the collector *is* the
+`devices/ap-collector`, not `devices/simulators/`. A simulator is a fake you throw away; the collector *is* the
 sensor, shipped to every building and running unattended. `edge/` would collide with the
 ingress proxy, which is what "the edge" means everywhere else in this repository.
 
@@ -513,7 +513,7 @@ For validating an estimator before any hardware exists.
 - [CRAWDAD `sapienza/probe-requests` (IEEE DataPort)](https://ieee-dataport.org/open-access/crawdad-sapienzaprobe-requests) — the classic set: four one-shot events of 40 min to 6 h, plus six weeks of fixed capture on a campus.
 - [Labelled device Wi-Fi probe requests (Mendeley, 2024)](https://data.mendeley.com/datasets/5tvnwhsj2p/2) — 22 devices in 6 modes each. The only public set where the emitting device is labelled, so it is the only one that can score an estimator's error.
 - [Dataset of Wi-Fi Probe Requests (arXiv 2308.04435)](https://arxiv.org/pdf/2308.04435)
-- [WiFiSim: simulating Wi-Fi probe requests via AOSP analysis (arXiv 2509.15501)](https://arxiv.org/pdf/2509.15501) — generate synthetic probe traffic with realistic device behaviour. Useful for testing before a Pi exists, in the same spirit as `simulators/`.
+- [WiFiSim: simulating Wi-Fi probe requests via AOSP analysis (arXiv 2509.15501)](https://arxiv.org/pdf/2509.15501) — generate synthetic probe traffic with realistic device behaviour. Useful for testing before a Pi exists, in the same spirit as `devices/simulators/`.
 
 ### Videos
 

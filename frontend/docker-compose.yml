@@ -1,7 +1,7 @@
 services:
   client:
     cpus: "3"
-    container_name: vue-client
+    container_name: ambitwin-frontend
     build:
       context: .
       args:

@@ -85,16 +85,10 @@
       "addLabels": ["dependencies", "backend-tests"]
     },
     {
-      "matchFileNames": ["simulators/**"],
+      "matchFileNames": ["devices/simulators/**"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "groupName": "simulators",
       "addLabels": ["dependencies", "simulators"]
-    },
-    {
-      "matchFileNames": ["tooling/**"],
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "groupName": "tooling",
-      "addLabels": ["dependencies", "tooling"]
     },
     {
       "description": "Repo-level CI: GitHub Actions + mise toolchain.",

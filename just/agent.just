@@ -8,4 +8,4 @@ default:
 
 [doc("Re-ingest all documentation into the agent knowledge base.")]
 ingest:
-    mise exec -- python3 scripts/ops/ingest-docs.py
+    mise exec -- python3 backend/agent/scripts/ingest-docs.py

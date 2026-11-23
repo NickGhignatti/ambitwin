@@ -50,7 +50,7 @@ Each environment has its own Prometheus and Grafana: compose starts one pair loc
 
 | | Local | Cluster |
 |---|---|---|
-| Config | `prometheus.yml`, `prometheus.rules.yml` | `k8s/monitoring/prometheus.yml` |
+| Config | `infra/observability/prometheus.yml`, `prometheus.rules.yml` | `infra/k8s/monitoring/prometheus.yml`, plus the same `prometheus.rules.yml` as ConfigMap `prometheus-rules` |
 | Finds targets | Fixed list | Pods annotated `prometheus.io/scrape` |
 | Reach it | `/prometheus/`, `/grafana/` | `/grafana` only |
 | History | Image default | 15 days, 5 Gi |
@@ -88,6 +88,6 @@ The queries name no job, so one rule set fits both stacks. They work because a m
 
 - **Nobody gets told.** No Alertmanager, so an alert only shows on Prometheus's page.
 - **Rules are copied by hand** between the two stacks, and have drifted: the cluster still has `NodeEventLoopLagHigh`, for Node services that no longer exist.
-- **Local misses `notification`:** it is not in `prometheus.yml`.
+- **Local misses `notification`:** it is not in `infra/observability/prometheus.yml`.
 - **No alert yet** on `socket`'s `relay_messages_skipped_total` or `socket_connections_rejected_total`, nor on `notification`'s dead-letter topic.
 - **Control plane is invisible:** a failing sign-in shows nowhere.

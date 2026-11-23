@@ -953,7 +953,7 @@ The core tests are the cheap ones: they call a function with a string and compar
 
 ## Gaps
 
-- **One copy only.** `k8s/deployments/socket.yml` runs `replicas: 1`, and rooms live in process memory. A restart closes every socket. Each browser reconnects, subscribes again (`onReconnect` in `stores/commons/sensorData.ts`) and refetches what it missed. Every copy reads every Redis message, so more copies would relay correctly, but nothing tests that setup.
+- **One copy only.** `infra/k8s/deployments/socket.yml` runs `replicas: 1`, and rooms live in process memory. A restart closes every socket. Each browser reconnects, subscribes again (`onReconnect` in `stores/commons/sensorData.ts`) and refetches what it missed. Every copy reads every Redis message, so more copies would relay correctly, but nothing tests that setup.
 - **Ownership is cached 60 s.** A building moved out of a domain stays readable for up to 60 s by sockets that ask in that window. An already joined socket stays in the room until it leaves or expires.
 - **A domain room is fixed at connect.** A new membership reaches the socket only after it reconnects.
 - **The ownership cache and the gates are never emptied.** Each building id ever asked about keeps an entry and a lock for the life of the process. A browser can send any text as a building id, so a client that asks for many made-up ids makes both maps grow.

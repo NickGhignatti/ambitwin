@@ -1,0 +1,103 @@
+# One source for both stacks: compose mounts this file, `just k8s apply` turns it into ConfigMap prometheus-rules.
+# Queries skip job/app label filters: each metric name is emitted by exactly one service, so the same expressions work under docker-compose or k8s scraping.
+groups:
+  - name: ambitwin-alerts
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scrape target down ({{ $labels.job }})"
+          description: "Prometheus has failed to scrape {{ $labels.job }} (instance {{ $labels.instance }}) for the last 2 minutes."
+
+      - alert: TwinServiceHighErrorRate
+        expr: (sum(rate(http_error_requests_total[5m])) / sum(rate(http_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "digital-twin HTTP error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of digital-twin requests have errored over the last 5 minutes."
+
+      - alert: ChatServiceHighErrorRate
+        expr: (sum(rate(chat_http_error_requests_total[5m])) / sum(rate(chat_http_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "chat HTTP error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of chat requests have errored over the last 5 minutes."
+
+      - alert: TwinServiceHighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "digital-twin p95 latency above 1s"
+          description: "digital-twin's 95th percentile request duration has been above 1 second for 5 minutes."
+
+      - alert: ChatServiceHighLatency
+        expr: histogram_quantile(0.95, sum(rate(chat_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "chat p95 latency above 1s"
+          description: "chat's 95th percentile request duration has been above 1 second for 5 minutes."
+
+      - alert: ContractsServiceFanoutLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(telemetry_fanout_latency_ms_bucket[5m])) by (le)) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "dashboard fan-out latency above 500ms"
+          description: "dashboard's 95th percentile sensor-ingestion-to-fan-out latency has been above 500ms for 5 minutes."
+
+      - alert: SensorIngestPersistFailures
+        expr: sum(rate(telemetry_ingest_persist_failures_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "telemetry is losing readings behind a 202"
+          description: "Readings are being accepted and then failing to persist. Clients already received 202 and will not retry, so this is silent data loss."
+
+      - alert: SensorIngestStalled
+        expr: sum(rate(telemetry_ingest_total{outcome="accepted"}[10m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "telemetry has accepted no readings for 15 minutes"
+          description: "No telemetry has been accepted for 15 minutes. Simulators or devices have stopped, or the ingest route is unreachable."
+
+      - alert: SensorTelemetryFanoutFailing
+        expr: sum(rate(telemetry_published_total{outcome="error"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "telemetry cannot publish to Redis"
+          description: "Telemetry events are failing to reach telemetry:raw. Live dashboards are dark even though ingestion is succeeding."
+
+      - alert: SensorServiceHighErrorRate
+        expr: (sum(rate(telemetry_http_error_requests_total[5m])) / sum(rate(telemetry_http_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "telemetry HTTP error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of telemetry requests have errored over the last 5 minutes."
+
+      - alert: SensorServiceHighLatency
+        expr: histogram_quantile(0.95, sum(rate(telemetry_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "telemetry p95 latency above 1s"
+          description: "telemetry's 95th percentile request duration has been above 1 second for 5 minutes."

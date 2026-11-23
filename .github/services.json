@@ -240,7 +240,7 @@
   },
   {
     "key": "sensor-simulator",
-    "dir": "simulators/sensor-simulator",
+    "dir": "devices/simulators/sensor-simulator",
     "lang": "node",
     "image": "ambitwin-simulator",
     "ci": false,
@@ -251,7 +251,7 @@
   },
   {
     "key": "aq-simulator",
-    "dir": "simulators/aq-simulator",
+    "dir": "devices/simulators/aq-simulator",
     "lang": "python",
     "image": "ambitwin-aq-simulator",
     "ci": false,
@@ -262,7 +262,7 @@
   },
   {
     "key": "ap-simulator",
-    "dir": "simulators/ap-simulator",
+    "dir": "devices/simulators/ap-simulator",
     "lang": "python",
     "image": "ambitwin-ap-simulator",
     "ci": false,

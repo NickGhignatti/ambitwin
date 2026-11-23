@@ -22,13 +22,13 @@ Reusable blocks live in `documentation/components/`: one `<name>.qd` per block (
 folder flat: links in a slot resolve from the file that defines the function, so write `../docs/...`. Only
 `style/quarkdown.css` and `scripts/quarkdown-dom.js` may name Quarkdown's DOM; `just docs build` fails otherwise.
 
-Published-site sources: `documentation/**.qd` (the guide) and `api/*.yaml` (OpenAPI,
-viewed by `api/index.html` (Swagger UI); `socket.yaml` is AsyncAPI, viewed by `api/asyncapi.html`). `landing-page/` is **build output
+Published-site sources: `documentation/**.qd` (the guide) and `schemas/openapi/*.yaml` (OpenAPI,
+viewed by `schemas/openapi/index.html` (Swagger UI); `socket.yaml` is AsyncAPI, viewed by `schemas/openapi/asyncapi.html`). `landing-page/` is **build output
 only** — gitignored, never edit or commit anything there. A new `.qd` page must be linked from
 one of the two navigations — `documentation/_nav.qd` (sidebar) or
 `documentation/config/site.qd` (top nav; `reference/` pages live here, deliberately
 out of the sidebar, and include `config/standalone.qd` instead of `docs` so they render
-with no side menus) — and a new `api/*.yaml` from
+with no side menus) — and a new `schemas/openapi/*.yaml` from
 `documentation/docs/reference/api-reference.qd`, or it publishes unreachable —
 `just docs build` fails on either.
 
@@ -40,7 +40,9 @@ deps.
 - `.moon/workspace.yml` — every package registered once; moon does task cache + affected detection.
 - `Justfile` + `just/*.just` — command surface, wraps `mise exec -- moon`.
 - `.github/services.json` — single manifest CI reads for lang, image, dockerfile, service deps.
-- `docker/rust-base/` — build-only image every Rust service `FROM`s; `RUST_VERSION` comes from `.mise.toml`.
+- `infra/` — deploy and ops config: `rust-base/` (build-only image every Rust service `FROM`s; `RUST_VERSION`
+  comes from `.mise.toml`), `k8s/`, `keycloak/`, `observability/` (Prometheus, Grafana), `Caddyfile`.
+  `docker-compose.yml` stays at the root: compose reads `.env` from there. Project name is fixed to `ambitwin` by `compose-run.py`; changing it orphans every volume.
 
 | Package | Stack | Role |
 |---|---|---|
@@ -60,8 +62,7 @@ deps.
 | `backend/acceptance` | Python | Cross-service acceptance suite |
 | `schemas/{claims,notification,telemetry,twin}-schema` | Rust crates | Shapes crossing a service boundary |
 | `schemas/{fixtures,json}` | JSON | Cross-language conformance fixtures + written contracts |
-| `simulators/*` | Python / Node | Synthetic telemetry |
-| `tooling/eslint-config` | Node | Shared flat ESLint config |
+| `devices/simulators/*` | Python / Node | Synthetic telemetry |
 
 ## Commands
 
@@ -108,7 +109,7 @@ cd frontend && mise exec -- npx vitest run src/path/File.spec.ts -t "name"      
   `linkedProjects` in the root `.zed/settings.json`.
 - A package that builds or tests from another folder (local `replace`, Cargo `path`, `schemas/fixtures`)
   lists it in its `depends_on` in `.github/services.json`; that is how CI reruns it when the folder
-  changes. `scripts/service-filters.py` fails the `changes` job on an undeclared local `replace`/`path`.
+  changes. `.github/scripts/service-filters.py` fails the `changes` job on an undeclared local `replace`/`path`.
 
 ## Architecture invariants
 
@@ -166,7 +167,7 @@ fitness test. Read it before restructuring that service. Go control-plane servic
 & Adapters: core in `internal/service` / `internal/reconciler`, wired in `cmd/<svc>/main.go`,
 real port/adapter split only on the outbound side.
 
-**Routing** (`Caddyfile`, mirrored by `k8s/istio-*.yml`): `/gateway`, `/tenancy`, `/twin`,
+**Routing** (`infra/Caddyfile`, mirrored by `infra/k8s/istio-*.yml`): `/gateway`, `/tenancy`, `/twin`,
 `/telemetry`, `/notification`, `/chat` (SSE, needs `flush_interval -1`), `/dashboard`,
 `/socket.io`, `/agent` (ungated), `/` → frontend. `/telemetry/ingest`, `/telemetry/collector` and
 `/telemetry/observations` are ungated at the edge and HMAC-verified in-service — exact paths, so a sub-path would 401.
@@ -192,6 +193,7 @@ Full text: `documentation/docs/architecture/overview.qd` (structure) and `docume
 - **Renaming a service renames its compose volume**, which mounts an empty one and orphans the old — migrate the data in the same change (`docker volume ls` shows the orphans). Database names and `system:` identities are deliberately *not* renamed.
 - **Kafka consumer groups are named after what they consume**, not who consumes it (`alerts`, `building-registrations`). Renaming one is a replay, not a reset: a group with no committed offsets re-reads the whole topic.
 - **`system:notification-service` keeps the old name on purpose** — it is an identity at a trust boundary, pinned byte-for-byte by a test.
+- **`scripts/` holds what `just` calls**; CI-only scripts go to `.github/scripts/`, one-owner scripts to their owner.
 - **`scripts/` is Node-free**: POSIX sh for command sequences, stdlib Python for logic (JSON, HTTP, concurrency). Repeated per-project work belongs in a moon task, not a script.
 
 ## Working style

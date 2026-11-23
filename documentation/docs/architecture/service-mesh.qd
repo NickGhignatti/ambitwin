@@ -40,7 +40,7 @@ Why once: services hold no signing keys, and no request pays for checking twice.
 A workload already inside the cluster can call a service directly and send a forged header. mTLS proves the connection, not the content.
 
 - **From outside:** not possible. Services have no public address, and the gateway wants a JWT.
-- **`agent`:** gets extra care, since it runs an LLM on untrusted text. Only the gateway and `chat` may reach it (`k8s/istio-agent-authz.yml`).
+- **`agent`:** gets extra care, since it runs an LLM on untrusted text. Only the gateway and `chat` may reach it (`infra/k8s/istio-agent-authz.yml`).
 - **Accepted for now.**
 
 .box {When this must change} type:{warning}
@@ -94,7 +94,7 @@ Measured on a single dev node: Redis p50 stays under 5 ms inside the mesh.
     Istio's `/twin/*` does not match `/twin`, but the route does. Every protected service is listed in both forms.
 
 .box {Keycloak ignores a changed realm file} type:{warning}
-    `--import-realm` skips a realm that exists. After changing `keycloak/realm-export.json`, delete the `keycloak_postgres_data` volume and let it import again.
+    `--import-realm` skips a realm that exists. After changing `infra/keycloak/realm-export.json`, delete the `keycloak_postgres_data` volume and let it import again.
 
 ---
 
@@ -119,6 +119,6 @@ The manifests give a working cluster. These inputs cannot live in the repository
 | HTTPS | The gateway listens on plain `:80` |
 | Keycloak | Not in these manifests |
 | Image access | `:latest` with `IfNotPresent`. Use fixed tags |
-| Real secrets | `scripts/k8s/k8s-secrets.sh` makes dev ones |
+| Real secrets | `infra/k8s/k8s-secrets.sh` makes dev ones |
 | Model key | `agent` starts without `OPENROUTER_API_KEY`, then fails each request |
 | Strong Grafana password | It is the only guard there |

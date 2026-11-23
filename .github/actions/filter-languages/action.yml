@@ -12,9 +12,6 @@ outputs:
 runs:
   using: "composite"
   steps:
-    # tooling/eslint-config is a synthetic entry, not a services.json service
-    # — it's JS/TS tooling, so it belongs in the javascript-typescript group
-    # as a language-level fact, not something every caller re-adds itself.
     - name: Build filters from services.json, grouped by language
       shell: bash
       env:
@@ -23,7 +20,6 @@ runs:
         {
           jq -r '
             def maplang: if . == "node" or . == "frontend" then "javascript-typescript" else . end;
-            (. + [{"lang":"node","dir":"tooling/eslint-config"}]) |
             group_by(.lang | maplang) | .[] |
             "\(.[0].lang | maplang):\n" + (map("  - \"\(.dir)/**\"") | join("\n"))
           ' .github/services.json

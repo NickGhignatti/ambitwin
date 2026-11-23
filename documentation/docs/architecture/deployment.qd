@@ -5,7 +5,7 @@
     | Word | Meaning | Example |
     |---|---|---|
     | Pod | One running copy of a service | `telemetry-5d8...` |
-    | Deployment | Keeps stateless pods running | `k8s/deployments/chat.yml` |
+    | Deployment | Keeps stateless pods running | `infra/k8s/deployments/chat.yml` |
     | StatefulSet | Same, for pods with their own disk | `twin-db-0` |
     | PVC | A disk claimed by a pod | `twin-data-twin-db-0` |
     | Init container | Runs first, must finish before the service starts | `wait-for-db` |
@@ -15,16 +15,17 @@ How the cluster is built. Commands and setup: [Kubernetes & Istio](../toolchain/
 
 ---
 
-## What is in `k8s/`
+## What is in `infra/k8s/`
 
 ```bash
-k8s/
+infra/k8s/
 ├── namespace.yml                     # ambitwin, enrolled in ambient mode
 ├── istio-gateway.yml                 # the gateway and one route per service
 ├── istio-peer-authentication.yml     # STRICT mTLS
 ├── istio-request-authentication.yml  # JWT check at the edge
 ├── istio-agent-authz.yml             # who may call agent
 ├── configmaps/common.yml             # shared settings that are not secret
+├── k8s-secrets.sh                    # secrets from .env, run by just k8s secrets
 ├── deployments/                      # 12 stateless services
 ├── stateful/                         # 8 databases, Redis, Kafka
 └── monitoring/                       # Prometheus, Grafana
@@ -65,7 +66,7 @@ initContainers:
 
 ## Settings and secrets
 
-- **Shared settings:** `k8s/configmaps/common.yml`.
+- **Shared settings:** `infra/k8s/configmaps/common.yml`.
 - **Secrets:** `just k8s secrets` reads `.env` and pipes them into `kubectl apply`. No file is written.
 - **One exception:** `claims-gateway-key`, a mounted PEM file.
 

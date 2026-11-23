@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / "simulators" / "ap-simulator"))
+sys.path.insert(0, str(ROOT / "devices" / "simulators" / "ap-simulator"))
 sys.path.insert(0, str(ROOT / "devices" / "ap-collector"))
 
 from building import BuildingWorld  # noqa: E402

@@ -43,8 +43,8 @@ The dev files add, per service: the watch rules, a database port on the host, an
 
 **Example.** `just stack dev --no-simulators frontend`:
 
-- Folders skipped: the three in `simulators/`, and `frontend`.
-- The runner prints `excluded: simulators/aq-simulator`, and so on, then the command it runs.
+- Folders skipped: the three in `devices/simulators/`, and `frontend`.
+- The runner prints `excluded: devices/simulators/aq-simulator`, and so on, then the command it runs.
 - `ap-collector` still starts: it lives in `devices/`. It finds no simulated router and posts nothing.
 
 .box {A mistyped word is silent} type:{warning}
@@ -140,7 +140,7 @@ First creation: [Setting Up the Environment](setting-up.qd). Everything else: [K
 | A left-out service starts anyway | The word was mistyped | `--dry-run`, or the flag |
 | `compose.runtime.yml not found` | No `just stack` run started this stack | Start it with `just stack dev` |
 | A new variable is empty | `.env` predates it | `just stack env`: it adds only what is missing |
-| `just k8s secrets`: namespaces not found | The namespace does not exist yet | `kubectl apply -f k8s/namespace.yml`, then again |
+| `just k8s secrets`: namespaces not found | The namespace does not exist yet | `kubectl apply -f infra/k8s/namespace.yml`, then again |
 | Pods in `ImagePullBackOff` | The cluster tries to pull an image it does not have | Build it, then `just k8s load` |
 | Windows: `kubectl` cannot connect after `just k8s start` | The load balancer came back on another port | `docker ps --filter name=k3d-ambitwin-serverlb`, then `kubectl config set-cluster k3d-ambitwin --server=https://127.0.0.1:<port>` |
 | Sign-in fails in the cluster | Keycloak is not deployed there | Point `claims-gateway` at a reachable Keycloak |

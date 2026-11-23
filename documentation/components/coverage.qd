@@ -2,7 +2,7 @@
     .html
         <div id="cv-coverage">Loading coverage from the <code>coverage-data</code> branch…</div>
         <style>
-        /* Bands mirror _color() in scripts/coverage-summary.py, so a bar and the
+        /* Bands mirror _color() in .github/scripts/coverage-summary.py, so a bar and the
          * shields.io badge can never disagree about what "healthy" means. */
         .cv-good { color: var(--cv-good); }
         .cv-ok { color: var(--cv-warn); }
@@ -401,7 +401,7 @@
               var names = Object.keys(summary);
               if (!names.length) { host.textContent = "No coverage published yet."; return; }
 
-              // Weighted the same way scripts/coverage-summary.py builds the badge:
+              // Weighted the same way .github/scripts/coverage-summary.py builds the badge:
               // total covered lines over total lines, not a mean of per-service rates.
               var cov = 0, tot = 0;
               names.forEach(function (n) {

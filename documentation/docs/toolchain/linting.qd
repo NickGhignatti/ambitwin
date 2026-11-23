@@ -10,7 +10,7 @@
     | Task | A named command moon knows how to run for a project | `telemetry:lint` |
     | Affected | A project whose files changed on the current branch | Only `telemetry` after a change in `backend/telemetry/src` |
     | Cache hit | moon skips a task because its inputs did not change since the last pass | `telemetry:lint` in 0 s |
-    | Flat config | ESLint's config format: one exported list of rule blocks | `tooling/eslint-config/index.mjs` |
+    | Flat config | ESLint's config format: one exported list of rule blocks | `devices/simulators/sensor-simulator/eslint.config.mjs` |
 
 Every language has a linter and a formatter. `just lint` runs them through moon; CI runs them through one workflow template per language. This page says what runs, where it is configured, and where local and CI differ.
 
@@ -143,13 +143,13 @@ Two configs:
 
 | Config | Used by | Content |
 |---|---|---|
-| `tooling/eslint-config/index.mjs`, package `@ambitwin/eslint-config` | `sensor-simulator`, via a one-line `eslint.config.mjs` | `@eslint/js` recommended, `typescript-eslint` recommended, Node and Jest globals, `eslint-config-prettier` last |
+| `devices/simulators/sensor-simulator/eslint.config.mjs` | `sensor-simulator` | `@eslint/js` recommended, `typescript-eslint` recommended, Node and Jest globals, `eslint-config-prettier` last |
 | `frontend/eslint.config.ts` | `frontend` | `eslint-plugin-vue` `flat/essential`, Vue TypeScript recommended, Vitest rules on `src/**/__tests__/*`, Playwright rules on `e2e/**`, `skip-formatting` last |
 
 - Both turn off `no-explicit-any` and `no-unused-vars`.
 - The Prettier config comes **last** in both, so ESLint never reports a spacing problem that Prettier owns.
 - `vue-tsc --build` checks types in `.vue` files. It runs in `npm run build` and in CI's `type-check` step, not in `just lint`.
-- moon's TypeScript `lint` lists `/tooling/eslint-config/index.mjs` as an input, so changing the shared config re-lints `sensor-simulator`. `frontend` replaces its inputs with `src/**/*` and `eslint.config.ts`.
+- moon's TypeScript `lint` lists `eslint.config.mjs` as an input, so a config change re-lints. `frontend` replaces its inputs with `src/**/*` and `eslint.config.ts`.
 
 ---
 

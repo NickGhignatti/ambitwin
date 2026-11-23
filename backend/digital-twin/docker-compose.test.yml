@@ -1,5 +1,5 @@
 include:
-  - path: ../../docker/rust-base/docker-compose.yml
+  - path: ../../infra/rust-base/docker-compose.yml
 
 services:
   twin-db:
@@ -12,7 +12,7 @@ services:
       additional_contexts:
         rust-base: service:rust-base
       target: dev
-    command: ["bash", "/app/scripts/test/rust-integration-tests.sh"]
+    command: ["bash", "/app/scripts/rust-integration-tests.sh"]
     environment:
       - MONGO_URI=mongodb://twin-db:27017
     depends_on:

@@ -1,7 +1,7 @@
 .docname {API Reference}
 .include {.pathtoroot/config/standalone.qd}
 
-Every service's edge surface: HTTP as OpenAPI 3 (rendered by Swagger UI), the Socket.IO feed as AsyncAPI 3. The specs are **sources in this repository**, at `api/*.yaml`, and are published alongside this guide — so a spec change ships in the same commit as the handler it describes. They document the edge-facing surface only: internal service-to-service hops and cross-boundary payload shapes are contracts in `schemas/`, not public APIs.
+Every service's edge surface: HTTP as OpenAPI 3 (rendered by Swagger UI), the Socket.IO feed as AsyncAPI 3. The specs are **sources in this repository**, at `schemas/openapi/*.yaml`, and are published alongside this guide — so a spec change ships in the same commit as the handler it describes. They document the edge-facing surface only: internal service-to-service hops and cross-boundary payload shapes are contracts in `schemas/`, not public APIs.
 
 .cards
     .card title:{[Gateway API](../api/index.html?spec=gateway.yaml)} footer:{.tag {gateway.yaml} variant:{good}}
@@ -34,4 +34,4 @@ Every service's edge surface: HTTP as OpenAPI 3 (rendered by Swagger UI), the So
     .card title:{[Common Error Responses](../api/index.html?spec=error.yaml)} footer:{.tag {error.yaml}}
         The error bodies each stack sends, referenced by the specs above.
 
-`socket.yaml` is AsyncAPI 3, not OpenAPI: Socket.IO pushes events instead of answering requests, so it opens in its own viewer (`api/asyncapi.html`). `registry` and `provisioner` have no edge route, so they have no card.
+`socket.yaml` is AsyncAPI 3, not OpenAPI: Socket.IO pushes events instead of answering requests, so it opens in its own viewer (`schemas/openapi/asyncapi.html`). `registry` and `provisioner` have no edge route, so they have no card.

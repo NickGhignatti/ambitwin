@@ -26,7 +26,7 @@ Related pages: [GitHub Actions CI](ci.qd), [Release Please](release-please.qd).
 | Rust | `cargo` | `Cargo.lock` | 6 services, 4 `schemas/*-schema` crates | `mise exec -- cargo update` in the crate, or let `cargo add` / `cargo build` write it |
 | Go | `go` | `go.sum` | `claims-gateway`, `registry`, `tenancy`, `auth-middleware`, `auth-policy` | `mise exec -- go mod tidy` in the module |
 | Python | `uv` | `uv.lock` | `agent`, `acceptance`, `ap-collector`, `aq-simulator`, `ap-simulator` | `mise exec -- uv lock` in the project |
-| Node | `npm` | `package-lock.json` | `frontend`, `sensor-simulator`, `tooling/eslint-config` | `npm install --prefix <dir> --package-lock-only --cpu=x64 --os=linux` |
+| Node | `npm` | `package-lock.json` | `frontend`, `sensor-simulator` | `npm install --prefix <dir> --package-lock-only --cpu=x64 --os=linux` |
 
 - `auth-contracts` and `provisioner` have no `go.sum`: they need nothing outside the standard library and this repo.
 - **Never edit a lockfile by hand.** Change the manifest, then let the manager write the lock.
@@ -159,7 +159,7 @@ Runs on every image a PR changes, and again before `cd-registry` publishes.
 | Rule | Effect |
 |---|---|
 | Major update | Its own PR, labels `dependencies`, `major` |
-| Minor, patch, pin, digest under one folder | One PR per folder: `frontend`, each `backend/*` service, each `backend/libs/*`, `backend/acceptance` (`backend-tests`), `simulators`, `tooling` |
+| Minor, patch, pin, digest under one folder | One PR per folder: `frontend`, each `backend/*` service, each `backend/libs/*`, `backend/acceptance` (`backend-tests`), `simulators` |
 | GitHub Actions and `mise` tools | One PR, group `ci` |
 | Python itself | One PR for every pin (`.python-version`, `.mise.toml`, images), so CI never tests a Python the images do not ship |
 | New Python minor | Opened only after approval on the dependency dashboard issue: compiled packages publish wheels later |

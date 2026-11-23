@@ -37,7 +37,7 @@ Each file name starts with its kind.
 |---|---|---|
 | `ci-gate.yml` | PR into `master` | Finds what changed, runs only those checks, reports one result: **CI Passed** |
 | `ci-codeql.yml` | PR into `master`, Monday 03:00, by hand | Security scan of the source, 4 languages |
-| `cd-registry.yml` | Push to `master` touching `backend/`, `simulators/`, `frontend/` | Publishes images to GHCR |
+| `cd-registry.yml` | Push to `master` touching `backend/`, `devices/simulators/`, `frontend/` | Publishes images to GHCR |
 | `cd-release.yml` | Every push to `master` | Release Please: release PR, tag, changelog |
 | `cd-coverage.yml` | Every push to `master`, by hand | Measures coverage, publishes it on branch `coverage-data` |
 | `cd-documentation.yml` | Push to `master` touching the docs | Builds this site, publishes it to GitHub Pages |
@@ -100,7 +100,7 @@ One entry per buildable part. Every workflow reads it, so a new service is one e
 | Step | What happens, with real values |
 |---|---|
 | 2 | `concurrency: ci-gate-${{ github.ref }}`, `cancel-in-progress: true`: a new push stops the old run |
-| 3 | `.github/actions/filter-services` runs `scripts/service-filters.py`: one filter per entry, its `dir` plus its `depends_on`, for example `telemetry:` + `- "backend/telemetry/**"`, `- "schemas/claims-schema/**"`, `- "schemas/fixtures/**"`, … The script fails the job first if `depends_on` disagrees with the code. Then the action adds the gate's own filters: `k8s`, `ci`, `infra`, `simulators`, `acceptance`, `docs`, `deps` |
+| 3 | `.github/actions/filter-services` runs `.github/scripts/service-filters.py`: one filter per entry, its `dir` plus its `depends_on`, for example `telemetry:` + `- "backend/telemetry/**"`, `- "schemas/claims-schema/**"`, `- "schemas/fixtures/**"`, … The script fails the job first if `depends_on` disagrees with the code. Then the action adds the gate's own filters: `k8s`, `ci`, `infra`, `simulators`, `acceptance`, `docs`, `deps` |
 | 4 | Output `changes`, a JSON list, for example `["telemetry","deps"]` |
 | 5 | Changed keys with an `image` and no `ci: false`, for example `{"include":[{"image":"ambitwin-telemetry","lang":"rust","context":".","dockerfile":"backend/telemetry/Dockerfile"}]}` |
 | 7 | One job per changed service. Libraries and schema crates also have legs |
@@ -121,7 +121,7 @@ A leg runs when its own `dir` changed, **or** a folder in its `depends_on` chang
         B -- yes --> E["that leg runs: k8s, docs, infra, ..."]
         B -- no --> N["nothing runs for it"]
 
-**`depends_on` cannot drift from the code.** Before printing the filters, `scripts/service-filters.py` fails the `changes` job when:
+**`depends_on` cannot drift from the code.** Before printing the filters, `.github/scripts/service-filters.py` fails the `changes` job when:
 
 - a `depends_on` folder does not exist, for example after a rename;
 - a `go.mod` `replace ... => ../path` or a `Cargo.toml` `path = "../path"` points outside the service at a folder no `depends_on` covers.
@@ -179,7 +179,7 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
         T->>T: cargo clippy --release --all-targets -- -D warnings
         T->>T: cargo audit, two advisories ignored
         T->>T: cargo test --release --lib, or --bins with no lib.rs
-        T->>T: scripts/test/rust-integration-tests.sh --release
+        T->>T: scripts/rust-integration-tests.sh --release
 
 | Step | Detail |
 |---|---|
@@ -205,11 +205,11 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
 
 | Leg | Runs when | What it checks |
 |---|---|---|
-| `k8s` (`ci-k8s.yml`) | `k8s/**` | `kubeconform -strict` against Kubernetes 1.32.0 plus the CRD catalog for Istio kinds, `pluto` for removed APIs, `kube-score` with 7 tests ignored |
-| `infra` (`ci-infra.yml`) | `scripts/**`, `tooling/**`, `Justfile` | `node --check` on JS, `bash -n` on shell, each `scripts/test_*.py`, `just --summary` |
-| `simulators` (`ci-simulators.yml`) | `simulators/**` | `sensor-simulator`: lint, build, test. `aq-simulator` and `ap-simulator`: `ruff check`, `pyright`, `uv audit`, `pytest` |
-| `acceptance` (`ci-acceptance.yml`) | `backend/acceptance/**`, `Caddyfile`, `k8s/istio-request-authentication.yml`, `telemetry`, `socket`, `dashboard`, `devices/ap-collector` | `backend/acceptance/run-integration-tests.sh`: a composed stack with a real Caddy edge. 45 min limit, the slowest leg |
-| `docs` (`ci-docs.yml`) | `documentation/**`, `api/**`, the docs recipe, `.mise.toml` | `just docs build`, with the Quarkdown version read from `.mise.toml` |
+| `k8s` (`ci-k8s.yml`) | `infra/k8s/**` | `kubeconform -strict` against Kubernetes 1.32.0 plus the CRD catalog for Istio kinds, `pluto` for removed APIs, `kube-score` with 7 tests ignored |
+| `infra` (`ci-infra.yml`) | `scripts/**`, `.github/scripts/**`, `infra/**/*.sh`, `Justfile` | `node --check` on JS, `bash -n` on shell, each `.github/scripts/test_*.py`, `just --summary` |
+| `simulators` (`ci-simulators.yml`) | `devices/simulators/**` | `sensor-simulator`: lint, build, test. `aq-simulator` and `ap-simulator`: `ruff check`, `pyright`, `uv audit`, `pytest` |
+| `acceptance` (`ci-acceptance.yml`) | `backend/acceptance/**`, `infra/Caddyfile`, `infra/k8s/istio-request-authentication.yml`, `telemetry`, `socket`, `dashboard`, `devices/ap-collector` | `backend/acceptance/run-integration-tests.sh`: a composed stack with a real Caddy edge. 45 min limit, the slowest leg |
+| `docs` (`ci-docs.yml`) | `documentation/**`, `schemas/openapi/**`, the docs recipe, `.mise.toml` | `just docs build`, with the Quarkdown version read from `.mise.toml` |
 | `dependency-review` | Any manifest or lockfile | See [Dependencies & Security](dependencies.qd) |
 | `workflows-lint` | `.github/**` | `actionlint` (shellcheck off), `zizmor --min-severity medium`, `check-workflow-registry.py` |
 
@@ -261,7 +261,7 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
         C->>B: any image selected
         B->>R: ambitwin-rust-base RUSTPIN-HASH exists?
         alt missing
-            B->>R: build docker/rust-base and push it
+            B->>R: build infra/rust-base and push it
         end
         C->>P: one job per image
         P->>P: gh api commits/SHA/pulls gives the PR head SHA
@@ -279,7 +279,7 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
 | Step | Detail |
 |---|---|
 | 3 | `workflow_dispatch` with `service: all` or a list such as `twin,frontend`. A change to `services.json` or `cd-registry.yml` selects every image |
-| 5 | Tag = `rust` pin from `.mise.toml` + first 12 characters of the sha256 of `docker/rust-base/Dockerfile`. An unchanged base is never rebuilt |
+| 5 | Tag = `rust` pin from `.mise.toml` + first 12 characters of the sha256 of `infra/rust-base/Dockerfile`. An unchanged base is never rebuilt |
 | 8 | A squash merge makes a new commit, so the PR's head SHA is looked up through the API |
 | 10 | Same Trivy settings as on the PR; the result also goes to the Security tab |
 | 11 | A carbon copy: `latest`, the SHA and `pr-HEADSHA` end up on one registry version, the very image scanned on the PR |
@@ -298,7 +298,7 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
 1. `load-registry` path-filters the push and splits the changed services by `lang` into four lists.
 2. One `tpl-<lang>-coverage.yml` call per non-empty list. An empty list skips the job: GitHub fails a reusable workflow called with an empty matrix.
 3. `publish` downloads the reports and fetches the previous `coverage-counts.json` and `reports/` from branch `coverage-data`.
-4. `scripts/coverage-summary.py` merges new counts over the old ones and rewrites `reports/<service>.json` for the services that ran, so unchanged services keep their numbers and their per-file report.
+4. `.github/scripts/coverage-summary.py` merges new counts over the old ones and rewrites `reports/<service>.json` for the services that ran, so unchanged services keep their numbers and their per-file report.
 5. The result, `badge.json`, `summary.json`, `coverage-counts.json` and `reports/`, is force-pushed as a single commit to `coverage-data`, with 3 attempts.
 
 **Example.** A push changes `telemetry` only. `rust` gets one entry, `node`, `python`, `go` are skipped. The badge is recomputed from the new `telemetry` counts plus last run's counts for every other service.

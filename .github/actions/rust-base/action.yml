@@ -20,7 +20,7 @@ runs:
         OWNER: ${{ github.repository_owner }}
       run: |
         RUST_VERSION=$(sed -n 's/^rust = "\(.*\)"$/\1/p' .mise.toml)
-        HASH=$(sha256sum docker/rust-base/Dockerfile | cut -c1-12)
+        HASH=$(sha256sum infra/rust-base/Dockerfile | cut -c1-12)
         OWNER_LOWERCASE=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
         echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
         echo "ref=ghcr.io/$OWNER_LOWERCASE/ambitwin-rust-base:$RUST_VERSION-$HASH" >> "$GITHUB_OUTPUT"
@@ -41,7 +41,7 @@ runs:
       if: steps.exists.outputs.found != 'true'
       uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
       with:
-        context: docker/rust-base
+        context: infra/rust-base
         push: true
         build-args: RUST_VERSION=${{ steps.tag.outputs.rust_version }}
         tags: ${{ steps.tag.outputs.ref }}

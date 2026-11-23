@@ -26,7 +26,7 @@ graphify-out/
 compose.runtime.yml
 compose.integration-tests.runtime.yml
 # Documentation — landing-page/ is entirely build output (just docs build).
-# Its sources live in documentation/ and api/.
+# Its sources live in documentation/ and schemas/openapi/.
 landing-page/
 output/
 # Build artifacts

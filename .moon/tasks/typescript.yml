@@ -29,7 +29,6 @@ tasks:
       - 'src/**/*'
       - '__tests__/**/*'
       - 'eslint.config.mjs'
-      - '/tooling/eslint-config/index.mjs'
 
   lint-fix:
     command: 'npm run lint:fix'

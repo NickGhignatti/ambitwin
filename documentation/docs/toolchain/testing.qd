@@ -113,7 +113,7 @@ One fixture, read by each language's own parser. A rename that one language miss
         S->>C: up --build --exit-code-from telemetry-test
         C->>C: build rust-base, then telemetry target dev
         C->>C: start telemetry-db, telemetry-redis, telemetry-kafka
-        C->>T: bash /app/scripts/test/rust-integration-tests.sh
+        C->>T: bash /app/scripts/rust-integration-tests.sh
         T->>T: list the files in tests/, one cargo test --test each
         T-->>C: exit code
         C-->>S: same exit code, others stopped
@@ -131,7 +131,7 @@ One fixture, read by each language's own parser. A rename that one language miss
 | 9 | One `--test` per file, so unit tests do not run again | `cargo test --test alerts --test api --test architecture …` |
 | 12 | `--volumes` deletes the data: the next run starts empty | |
 
-The same `scripts/test/rust-integration-tests.sh` runs in CI. There, `tpl-rust-ci.yml` starts the infra as job services on `localhost`, sets `MONGO_URI`, `REDIS_URL`, `DATABASE_URL`, `KAFKA_BROKERS`, and passes `--release`.
+The same `scripts/rust-integration-tests.sh` runs in CI. There, `tpl-rust-ci.yml` starts the infra as job services on `localhost`, sets `MONGO_URI`, `REDIS_URL`, `DATABASE_URL`, `KAFKA_BROKERS`, and passes `--release`.
 
 | Service | Throwaway infra |
 |---|---|
@@ -249,7 +249,7 @@ Published from `master` by `cd-coverage.yml`, only for services that changed.
 
 1. Each changed service uploads its numbers and its line-level report.
 2. The previous `coverage-counts.json` and `reports/` come from branch `coverage-data`, so unchanged services keep their last numbers and their last report.
-3. `scripts/coverage-summary.py` merges them into `badge.json` and `summary.json`, and writes `reports/<service>.json`: per file, the lines and branches covered and the ranges of lines no test runs.
+3. `.github/scripts/coverage-summary.py` merges them into `badge.json` and `summary.json`, and writes `reports/<service>.json`: per file, the lines and branches covered and the ranges of lines no test runs.
 4. The files are force-pushed as one commit to `coverage-data`. The push is tried 3 times, 10 s and 20 s apart.
 5. The Test Coverage page of this site fetches `summary.json` and `coverage-counts.json` from that branch in the browser, and a service's `reports/<service>.json` when its row is clicked.
 

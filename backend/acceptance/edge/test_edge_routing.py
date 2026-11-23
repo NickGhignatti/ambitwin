@@ -73,7 +73,7 @@ def test_the_ingest_ungate_is_an_exact_path_not_a_prefix():
     """The near-miss this whole file exists for. While #357 was in flight the
     ingest route was briefly POST /telemetry/ingest/batch. The Caddyfile ungates
     it with `handle /telemetry/ingest` — exact, not a prefix — and
-    k8s/istio-request-authentication.yml lists the same exact path in its
+    infra/k8s/istio-request-authentication.yml lists the same exact path in its
     no-principal exception, so the sub-path fell through to require_gateway_auth
     and would have 401'd every gateway. The suite was green throughout, because
     nothing crossed Caddy.

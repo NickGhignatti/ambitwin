@@ -174,7 +174,7 @@ jobs:
           git archive FETCH_HEAD reports 2>/dev/null | tar -x 2>/dev/null || true
 
       - name: Aggregate into badge.json, summary.json and reports/
-        run: python scripts/coverage-summary.py coverage-artifacts . baseline-counts.json
+        run: python .github/scripts/coverage-summary.py coverage-artifacts . baseline-counts.json
 
       # Build a single-commit orphan branch holding the generated files.
       # History lives in nothing — each run force-replaces the branch wholesale.
