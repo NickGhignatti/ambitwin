@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "matched-path", "query", "tokio"] }
-base64 = "0.22"
+base64 = "0.23"
 cedar-policy = "4"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 claims-schema = { path = "../../schemas/claims-schema" }
@@ -17,7 +17,7 @@ futures = "0.3"
 hmac = "0.13"
 log = "0.4.33"
 prometheus = { version = "0.14", default-features = false }
-rdkafka = "0.39"
+rdkafka = "0.40"
 redis = { version = "1.6.0", default-features = false, features = ["tokio-comp"] }
 reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -34,7 +34,7 @@ uuid = { version = "1.24.1", features = ["v4"] }
 overflow-checks = true
 
 [dev-dependencies]
-base64 = "0.22"
+base64 = "0.23"
 telemetry-schema = { path = "../../schemas/telemetry-schema" }
 tokio = { version = "1.53.1", features = ["macros", "rt", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
