@@ -138,7 +138,7 @@ services:
 
   grafana:
     cpus: "3"
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: ambitwin-grafana
     environment:
       - GF_SERVER_ROOT_URL=${DEV_URL}:${BACKEND_PORT}/grafana/
