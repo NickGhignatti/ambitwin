@@ -109,7 +109,7 @@ A two-point measuring tool over a preview of the drawing is the friendlier contr
 
 ## Room Ids Must Be Deterministic
 
-Telemetry keys per-room thresholds by path — `/telemetry/thresholds/peopleCount/buildings/{buildingId}/rooms/{roomId}`. An id that changes between two extractions of the same drawing orphans every threshold attached to the old one.
+Telemetry keys per-room thresholds by path — `/telemetry/thresholds/people_count/buildings/{buildingId}/rooms/{roomId}`. An id that changes between two extractions of the same drawing orphans every threshold attached to the old one.
 
 - Prefix every id with its storey — `f0-`, `f1-`. Two floors of an office both hold an
   `Office 1`, and a shared collision suffix would decide the winner by upload order and

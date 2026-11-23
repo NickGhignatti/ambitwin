@@ -7,8 +7,8 @@ export const GRID_STEP = 0.5
 const ICONS: Record<string, string> = {
   router: 'wifi-high',
   temperature: 'thermometer',
-  peopleCount: 'users',
-  airQuality: 'wind',
+  people_count: 'users',
+  air_quality: 'wind',
 }
 const GENERIC_ICON = 'cpu'
 

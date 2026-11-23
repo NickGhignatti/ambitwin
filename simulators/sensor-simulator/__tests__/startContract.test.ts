@@ -63,13 +63,13 @@ describe("readings follow the sensors, not the rooms", () => {
 
     expect(readings.map((r) => [r["type"], r["roomId"]])).toEqual([
       ["temperature", "room-lab-2"],
-      ["peopleCount", "room-lab-2"],
+      ["people_count", "room-lab-2"],
     ]);
   });
 
   it("produces nothing for a kind it does not simulate", () => {
     const readings = internals(new Simulator()).readingsFor([
-      sensor("airQuality"),
+      sensor("air_quality"),
       sensor("router"),
     ]);
 

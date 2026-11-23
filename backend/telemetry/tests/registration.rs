@@ -121,7 +121,7 @@ async fn a_registration_request_persists_the_building_and_acknowledges_ready() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(bounds["maxTemp"], 26.5);
+    assert_eq!(bounds["max"], 26.5);
 
     handle.abort();
     let _ = handle.await;

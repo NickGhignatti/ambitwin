@@ -78,7 +78,7 @@ Full details: [Trust & Service Mesh](service-mesh.qd).
 
 | Topic | From | To | Group | Carries |
 |---|---|---|---|---|
-| `alerts` | `telemetry` | `notification` | `alerts` | One message per breach of a field |
+| `alerts` | `telemetry` | `notification` | `alerts` | One message per breach of a reading |
 | `alerts.dlq` | `notification` | Nobody yet | | Alerts that could not be handled |
 | `building-registration-requested` | `digital-twin` | `telemetry` | `building-registrations` | New building and its rooms |
 | `building-registration-completed` | `telemetry` | `digital-twin` | `building-registrations-completed` | `ready` or `failed` |

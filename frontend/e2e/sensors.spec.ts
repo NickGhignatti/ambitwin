@@ -31,7 +31,7 @@ const devices = {
     {
       kind: 'router',
       label: 'Router',
-      metrics: ['totalDeviceCount', 'ratioDeviceCount', 'estimatedOccupancy'],
+      metrics: ['total_device_count', 'ratio_device_count', 'estimated_occupancy'],
     },
     { kind: 'temperature', label: 'Thermostat', metrics: ['temperature'] },
   ],
