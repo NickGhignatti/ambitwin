@@ -5,4 +5,4 @@
 
 # libssl3 3.0.20 in gcr.io/distroless/cc-debian12 (Rust images); debian fixed it in 3.0.22,
 # distroless not rebuilt yet. only notification loads libssl. drop once distroless ships it.
-CVE-2026-84782 exp:2026-11-22
+CVE-2026-84782 exp:2026-12-07
