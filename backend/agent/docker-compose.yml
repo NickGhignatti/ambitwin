@@ -69,7 +69,7 @@ services:
 
   redis-langfuse:
     cpus: "3"
-    image: redis:8.10.2-alpine
+    image: redis:8.10.3-alpine
     container_name: langfuse-broker
     restart: always
     # Langfuse's BullMQ client sends String(REDIS_AUTH), i.e. "undefined", when unset, so the
@@ -83,7 +83,7 @@ services:
 
   langfuse-web:
     cpus: "3"
-    image: docker.io/langfuse/langfuse:4.63.0
+    image: docker.io/langfuse/langfuse:4.80.0
     container_name: ambitwin-langfuse
     restart: always
     depends_on: &langfuse-depends-on
@@ -138,7 +138,7 @@ services:
 
   langfuse-worker:
     cpus: "3"
-    image: docker.io/langfuse/langfuse-worker:4.63.0
+    image: docker.io/langfuse/langfuse-worker:4.80.0
     container_name: ambitwin-langfuse-worker
     restart: always
     depends_on: *langfuse-depends-on
@@ -167,7 +167,7 @@ services:
 
   clickhouse:
     cpus: "3"
-    image: docker.io/clickhouse/clickhouse-server:26.9.21
+    image: docker.io/clickhouse/clickhouse-server:26.10.4
     container_name: ambitwin-clickhouse
     restart: always
     user: "101:101"
@@ -187,7 +187,7 @@ services:
 
   minio:
     cpus: "3"
-    image: cgr.dev/chainguard/minio@sha256:709099319add48dfb44aa596a7070d3ddd8dd04d7ae881765719aec29df9e510
+    image: cgr.dev/chainguard/minio@sha256:9158c67aa441627c366442e84656f689e16bec4809851ec64318561a365b69e4
     container_name: ambitwin-minio
     restart: always
     entrypoint: sh
