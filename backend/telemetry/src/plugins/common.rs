@@ -1,16 +1,18 @@
-use crate::types::reading::Reading;
-use serde_json::Value;
+use crate::types::plugin::{ActionSpec, MetricDescriptor, SensorPlugin};
 
-pub fn reading(payload: &Value, metric: &str, value: f64) -> Reading {
-    Reading {
-        building_id: payload["buildingId"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned(),
-        room_id: payload["roomId"].as_str().unwrap_or_default().to_owned(),
-        metric: metric.to_owned(),
-        ts_ms: payload["timestamp"].as_f64().unwrap_or_default() as i64,
-        value,
-        payload: payload.as_object().cloned().unwrap_or_default(),
+/// A metric that needs nothing beyond its data: every reading has the same shape, so checking
+/// one is the same for all of them.
+pub struct Metric {
+    pub descriptor: MetricDescriptor,
+    pub actions: &'static [ActionSpec],
+}
+
+impl SensorPlugin for Metric {
+    fn descriptor(&self) -> &MetricDescriptor {
+        &self.descriptor
+    }
+
+    fn actions(&self) -> &'static [ActionSpec] {
+        self.actions
     }
 }

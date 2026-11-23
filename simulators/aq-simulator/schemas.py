@@ -60,26 +60,13 @@ class StopRequest(BaseModel):
     def clean_building_id(cls, v: str) -> str:
         return _strip_newlines(v)
 
-class AirQualityReading(BaseModel):
-    # ── ADDED DISCRIMINANT FOR MICROKERNEL ──
-    type: str = "airQuality"
-    # ────────────────────────────────────────
+class MetricReading(BaseModel):
+    """One metric and one number: what telemetry ingests. The station sends one per measure."""
 
+    type: str
     roomId: str
     timestamp: int
-    scenario: str
-
-    # Reported sensor values
-    pm25: float
-    pm10: float
-    co2: float
-    voc: float
-    temperature: float
-    humidity: float
-
-    # Derived
-    aqi: int
-    indoor_aqi: float
+    value: float
 
 class StatusResponse(BaseModel):
     isRunning: bool

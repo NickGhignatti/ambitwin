@@ -74,11 +74,11 @@ def test_a_tick_is_counted_per_room(routers: tuple[str, dict[str, str]]):
         assert response.status_code == 202, response.text
 
         for room, expected in {"ground-floor": 3, "first-floor": 7, "atrium": 0}.items():
-            stored = telemetry.latest(client, "totalDeviceCount", building_id, room)
-            assert stored["totalDeviceCount"] == expected, room
+            stored = telemetry.latest(client, "total_device_count", building_id, room)
+            assert stored["value"] == expected, room
 
-            estimate = telemetry.latest(client, "ratioDeviceCount", building_id, room)
-            assert estimate["ratioDeviceCount"] == math.ceil(expected / DEVICES_PER_PERSON)
+            estimate = telemetry.latest(client, "ratio_device_count", building_id, room)
+            assert estimate["value"] == math.ceil(expected / DEVICES_PER_PERSON)
 
 
 def test_a_tick_carrying_a_mac_is_refused(routers: tuple[str, dict[str, str]]):

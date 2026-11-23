@@ -26,15 +26,15 @@ from dataclasses import dataclass, field
 import httpx
 
 from errors import SensorErrorModel
-from physics import CO2_FLOOR_PPM, compute_all, compute_indoor_aqi, pm25_to_aqi
+from physics import CO2_FLOOR_PPM, compute_all, compute_indoor_aqi
 from scenarios import EnvironmentModel, Scenario
-from schemas import AirQualityReading, BuildingConfig
+from schemas import BuildingConfig, MetricReading
 
 logger = logging.getLogger("simulator")
 
 INGEST_SECRET = os.environ.get("TELEMETRY_INGEST_SECRET", "").encode()
 INGEST_URL = os.environ.get("TELEMETRY_INGEST_URL", "http://gateway/telemetry/ingest")
-AIR_QUALITY = "airQuality"
+AIR_QUALITY = "air_quality"
 
 
 def _sign(raw: bytes) -> str:
@@ -53,7 +53,7 @@ class SimulationRoom:
     Holds the full simulation state for one physical room.
 
     Owns an EnvironmentModel (Layer 2) and a SensorErrorModel (Layer 3).
-    Calling `read(dt_hours)` returns the next AirQualityReading payload.
+    Calling `read(dt_hours)` returns the next reading of each metric the station sends.
     """
     building_id: str
     room_id: str
@@ -65,8 +65,8 @@ class SimulationRoom:
         self._env   = EnvironmentModel(scenario=self.scenario)
         self._error = SensorErrorModel()
 
-    def read(self, dt_hours: float) -> AirQualityReading:
-        """Advance environment, apply physics, apply errors → reading."""
+    def read(self, dt_hours: float) -> list[MetricReading]:
+        """Advance environment, apply physics, apply errors → one reading per metric."""
         # Layer 2: evolve the environment
         true_conditions = self._env.advance(dt_hours)
 
@@ -81,26 +81,14 @@ class SimulationRoom:
         pm10 = max(pm25, round(reported["pm10"], 2))
         co2  = max(CO2_FLOOR_PPM, round(reported["co2"], 1))
         voc  = max(0.0, round(reported["voc"], 1))
-        temp = round(reported["temperature"], 2)
-        hum  = min(100.0, max(0.0, round(reported["humidity"], 1)))
-        aqi  = pm25_to_aqi(pm25)
+        humidity = min(100.0, max(0.0, round(reported["humidity"], 1)))
         indoor_aqi = compute_indoor_aqi(pm25, pm10, co2, voc)
-        
-        logger.debug(f"Computed indoor_aqi for {self.room_id}: {indoor_aqi}")
 
-        return AirQualityReading(
-            roomId      = self.room_id,
-            timestamp   = int(time.time() * 1000),
-            scenario    = self.scenario.value,
-            pm25        = pm25,
-            pm10        = pm10,
-            co2         = co2,
-            voc         = voc,
-            temperature = temp,
-            humidity    = hum,
-            aqi         = aqi,
-            indoor_aqi  = indoor_aqi
-        )
+        timestamp = int(time.time() * 1000)
+        return [
+            MetricReading(type=metric, roomId=self.room_id, timestamp=timestamp, value=value)
+            for metric, value in (("co2", co2), ("indoor_aqi", indoor_aqi), ("humidity", humidity))
+        ]
 
 @dataclass
 class SimulationBuilding:
@@ -247,7 +235,7 @@ class Simulator:
     async def _send_signals(self, building: SimulationBuilding, dt_hours: float) -> None:
         """Generate every room's reading and POST the tick as one batch."""
         client = await self._get_client()
-        readings = [room.read(dt_hours) for room in building.rooms.values()]
+        readings = [reading for room in building.rooms.values() for reading in room.read(dt_hours)]
         if not readings:
             return
 

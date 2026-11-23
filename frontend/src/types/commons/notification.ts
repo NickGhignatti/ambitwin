@@ -15,8 +15,10 @@ export type NotificationListItem = Notification & { read: boolean }
 
 export enum NotificationType {
   TEMPERATURE = 'temperature',
-  AIR_QUALITY = 'airQuality',
-  PEOPLE_COUNT = 'peopleCount',
+  PEOPLE_COUNT = 'people_count',
+  CO2 = 'co2',
+  INDOOR_AQI = 'indoor_aqi',
+  HUMIDITY = 'humidity',
 }
 
 export interface ISubscriptionPreference {

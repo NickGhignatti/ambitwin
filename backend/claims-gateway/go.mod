@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/MicahParks/jwkset v0.11.4
-	github.com/MicahParks/keyfunc/v3 v3.9.1
+	github.com/MicahParks/keyfunc/v3 v3.9.2
 	github.com/NickGhignatti/ambitwin/server/auth-contracts v0.0.0
 	github.com/NickGhignatti/ambitwin/server/auth-middleware v0.0.0
 	github.com/coreos/go-oidc/v3 v3.19.0

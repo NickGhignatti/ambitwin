@@ -107,7 +107,7 @@ services:
 
   keycloak-db:
     cpus: "3"
-    image: postgres:17.11-alpine
+    image: postgres:17.12-alpine
     container_name: ambitwin-keycloak-db
     restart: always
     environment:
@@ -138,7 +138,7 @@ services:
 
   grafana:
     cpus: "3"
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: ambitwin-grafana
     environment:
       - GF_SERVER_ROOT_URL=${DEV_URL}:${BACKEND_PORT}/grafana/

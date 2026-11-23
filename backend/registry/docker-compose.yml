@@ -14,7 +14,7 @@ services:
 
   registry-db:
     cpus: "3"
-    image: postgres:17.11-alpine
+    image: postgres:17.12-alpine
     environment:
       POSTGRES_USER: registry
       POSTGRES_PASSWORD: ${REGISTRY_DB_PASSWORD}

@@ -16,7 +16,7 @@ import AddColumnPanel from '@/components/dashboard/table/AddColumnPanel.vue'
 import ColumnSwapMenu from '@/components/dashboard/table/ColumnSwapMenu.vue'
 import TablePagination from '@/components/commons/data/TablePagination.vue'
 
-const DEFAULT_COLUMNS = ['roomName', 'status', 'roomMaxOccupancy']
+const DEFAULT_COLUMNS = ['room_name', 'status', 'room_max_occupancy']
 
 const props = defineProps<{ buildingId?: string; rooms: TableBody[] }>()
 

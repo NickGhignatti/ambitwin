@@ -1,14 +1,9 @@
 mod support;
 
 use serde_json::json;
-use std::sync::Arc;
 use support::{empty_db, fresh_db, seed_building};
 use telemetry::adapters::driven::postgres::{PgBuildings, PgReadings, PgSensors, PgThresholds};
 use telemetry::kernel::ports::{BuildingStore, ReadingStore, SensorStore, ThresholdStore};
-use telemetry::kernel::registry::PluginRegistry;
-use telemetry::plugins::air_quality::AirQualityPlugin;
-use telemetry::plugins::device_count::TotalDeviceCountPlugin;
-use telemetry::plugins::temperature::TemperaturePlugin;
 use telemetry::types::building::{RegisteredBuilding, Room};
 use telemetry::types::reading::{BuildingTotal, Reading};
 use telemetry::types::sensor::{Sensor, SensorChanges, SensorUpdate};
@@ -16,42 +11,18 @@ use telemetry::types::sensor::{Sensor, SensorChanges, SensorUpdate};
 const HOUR_MS: i64 = 3_600_000;
 const BASE_MS: i64 = 1_700_000_000_000;
 
-fn registry() -> Arc<PluginRegistry> {
-    Arc::new(
-        PluginRegistry::new(vec![
-            Box::new(TemperaturePlugin),
-            Box::new(AirQualityPlugin),
-            Box::new(TotalDeviceCountPlugin),
-        ])
-        .unwrap(),
-    )
-}
-
-fn reading(
-    metric: &str,
-    room: &str,
-    ts_ms: i64,
-    value: f64,
-    payload: serde_json::Value,
-) -> Reading {
+fn reading(metric: &str, room: &str, ts_ms: i64, value: f64) -> Reading {
     Reading {
         building_id: "b1".to_owned(),
         room_id: room.to_owned(),
         metric: metric.to_owned(),
         ts_ms,
         value,
-        payload: payload.as_object().cloned().unwrap_or_default(),
     }
 }
 
 fn temperature(room: &str, ts_ms: i64, value: f64) -> Reading {
-    reading(
-        "temperature",
-        room,
-        ts_ms,
-        value,
-        json!({ "buildingId": "b1", "roomId": room, "timestamp": ts_ms, "temperature": value }),
-    )
+    reading("temperature", room, ts_ms, value)
 }
 
 fn bounds(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
@@ -61,7 +32,7 @@ fn bounds(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value
 #[tokio::test]
 async fn a_reading_round_trips_with_millisecond_timestamp_fidelity() {
     let pool = fresh_db("roundtrip").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
 
     let ts_ms = BASE_MS + 123;
     readings
@@ -81,71 +52,9 @@ async fn a_reading_round_trips_with_millisecond_timestamp_fidelity() {
 }
 
 #[tokio::test]
-async fn an_inserted_reading_stores_no_envelope_keys_in_its_payload() {
-    let pool = fresh_db("trim").await;
-    let readings = PgReadings::new(pool.clone(), registry());
-    readings
-        .insert(&[temperature("r1", BASE_MS, 21.5)])
-        .await
-        .unwrap();
-
-    let payload: serde_json::Value = sqlx::query_scalar("select payload from readings")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(payload, json!({}));
-}
-
-#[tokio::test]
-async fn a_read_reading_carries_its_envelope_back() {
-    let pool = fresh_db("reinflate").await;
-    let readings = PgReadings::new(pool, registry());
-    readings
-        .insert(&[temperature("r1", BASE_MS, 21.5)])
-        .await
-        .unwrap();
-
-    let stored = readings
-        .latest("b1", "temperature", "r1")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.payload["buildingId"], json!("b1"));
-    assert_eq!(stored.payload["roomId"], json!("r1"));
-    assert_eq!(stored.payload["timestamp"], json!(BASE_MS));
-    assert_eq!(stored.payload["temperature"], json!(21.5));
-}
-
-#[tokio::test]
-async fn an_air_quality_reading_keeps_its_eight_extra_measurements() {
-    let pool = fresh_db("airquality").await;
-    let readings = PgReadings::new(pool.clone(), registry());
-
-    let payload = json!({
-        "buildingId": "b1", "roomId": "r1", "timestamp": BASE_MS,
-        "scenario": "rush-hour", "pm25": 12.0, "pm10": 20.0, "co2": 800.0,
-        "voc": 0.3, "temperature": 22.0, "humidity": 41.0, "aqi": 55.0, "indoor_aqi": 61.0
-    });
-    readings
-        .insert(&[reading("airQuality", "r1", BASE_MS, 61.0, payload)])
-        .await
-        .unwrap();
-
-    let stored: serde_json::Value = sqlx::query_scalar("select payload from readings")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let stored = stored.as_object().unwrap();
-    assert_eq!(stored.len(), 8);
-    assert_eq!(stored["co2"], json!(800.0));
-    assert!(!stored.contains_key("buildingId"));
-    assert!(!stored.contains_key("indoor_aqi"));
-}
-
-#[tokio::test]
 async fn latest_per_room_returns_the_newest_row_for_each_room_and_nothing_else() {
     let pool = fresh_db("latestperroom").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
 
     for (room, ts, value) in [
         ("r1", BASE_MS, 20.0),
@@ -168,20 +77,14 @@ async fn latest_per_room_returns_the_newest_row_for_each_room_and_nothing_else()
 fn devices(building: &str, room: &str, ts_ms: i64, count: u32) -> Reading {
     Reading {
         building_id: building.to_owned(),
-        ..reading(
-            "totalDeviceCount",
-            room,
-            ts_ms,
-            f64::from(count),
-            json!({ "buildingId": building, "roomId": room, "timestamp": ts_ms, "totalDeviceCount": count }),
-        )
+        ..reading("total_device_count", room, ts_ms, f64::from(count))
     }
 }
 
 #[tokio::test]
 async fn a_building_total_sums_each_room_once_at_the_newest_report() {
     let pool = fresh_db("buildingtotal").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
     let (before, newest) = (BASE_MS, BASE_MS + 5000);
     readings
         .insert(&[
@@ -196,11 +99,11 @@ async fn a_building_total_sums_each_room_once_at_the_newest_report() {
         .unwrap();
 
     let total = readings
-        .building_total("b1", "totalDeviceCount")
+        .building_total("b1", "total_device_count")
         .await
         .unwrap();
     let never = readings
-        .building_total("b3", "totalDeviceCount")
+        .building_total("b3", "total_device_count")
         .await
         .unwrap();
 
@@ -217,7 +120,7 @@ async fn a_building_total_sums_each_room_once_at_the_newest_report() {
 #[tokio::test]
 async fn series_buckets_hourly_for_a_one_day_range() {
     let pool = fresh_db("series").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
 
     for (offset, value) in [(0, 20.0), (60_000, 22.0), (HOUR_MS, 30.0)] {
         readings
@@ -247,7 +150,7 @@ async fn series_buckets_hourly_for_a_one_day_range() {
 #[tokio::test]
 async fn each_agg_mode_produces_its_own_aggregate() {
     let pool = fresh_db("aggmodes").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
 
     for (offset, value) in [(0, 10.0), (60_000, 20.0), (120_000, 30.0)] {
         readings
@@ -269,7 +172,7 @@ async fn each_agg_mode_produces_its_own_aggregate() {
 #[tokio::test]
 async fn a_room_filter_narrows_the_series() {
     let pool = fresh_db("seriesroom").await;
-    let readings = PgReadings::new(pool, registry());
+    let readings = PgReadings::new(pool);
     readings
         .insert(&[temperature("r1", BASE_MS, 10.0)])
         .await
@@ -299,12 +202,7 @@ async fn a_room_threshold_and_a_building_threshold_coexist_and_room_wins() {
     let thresholds = PgThresholds::new(pool);
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "maxTemp": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     thresholds
@@ -312,7 +210,7 @@ async fn a_room_threshold_and_a_building_threshold_coexist_and_room_wins() {
             "b1",
             Some("r1"),
             "temperature",
-            &bounds(json!({ "maxTemp": 30.0 })),
+            &bounds(json!({ "max": 30.0 })),
         )
         .await
         .unwrap();
@@ -321,9 +219,9 @@ async fn a_room_threshold_and_a_building_threshold_coexist_and_room_wins() {
         .resolve("b1", &[("temperature", "r1"), ("temperature", "r9")])
         .await
         .unwrap();
-    assert_eq!(resolved[0].as_ref().unwrap()["maxTemp"], 30.0);
+    assert_eq!(resolved[0].as_ref().unwrap()["max"], 30.0);
     assert_eq!(
-        resolved[1].as_ref().unwrap()["maxTemp"],
+        resolved[1].as_ref().unwrap()["max"],
         25.0,
         "a room without its own row falls back to the building row"
     );
@@ -333,7 +231,7 @@ async fn a_room_threshold_and_a_building_threshold_coexist_and_room_wins() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(building["maxTemp"], 25.0);
+    assert_eq!(building["max"], 25.0);
 }
 
 #[tokio::test]
@@ -342,26 +240,16 @@ async fn upserting_the_same_threshold_twice_updates_rather_than_duplicates() {
     let thresholds = PgThresholds::new(pool.clone());
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "maxTemp": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     let merged = thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "minTemp": 18.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "min": 18.0 })))
         .await
         .unwrap();
 
-    assert_eq!(merged["maxTemp"], 25.0);
-    assert_eq!(merged["minTemp"], 18.0);
+    assert_eq!(merged["max"], 25.0);
+    assert_eq!(merged["min"], 18.0);
 
     let count: i64 = sqlx::query_scalar("select count(*) from thresholds")
         .fetch_one(&pool)
@@ -377,12 +265,7 @@ async fn temperature_limits_joins_rooms_and_bounds() {
     let thresholds = PgThresholds::new(pool);
 
     thresholds
-        .upsert(
-            "b1",
-            None,
-            "temperature",
-            &bounds(json!({ "maxTemp": 25.0 })),
-        )
+        .upsert("b1", None, "temperature", &bounds(json!({ "max": 25.0 })))
         .await
         .unwrap();
     thresholds
@@ -390,7 +273,7 @@ async fn temperature_limits_joins_rooms_and_bounds() {
             "b1",
             Some("r1"),
             "temperature",
-            &bounds(json!({ "maxTemp": 30.0 })),
+            &bounds(json!({ "max": 30.0 })),
         )
         .await
         .unwrap();
@@ -483,7 +366,7 @@ async fn registering_a_building_twice_converges() {
 #[tokio::test]
 async fn a_week_range_reads_from_readings_hourly_not_readings() {
     let pool = fresh_db("rollup").await;
-    let readings = PgReadings::new(pool.clone(), registry());
+    let readings = PgReadings::new(pool.clone());
 
     let midnight_ms = 1_699_920_000_000;
     for hour in 0..3 {
@@ -534,7 +417,7 @@ async fn count_readings(pool: &sqlx::PgPool) -> i64 {
 #[tokio::test]
 async fn a_retried_batch_is_stored_once() {
     let pool = fresh_db("retry").await;
-    let readings = PgReadings::new(pool.clone(), registry());
+    let readings = PgReadings::new(pool.clone());
     let batch = [
         temperature("r1", BASE_MS, 20.0),
         temperature("r2", BASE_MS, 21.0),
@@ -549,7 +432,7 @@ async fn a_retried_batch_is_stored_once() {
 #[tokio::test]
 async fn a_rolled_up_average_weighs_each_hour_by_its_samples() {
     let pool = fresh_db("weighted").await;
-    let readings = PgReadings::new(pool.clone(), registry());
+    let readings = PgReadings::new(pool.clone());
 
     let midnight_ms = 1_699_920_000_000;
     readings
@@ -605,7 +488,8 @@ async fn upgrading_removes_stored_duplicates_even_when_compressed() {
         .await
         .unwrap();
 
-    migrator.run(&pool).await.unwrap();
+    // 0008 empties readings, so stop at the dedupe migration
+    migrator.run_to(7, &pool).await.unwrap();
 
     assert_eq!(count_readings(&pool).await, 1);
 }

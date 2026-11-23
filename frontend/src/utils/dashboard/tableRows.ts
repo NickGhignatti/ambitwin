@@ -3,8 +3,8 @@ import type { TableBody, TableHeader } from '@/types/dashboard/table.ts'
 import { getStatusByOccupants } from '@/utils/dashboard/status'
 
 // The room carries these itself (twin data, or derived from it); telemetry has no bucket for them.
-const ROOM_METRICS = new Set(['roomName', 'roomMaxOccupancy', 'status'])
-const PEOPLE = 'peopleCount'
+const ROOM_METRICS = new Set(['room_name', 'room_max_occupancy', 'status'])
+const PEOPLE = 'people_count'
 
 const round = (value: number) => Math.round(value * 10) / 10
 
@@ -41,7 +41,7 @@ export function buildRows(
       row[header.key] = value == null ? '--' : round(value)
     }
     const people = byRoom.get(PEOPLE)?.get(room.roomId)?.value ?? 0
-    row.status = getStatusByOccupants(people, room.roomMaxOccupancy)
+    row.status = getStatusByOccupants(people, room.room_max_occupancy)
     return row
   })
 }

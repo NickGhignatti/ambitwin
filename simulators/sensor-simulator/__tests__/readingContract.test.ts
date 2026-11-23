@@ -33,7 +33,7 @@ const simulator = new Simulator() as unknown as {
 
 const builders: [string, () => Record<string, unknown>][] = [
   ["temperature", () => simulator.temperatureFor("room-lab-2")],
-  ["peopleCount", () => simulator.peopleCountFor("room-lab-2")],
+  ["people_count", () => simulator.peopleCountFor("room-lab-2")],
 ];
 
 describe("the readings match the shape telemetry pins", () => {
@@ -59,9 +59,9 @@ describe("the readings match the shape telemetry pins", () => {
   );
 
   it("counts people as a non-negative integer, which is what the plugin accepts", () => {
-    const { peopleCount } = simulator.peopleCountFor("room-lab-2");
+    const { value } = simulator.peopleCountFor("room-lab-2");
 
-    expect(Number.isInteger(peopleCount)).toBe(true);
-    expect(peopleCount as number).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(value)).toBe(true);
+    expect(value as number).toBeGreaterThanOrEqual(0);
   });
 });

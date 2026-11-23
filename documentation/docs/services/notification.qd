@@ -6,13 +6,13 @@
     |---|---|---|
     | Breach | A reading past its limit, sent by `telemetry` | 31 °C, limit 28 °C |
     | Alert record | One breach as a Kafka message on `alerts` | An `AlertEvent` keyed `b1:r1` |
-    | Cooldown | A Redis key that mutes repeats of one breach for 300 s | `alert:temperature:temperature:b1:r1` |
+    | Cooldown | A Redis key that mutes repeats of one breach for 300 s | `alert:temperature:b1:r1` |
     | Domain | The organisation area a building belongs to. Alerts go to its members | `eng` |
     | Bell | The in-app message list in the browser, fed through `socket` | "Temperature Alert - HQ" |
     | Web Push | A pop-up the browser shows even with the tab closed | Sent through `fcm.googleapis.com` |
     | Push subscription | One device's push address and keys | `{endpoint, keys: {p256dh, auth}}` |
     | VAPID | A pair of keys that proves to the push service that the messages come from this server | `VAPID_PUBLIC_KEY` |
-    | Preference | One account's on/off switch for one metric in one domain | Ada, `eng`, `airQuality`, on |
+    | Preference | One account's on/off switch for one metric in one domain | Ada, `eng`, `indoor_aqi`, on |
     | Audience | Which domains a caller may reach | `Domains(["eng"])` or `Unrestricted` |
     | Kafka offset | The number of a record inside a topic partition | 41 |
     | Commit | Telling Kafka "everything below this offset is done" | commit 43 |
@@ -170,13 +170,13 @@ The text is `{building} : {room} {label} is {value}{ unit}{ (above maximum)}`. A
 | Alert | Message |
 |---|---|
 | 31 °C above 28 | `HQ : Lab 2 Temperature is 31 °C (above maximum)` |
-| 140, no unit, above | `HQ : Lab 2 Air Quality is 140 (above maximum)` |
+| 80, no unit, above | `HQ : Lab 2 Indoor AQI is 80 (above maximum)` |
 | 12 below its minimum | `… is 12 (below minimum)` |
 
 ```rust
 pub fn breach_cooldown_key(alert: &AlertEvent) -> String {
-    format!("alert:{}:{}:{}:{}",
-        alert.metric, alert.field, or_unknown(&alert.building_id), or_unknown(&alert.room_id))
+    format!("alert:{}:{}:{}",
+        alert.metric, or_unknown(&alert.building_id), or_unknown(&alert.room_id))
 }
 
 pub fn breach_push_title(alert: &AlertEvent) -> String {
@@ -187,7 +187,7 @@ pub fn breach_push_title(alert: &AlertEvent) -> String {
 }
 ```
 
-- The cooldown key has **metric, field, building, room**, so a CO₂ alert does not mute a temperature or AQI alert in the same room. An empty id becomes `unknown`.
+- The cooldown key has **metric, building, room**, so a CO₂ alert does not mute a temperature or AQI alert in the same room. An empty id becomes `unknown`.
 - The title is `{label} Alert - {building}`, or just `{label} Alert` when the building has no name.
 
 ---
@@ -442,7 +442,7 @@ Example: room `r1` of building `b1` ("HQ", room "Lab 2") reaches 31 °C, limit 2
         L->>A: handle: bytes to text, then on_breach(text)
         A->>A: from_str into AlertEvent
         A->>A: is_alertable()
-        A->>R: GET alert:temperature:temperature:b1:r1
+        A->>R: GET alert:temperature:b1:r1
         R-->>A: none
         A->>A: breach_message(alert)
         A->>T: domains_for_building(b1, system claims)
@@ -460,16 +460,16 @@ Example: room `r1` of building `b1` ("HQ", room "Lab 2") reaches 31 °C, limit 2
 
 | Step | Data |
 |---|---|
-| 1 | `{"buildingId":"b1","roomId":"r1","buildingName":"HQ","roomName":"Lab 2","temperature":31.0,"type":"temperature","field":"temperature","label":"Temperature","unit":"°C","direction":"high","threshold":28.0,"timestamp":1700000000000}` |
-| 4 | `AlertEvent` with `metric` `temperature`, `field` `temperature`, `value` 31.0, `direction` `Above` |
-| 6 | Key `alert:temperature:temperature:b1:r1` |
+| 1 | `{"buildingId":"b1","roomId":"r1","buildingName":"HQ","roomName":"Lab 2","type":"temperature","value":31.0,"label":"Temperature","unit":"°C","direction":"high","threshold":28.0,"timestamp":1700000000000}` |
+| 4 | `AlertEvent` with `metric` `temperature`, `value` 31.0, `direction` `Above` |
+| 6 | Key `alert:temperature:b1:r1` |
 | 8 | Message `HQ : Lab 2 Temperature is 31 °C (above maximum)`. Push title `Temperature Alert - HQ` |
 | 9 | Header = base64 of `{"sub":"system:notification-service","memberships":[]}` |
 | 11 | `{"id":"1700000000123","type":"danger","title":"Temperature Alert - HQ","message":"HQ : Lab 2 Temperature is 31 °C (above maximum)","timestamp":"2023-11-14T22:13:20.123Z","domainName":"eng","metric":"temperature"}` |
 | 13 | `["ada"]` |
 | 14 | Ada's 2 subscriptions |
 | 15 | 2 encrypted POSTs, same JSON as step 11 |
-| 16 | `SET alert:temperature:temperature:b1:r1 "1" EX 300` |
+| 16 | `SET alert:temperature:b1:r1 "1" EX 300` |
 
 ---
 
@@ -822,7 +822,7 @@ The server POSTs to the endpoint, so an arbitrary URL would let a caller point t
 - **The device is stored before the membership check.** A domain the caller is not in gives `403`, but the device stays registered, with no preferences for that domain.
 - The upsert key is the endpoint. One browser that signs in as another account moves its endpoint to that account.
 
-**Example.** Ada, member of `eng`, sends `{"endpoint":"https://fcm.googleapis.com/fcm/send/abc","keys":{"p256dh":"BN…","auth":"k3…"},"domainName":"eng"}` with no type. `resolve_lenient` switches on every alertable metric (`temperature`, `airQuality`, `peopleCount`). Answer `201`.
+**Example.** Ada, member of `eng`, sends `{"endpoint":"https://fcm.googleapis.com/fcm/send/abc","keys":{"p256dh":"BN…","auth":"k3…"},"domainName":"eng"}` with no type. `resolve_lenient` switches on every alertable metric (`temperature`, `people_count`, `co2`, `indoor_aqi`, `humidity`). Answer `201`.
 
 .mermaid
     sequenceDiagram
@@ -855,9 +855,9 @@ The server POSTs to the endpoint, so an arbitrary URL would let a caller point t
 
 | Form | Example | Result |
 |---|---|---|
-| Single | `{"domainName":"eng","type":"airQuality","enabled":false}` | 1 update |
-| List | `{"domainName":"eng","types":["temperature","peopleCount"],"enabled":true}` | 2 updates |
-| Granular | `{"domainName":"eng","preferences":[{"type":"temperature","enabled":true},{"type":"airQuality","enabled":false}]}` | 2 updates |
+| Single | `{"domainName":"eng","type":"indoor_aqi","enabled":false}` | 1 update |
+| List | `{"domainName":"eng","types":["temperature","people_count"],"enabled":true}` | 2 updates |
+| Granular | `{"domainName":"eng","preferences":[{"type":"temperature","enabled":true},{"type":"indoor_aqi","enabled":false}]}` | 2 updates |
 
 `domainId` is accepted in place of `domainName`.
 
@@ -916,7 +916,7 @@ pub fn resolve_strict(...)   // used by POST /preferences
         Ty -- no --> E3
         Ty -- yes --> U3["one update"]
         U1 & U2 & U3 --> V{"every type in ALERTABLE_METRICS?"}
-        V -- no --> E6["400 type must be one of: temperature, airQuality, peopleCount"]
+        V -- no --> E6["400 type must be one of: temperature, people_count, co2, indoor_aqi, humidity"]
         V -- yes --> W["apply: set, one by one"]
 
 ### How one switch is written
@@ -1130,7 +1130,7 @@ MongoDB, two collections plus one bookkeeping collection:
 |---|---|---|---|
 | `webpushsubscriptions` | Device | `accountName`, `endpoint`, `keys {p256dh, auth}` | unique `endpoint`. unique `accountName + endpoint`. `accountName` |
 | `notificationsubscriptions` | Account and domain | `accountName`, `domainName`, `preferences [{notificationType, isSubscribed}]`, `createdAt` | unique `accountName + domainName`. `domainName` |
-| `migrations` | One-time change | `_id` like `switched-on:airQuality`, `at` | |
+| `migrations` | One-time change | `_id` like `switched-on:indoor_aqi`, `at` | |
 
 Redis holds only cooldown keys, value `"1"`, expiry 300 s. Nothing else is kept: alerts are not stored.
 
@@ -1145,7 +1145,7 @@ just test notification-integration   # tests/*.rs against throwaway Kafka, Mongo
 
 | Where | What it checks |
 |---|---|
-| `service/alerts.rs` | Every outcome. Cooldown per field. No domain is never published. A breach compared to `schemas/fixtures/notification.json` |
+| `service/alerts.rs` | Every outcome. Cooldown per metric, building and room. No domain is never published. A breach compared to `schemas/fixtures/notification.json` |
 | `service/push.rs` | All devices of all named accounts. `Gone` is deleted. Other failures are kept |
 | `service/preferences.rs` | The same endpoint once. The same type not duplicated. The later write wins. Reads only own records |
 | `http_api/controllers.rs` | Every route without claims is `401`. The body account is ignored. Membership `403`s. Admin and system reach. Every fixture request is accepted and every rejection refused with its reason |

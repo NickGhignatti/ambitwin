@@ -27,7 +27,7 @@ const history = (metric: HistoryMetric) =>
 const SERIES = (
   [
     {
-      metric: 'peopleCount',
+      metric: 'people_count',
       key: 'dashboard.charts.occupancy',
       icon: 'users-three',
       colorVar: '--cv-primary',
@@ -39,7 +39,7 @@ const SERIES = (
       colorVar: '--cv-warning',
     },
     {
-      metric: 'airQuality',
+      metric: 'indoor_aqi',
       key: 'dashboard.charts.airQuality',
       icon: 'wind',
       colorVar: '--cv-tertiary',
@@ -49,7 +49,7 @@ const SERIES = (
 
 // A sum of temperatures means nothing, so only occupancy stays up for 'sum'.
 const visibleSeries = computed(() =>
-  aggregation.value === 'sum' ? SERIES.filter((s) => s.metric === 'peopleCount') : SERIES,
+  aggregation.value === 'sum' ? SERIES.filter((s) => s.metric === 'people_count') : SERIES,
 )
 
 const aggregationOptions = AGGREGATIONS.map((value) => ({ value, label: value.toUpperCase() }))

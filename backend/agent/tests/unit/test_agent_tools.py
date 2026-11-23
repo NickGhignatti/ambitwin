@@ -147,7 +147,7 @@ async def test_latest_sensor_data_projects_and_names_building_readings(monkeypat
     twin_client = _client(lambda request: httpx.Response(200, json=_building()))
 
     def sensor_handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/peopleCount/entireBuilding"
+        assert request.url.path == "/people_count/entireBuilding"
         assert request.url.params["building"] == "building-1"
         assert request.headers["x-gateway-claims"] == "caller-jwt"
         return httpx.Response(
@@ -170,7 +170,7 @@ async def test_latest_sensor_data_projects_and_names_building_readings(monkeypat
     monkeypatch.setattr(sensor_module, "get_sensor_client", lambda: sensor_client)
     try:
         result = await GetLatestSensorDataTool().run(
-            GetLatestSensorDataArgs(building_id="building-1", metric="peopleCount"),
+            GetLatestSensorDataArgs(building_id="building-1", metric="people_count"),
             _context(domains=["unibo.it"], raw_token="caller-jwt"),
         )
     finally:
@@ -217,7 +217,7 @@ async def test_latest_sensor_data_discards_out_of_scope_downstream_rows(monkeypa
     monkeypatch.setattr(sensor_module, "get_sensor_client", lambda: sensor_client)
     try:
         result = await GetLatestSensorDataTool().run(
-            GetLatestSensorDataArgs(building_id="building-1", metric="peopleCount"),
+            GetLatestSensorDataArgs(building_id="building-1", metric="people_count"),
             _context(domains=["unibo.it"]),
         )
     finally:
@@ -405,7 +405,7 @@ async def test_list_sensors_checks_room_before_sensor_request(monkeypatch):
 
 
 def test_sensor_history_rejects_sum_for_non_additive_metrics():
-    with pytest.raises(ValidationError, match="only meaningful for peopleCount"):
+    with pytest.raises(ValidationError, match="only meaningful for people_count"):
         GetSensorHistoryArgs(
             building_id="building-1",
             metric="temperature",

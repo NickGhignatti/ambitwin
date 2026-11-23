@@ -1,7 +1,6 @@
 mod support;
 
 use futures::StreamExt;
-use serde_json::json;
 use telemetry::adapters::driven::redis_fanout::RedisFanout;
 use telemetry::kernel::ports::Fanout;
 use telemetry::types::event::TelemetryEvent;
@@ -42,11 +41,6 @@ async fn a_telemetry_event_reaches_the_raw_channel() {
             room_id: "r1".to_owned(),
             ts_ms: 1_699_999_000_000,
             value: 21.5,
-            payload:
-                json!({ "buildingId": "b1", "roomId": "r1", "timestamp": 1, "temperature": 21.5 })
-                    .as_object()
-                    .cloned()
-                    .unwrap(),
             ingested_at_ms: 1_700_000_000_000,
         }])
         .await;
