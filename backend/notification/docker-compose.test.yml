@@ -3,13 +3,13 @@ include:
 
 services:
   redis:
-    image: redis:8.10.1-alpine
+    image: redis:8.10.3-alpine
 
   notification-db:
-    image: mongo:8.3.9
+    image: mongo:8.3.17
 
   notification-kafka:
-    image: apache/kafka:4.3.1
+    image: apache/kafka:4.4.0
     environment:
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
