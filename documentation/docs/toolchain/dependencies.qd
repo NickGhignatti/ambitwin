@@ -161,7 +161,7 @@ Runs on every image a PR changes, and again before `cd-registry` publishes.
 | Major update | Its own PR, labels `dependencies`, `major` |
 | Minor, patch, pin, digest under one folder | One PR per folder: `frontend`, each `backend/*` service, each `backend/libs/*`, `backend/acceptance` (`backend-tests`), `simulators` |
 | GitHub Actions and `mise` tools | One PR, group `ci` |
-| Python itself | One PR for every pin (`.python-version`, `.mise.toml`, images), so CI never tests a Python the images do not ship |
+| Python itself | One PR for every pin (`.mise.toml`, images), so CI never tests a Python the images do not ship |
 | New Python minor | Opened only after approval on the dependency dashboard issue: compiled packages publish wheels later |
 | Limits | `prConcurrentLimit: 0`, `prHourlyLimit: 0`: no cap |
 

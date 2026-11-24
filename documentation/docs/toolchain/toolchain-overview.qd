@@ -199,14 +199,14 @@ Each fact has one home. A second copy would drift.
 
 | Fact | Home | Read by |
 |---|---|---|
-| Tool versions | `.mise.toml` | `mise`; CI's `setup-rust` and `setup-go`; `docs.just`; `cd-registry.yml` for the Rust base image |
+| Tool versions | `.mise.toml` | `mise`; CI's `setup-rust`, `setup-go` and `setup-python`; `docs.just`; `cd-registry.yml` for the Rust base image |
 | Which projects exist | `.moon/workspace.yml` | `moon` |
 | How a language is built, tested, linted | `.moon/tasks/<language>.yml` | `moon` |
 | Which services exist, their image, their databases | `.github/services.json` | every CI workflow, `scripts/check-workflow-registry.py` |
 | Commands a person types | `Justfile`, `just/*.just` | `just` |
 
-.box {Two pins live outside the mise file} type:{warning}
-    CI's `setup-node` asks for Node `24.x`, and `setup-python` reads `.python-version` (`3.14`). Both agree with `.mise.toml` today, but nothing checks it. `just` itself is not pinned: CI installs 1.42.4.
+.box {One pin lives outside the mise file} type:{warning}
+    CI's `setup-node` asks for Node `24.x`. It agrees with `.mise.toml` today, but nothing checks it. `just` itself is not pinned: CI installs 1.42.4.
 
 ---
 
