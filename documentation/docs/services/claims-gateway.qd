@@ -277,18 +277,19 @@ The only package that speaks OIDC.
 
 ```go
 func New(ctx context.Context, discoveryURL, issuerURL, clientID string) (*Verifier, error) {
-	jwksURL, err := discoverJWKSURL(ctx, discoveryURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+	jwksURL, err := discoverJWKSURL(ctx, client, discoveryURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery against %q: %w", discoveryURL, err)
 	}
-	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
+	keySet := oidc.NewRemoteKeySet(oidc.ClientContext(ctx, client), jwksURL)
 	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: clientID})
 	return &Verifier{inner: verifier}, nil
 }
 ```
 
 1. Ask Keycloak where its public keys are (`discoverJWKSURL`).
-2. Make a key set that fetches and caches them from there.
+2. Make a key set that fetches and caches them from there. `oidc.ClientContext` hands it the same 5 s client, so a silent Keycloak fails the call instead of hanging it.
 3. Make a verifier that demands: `iss` equals `issuerURL`, `aud` holds `clientID`, the signature checks out, and the token has not expired.
 
 The library is not allowed to do its own discovery because of the two-addresses problem. So discovery is done by hand:
@@ -930,7 +931,7 @@ Changing a password takes three steps: read the user's email from Keycloak, **ch
 | `GATEWAY_ISSUER` | `cv-gateway` | The `iss` of the internal JWT |
 | `ADDR` | `:3000` | Listen address |
 
-Fixed in code: lifetime 15 min, 5 s timeout on `tenancy` and the Keycloak admin calls.
+Fixed in code: lifetime 15 min, 5 s timeout on `tenancy`, OIDC discovery, key download and the Keycloak admin calls.
 
 ---
 
@@ -961,5 +962,4 @@ just test claims-gateway
 - **A sleeping screen loses the session.** No refresh for 15 minutes means signing in again.
 - **No way to revoke one token.** A stolen JWT works until `exp`. `sid` is not checked anywhere. Logout only deletes the browser's cookie.
 - **Refresh never asks Keycloak.** A person disabled in Keycloak stays signed in as long as refreshes keep coming before `exp`. Only `tenancy` is asked again.
-- **Boot discovery has no timeout.** `discoverJWKSURL` uses `http.DefaultClient` with the signal context, which has no deadline. A Keycloak that accepts the connection and never answers hangs the start-up instead of failing it.
 - **`EmailVerified` is read and never used.** New users are created with `emailVerified: false`.

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
@@ -22,22 +23,24 @@ type Verifier struct {
 // New validates tokens' `iss` against issuerURL (it differs from discoveryURL across
 // internal/browser hosts) and fetches JWKS manually so jwks_uri can be rewritten onto discoveryURL's host.
 func New(ctx context.Context, discoveryURL, issuerURL, clientID string) (*Verifier, error) {
-	jwksURL, err := discoverJWKSURL(ctx, discoveryURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+	jwksURL, err := discoverJWKSURL(ctx, client, discoveryURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery against %q: %w", discoveryURL, err)
 	}
-	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
+	// go-oidc takes its http client from this context for every later key download
+	keySet := oidc.NewRemoteKeySet(oidc.ClientContext(ctx, client), jwksURL)
 	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: clientID})
 	return &Verifier{inner: verifier}, nil
 }
 
-func discoverJWKSURL(ctx context.Context, discoveryURL string) (string, error) {
+func discoverJWKSURL(ctx context.Context, client *http.Client, discoveryURL string) (string, error) {
 	docURL := strings.TrimSuffix(discoveryURL, "/") + "/.well-known/openid-configuration"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, docURL, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching %q: %w", docURL, err)
 	}
