@@ -44,7 +44,9 @@ async fn main() {
         .await
         .expect("Failed to connect to MongoDB");
 
-    let state = AppState::new(col.clone());
+    let twin_url =
+        env::var("DIGITAL_TWIN_URL").unwrap_or_else(|_| "http://digital-twin:3000".to_string());
+    let state = AppState::new(col.clone(), twin_url);
     for doc in infra::db::load_all(&col)
         .await
         .expect("Failed to load preferences from MongoDB")

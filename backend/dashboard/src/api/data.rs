@@ -2,10 +2,11 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 
+use crate::infra::authz::{require_edit, require_read};
 use crate::infra::claims::GatewayClaims;
 use crate::infra::db;
 use crate::state::AppState;
@@ -30,10 +31,13 @@ pub struct GetPreferencesResponse {
 
 // GET /preferences/:building_id
 pub async fn get_preferences(
-    _claims: GatewayClaims,
+    claims: GatewayClaims,
     Path(building_id): Path<String>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+) -> Response {
+    if let Err(status) = require_read(&state.twin, &claims, &building_id).await {
+        return status.into_response();
+    }
     match state.building_preferences.get(&building_id) {
         Some(columns) => (
             StatusCode::OK,
@@ -49,11 +53,14 @@ pub async fn get_preferences(
 
 // POST /preferences/:building_id
 pub async fn update_preferences(
-    _claims: GatewayClaims,
+    claims: GatewayClaims,
     State(state): State<AppState>,
     Path(building_id): Path<String>,
     Json(payload): Json<UpdatePreferencesRequest>,
-) -> impl IntoResponse {
+) -> Response {
+    if let Err(status) = require_edit(&state.twin, &claims, &building_id).await {
+        return status.into_response();
+    }
     let column_count = payload.allowed_columns.len();
 
     state
@@ -74,45 +81,70 @@ pub async fn update_preferences(
         active_columns: column_count,
     };
 
-    (StatusCode::OK, Json(response))
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{UpdatePreferencesRequest, get_preferences, update_preferences};
-    use crate::infra::claims::{ClaimsPayload, GatewayClaims};
-    use crate::models::PreferenceDocument;
+    use crate::api::testing::{claims, claims_in, make_state, state_with};
+    use crate::infra::claims::GatewayClaims;
     use crate::state::AppState;
     use axum::Json;
     use axum::extract::{Path, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
 
-    fn claims() -> GatewayClaims {
-        GatewayClaims {
-            payload: ClaimsPayload {
-                sub: Some("u1".to_string()),
-                ..ClaimsPayload::default()
-            },
-        }
+    async fn save_as(claims: GatewayClaims, state: &AppState) -> StatusCode {
+        update_preferences(
+            claims,
+            State(state.clone()),
+            Path("bldg-1".to_string()),
+            Json(UpdatePreferencesRequest {
+                allowed_columns: vec!["temperature".to_string()],
+            }),
+        )
+        .await
+        .into_response()
+        .status()
     }
 
-    async fn make_state() -> AppState {
-        let opts = mongodb::options::ClientOptions::parse("mongodb://localhost:27017")
-            .await
-            .unwrap();
-        let client = mongodb::Client::with_options(opts).unwrap();
-        let col = client
-            .database("_unit_test")
-            .collection::<PreferenceDocument>("_prefs");
-        AppState::new(col)
+    // ── access ────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn staff_of_another_domain_is_refused_and_nothing_is_stored() {
+        let (state, _twin) = make_state().await;
+        assert_eq!(
+            save_as(claims_in("sales", "business_admin"), &state).await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(state.building_preferences.get("bldg-1").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_customer_of_the_buildings_domain_is_refused() {
+        let (state, _twin) = make_state().await;
+        assert_eq!(
+            save_as(claims_in("eng", "standard_customer"), &state).await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn a_save_is_refused_when_digital_twin_cannot_say_who_may_edit() {
+        let (state, _twin) = state_with(true).await;
+        assert_eq!(
+            save_as(claims(), &state).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(state.building_preferences.get("bldg-1").is_none());
     }
 
     // ── get_preferences ───────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn get_returns_404_for_unknown_building() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         let response = get_preferences(claims(), Path("unknown".to_string()), State(state))
             .await
             .into_response();
@@ -121,7 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_returns_200_after_insert() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         state
             .building_preferences
             .insert("bldg-1".to_string(), vec!["temperature".to_string()]);
@@ -132,11 +164,44 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    async fn read_as(claims: GatewayClaims, state: AppState) -> StatusCode {
+        state
+            .building_preferences
+            .insert("bldg-1".to_string(), vec!["temperature".to_string()]);
+        get_preferences(claims, Path("bldg-1".to_string()), State(state))
+            .await
+            .into_response()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn any_member_of_the_buildings_domain_reads_its_columns() {
+        let (state, _twin) = make_state().await;
+        let customer = claims_in("eng", "standard_customer");
+        assert_eq!(read_as(customer, state).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_outsider_cannot_read_a_buildings_columns() {
+        let (state, _twin) = make_state().await;
+        let outsider = claims_in("sales", "business_admin");
+        assert_eq!(read_as(outsider, state).await, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_read_is_refused_when_digital_twin_cannot_say_who_may_read() {
+        let (state, _twin) = state_with(true).await;
+        assert_eq!(
+            read_as(claims(), state).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
     // ── update_preferences ────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn update_stores_new_columns_in_dashmap() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         update_preferences(
             claims(),
             State(state.clone()),
@@ -153,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_overwrites_previous_columns() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         state
             .building_preferences
             .insert("bldg-1".to_string(), vec!["old-col".to_string()]);
@@ -174,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_stores_empty_column_list() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         update_preferences(
             claims(),
             State(state.clone()),
@@ -191,7 +256,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_returns_200_ok() {
-        let state = make_state().await;
+        let (state, _twin) = make_state().await;
         let response = update_preferences(
             claims(),
             State(state),

@@ -40,8 +40,16 @@ from.
 reads only `building_preferences`. `PUT .../cards` refuses a bad list (`api/cards.rs`) before
 storing anything.
 
-**Initialising a building is idempotent**: a second init keeps the existing columns; a new
-building gets exactly `room_name` and `room_max_occupancy`.
+**Reading a building's columns or cards needs Cedar `Read`, saving needs `Edit`** (`infra/authz.rs`).
+Only digital-twin knows a building's domains, so `require_read` / `require_edit` ask
+`GET /domain/{id}` with the caller's raw claims on every call: `403` when denied or unknown, `503`
+when twin cannot answer — never allow on doubt. No cached copy: it would go stale when a building
+changes domain. The Cedar glue is dashboard's own copy; its test replays every golden `Read` and
+`Edit` case of `libs/auth-policy/fixtures/conformance.json`.
+
+**Initialising a building is idempotent and needs `Edit`**: a second init keeps the existing
+columns; a new building gets exactly `room_name` and `room_max_occupancy`. Gated like a save,
+because an entry turns on the tunnel for that building; twin calls it with the creator's claims.
 
 **Catalog collection is failure-tolerant and time-bounded**: one `reqwest::Client` with a
 2s per-request timeout, and any unreachable, slow or unparseable source yields an empty Vec

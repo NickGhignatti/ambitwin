@@ -62,6 +62,9 @@ role). Use it when telemetry lost a registration, instead of re-uploading.
 `backend/libs/auth-policy`. `in` = entity hierarchy, `.contains()` = set membership — using
 `in` for the latter silently denies everything. An unrecognised role is ignored, never a
 wildcard grant. Reads are scoped by dropping domains the caller cannot read, not by erroring.
+`GET /domain/{id}` follows the same rule: a caller learns only the owning domains it belongs to
+(an outsider gets `[]`, like a missing building); only `OWNER_RESOLVERS`
+(`system:notification-service`, which routes alerts) gets every domain.
 
 **`Building` / `Room` are not shared shapes.** No other Rust service parses them
 (`/domain/{id}` returns `Vec<String>`); the cross-language consumers (agent, frontend) are

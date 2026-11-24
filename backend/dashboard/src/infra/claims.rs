@@ -5,8 +5,9 @@ pub use claims_schema::{CLAIMS_HEADER, ClaimsPayload};
 
 #[derive(Debug, Clone)]
 pub struct GatewayClaims {
-    #[allow(dead_code)]
     pub payload: ClaimsPayload,
+    /// The header as received, forwarded when dashboard asks digital-twin on the caller's behalf.
+    pub raw: String,
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for GatewayClaims {
@@ -22,7 +23,10 @@ impl<S: Send + Sync> FromRequestParts<S> for GatewayClaims {
         if payload.user_id().is_none() {
             return Err(StatusCode::UNAUTHORIZED);
         }
-        Ok(GatewayClaims { payload })
+        Ok(GatewayClaims {
+            payload,
+            raw: raw.to_string(),
+        })
     }
 }
 

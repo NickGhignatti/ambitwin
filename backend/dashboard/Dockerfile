@@ -5,6 +5,8 @@ WORKDIR /app/backend/dashboard
 FROM chef AS planner
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/auth-policy /app/backend/libs/auth-policy
+COPY backend/libs/auth-contracts /app/backend/libs/auth-contracts
 COPY backend/dashboard .
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -12,6 +14,8 @@ FROM chef AS dev
 COPY --from=planner /app/backend/dashboard/recipe.json recipe.json
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/auth-policy /app/backend/libs/auth-policy
+COPY backend/libs/auth-contracts /app/backend/libs/auth-contracts
 RUN --mount=type=cache,target=/sccache,sharing=shared \
     RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache CARGO_INCREMENTAL=0 \
     cargo chef cook --recipe-path recipe.json
@@ -24,6 +28,8 @@ FROM chef AS builder
 COPY --from=planner /app/backend/dashboard/recipe.json recipe.json
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/auth-policy /app/backend/libs/auth-policy
+COPY backend/libs/auth-contracts /app/backend/libs/auth-contracts
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY backend/dashboard .
 RUN cargo build --release

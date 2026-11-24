@@ -129,9 +129,11 @@ pub async fn get_building_counts(
 pub async fn get_domains_by_building(
     State(state): State<AppState>,
     Path(building): Path<String>,
-    _claims: GatewayClaims,
+    claims: GatewayClaims,
 ) -> Result<Json<Vec<String>>, DomainError> {
-    Ok(Json(state.buildings.domains_of(&building).await?))
+    Ok(Json(
+        state.buildings.domains_known_to(&building, &claims).await?,
+    ))
 }
 
 #[derive(Deserialize)]

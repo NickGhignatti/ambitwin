@@ -151,6 +151,17 @@ fn authorize(
     response.decision() == Decision::Allow
 }
 
+/// Internal callers that look up any building's owners: notification routes an alert to every one.
+const OWNER_RESOLVERS: &[&str] = &["system:notification-service"];
+
+pub fn resolves_any_owner(claims: &GatewayClaims) -> bool {
+    claims
+        .payload
+        .sub
+        .as_deref()
+        .is_some_and(|sub| OWNER_RESOLVERS.contains(&sub))
+}
+
 /// Internal callers that read any building's geometry; the edge never mints a `system:` subject.
 const GEOMETRY_READERS: &[&str] = &["system:ap-simulator"];
 
