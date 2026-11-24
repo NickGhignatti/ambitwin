@@ -616,30 +616,22 @@ A function that **returns** a handler, so `gw` is captured once. Read `{"idToken
 ### Cookies
 
 ```go
-func setSessionCookie(w http.ResponseWriter, token string) {
+// maxAgeSeconds -1 deletes the cookie, 0 keeps it for the browser session
+func setSessionCookie(w http.ResponseWriter, token string, maxAgeSeconds int) {
 	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: token, Path: "/",
+		Name: authmiddleware.CookieName, Value: token, Path: "/", MaxAge: maxAgeSeconds,
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func writeSessionCookieAndToken(w http.ResponseWriter, token string) {
-	setSessionCookie(w, token)
+	setSessionCookie(w, token, 0)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 ```
 
-Sign-in routes set the cookie **and** return the token in the body. `refresh` and `PATCH /profile` set only the cookie and answer `204`. Logout does the opposite of setting it:
-
-```go
-http.SetCookie(w, &http.Cookie{
-	Name: CookieName, Value: "", Path: "/", MaxAge: -1,
-	HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-})
-```
-
-`MaxAge: -1` tells the browser to delete the cookie now. Logout does **not** invalidate the token itself. See *Gaps*.
+The cookie name comes from `auth-middleware`, the library that reads it back, so the two can never drift. Sign-in routes set the cookie **and** return the token in the body. `refresh` and `PATCH /profile` set only the cookie and answer `204`. Logout calls `setSessionCookie(w, "", -1)`: `MaxAge: -1` tells the browser to delete the cookie now. Logout does **not** invalidate the token itself. See *Gaps*.
 
 ### `verify`: the edge asks
 

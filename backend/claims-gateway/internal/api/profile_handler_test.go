@@ -14,6 +14,7 @@ import (
 	"time"
 
 	authcontracts "github.com/NickGhignatti/ambitwin/server/auth-contracts"
+	authmiddleware "github.com/NickGhignatti/ambitwin/server/auth-middleware"
 	"github.com/NickGhignatti/ambitwin/server/claims-gateway/internal/api"
 	"github.com/NickGhignatti/ambitwin/server/claims-gateway/internal/service"
 )
@@ -137,12 +138,12 @@ func TestUpdateProfileHandler_RefreshesTheSessionCookie(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	var sessionCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == api.CookieName {
+		if c.Name == authmiddleware.CookieName {
 			sessionCookie = c
 		}
 	}
 	if sessionCookie == nil || sessionCookie.Value == "" {
-		t.Fatalf("expected a refreshed %q cookie, got %+v", api.CookieName, cookies)
+		t.Fatalf("expected a refreshed %q cookie, got %+v", authmiddleware.CookieName, cookies)
 	}
 }
 
@@ -243,7 +244,7 @@ func TestRefreshHandler_ReMintsTheSessionCookie(t *testing.T) {
 	}
 	var session *http.Cookie
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == api.CookieName {
+		if c.Name == authmiddleware.CookieName {
 			session = c
 		}
 	}
@@ -354,7 +355,7 @@ func TestRefreshHandler_TenancyFailureIsReportedNotSilentlyReMinted(t *testing.T
 		t.Fatalf("got %d, want 503", rec.Code)
 	}
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == api.CookieName && c.Value != "" {
+		if c.Name == authmiddleware.CookieName && c.Value != "" {
 			t.Fatal("a session cookie was set despite the refresh failing")
 		}
 	}

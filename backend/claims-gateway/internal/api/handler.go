@@ -13,8 +13,6 @@ import (
 	"github.com/NickGhignatti/ambitwin/server/claims-gateway/internal/service"
 )
 
-const CookieName = "authentication_token"
-
 func Mount(gw *service.Gateway, publicKeySet []byte, verifyKeys keyfunc.Keyfunc, issuer string) chi.Router {
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -57,10 +55,7 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutHandler(w http.ResponseWriter, _ *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -175,7 +170,7 @@ func updateProfileHandler(gw *service.Gateway) http.HandlerFunc {
 			writeAuthError(w, err)
 			return
 		}
-		setSessionCookie(w, token)
+		setSessionCookie(w, token, 0)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -219,20 +214,21 @@ func refreshHandler(gw *service.Gateway) http.HandlerFunc {
 			writeAuthError(w, err)
 			return
 		}
-		setSessionCookie(w, token)
+		setSessionCookie(w, token, 0)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-func setSessionCookie(w http.ResponseWriter, token string) {
+// maxAgeSeconds -1 deletes the cookie, 0 keeps it for the browser session
+func setSessionCookie(w http.ResponseWriter, token string, maxAgeSeconds int) {
 	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: token, Path: "/",
+		Name: authmiddleware.CookieName, Value: token, Path: "/", MaxAge: maxAgeSeconds,
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func writeSessionCookieAndToken(w http.ResponseWriter, token string) {
-	setSessionCookie(w, token)
+	setSessionCookie(w, token, 0)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
