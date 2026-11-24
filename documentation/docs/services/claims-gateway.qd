@@ -198,25 +198,15 @@ The admin calls need Keycloak's base address, with no `/realms/…` on the end. 
 
 ```go
 func loadOrGenerateKey() (*rsa.PrivateKey, string, error) {
-	pemStr := os.Getenv("GATEWAY_PRIVATE_KEY")
-	if pemStr == "" {
-		if path := os.Getenv("GATEWAY_PRIVATE_KEY_FILE"); path != "" {
-			b, err := os.ReadFile(path)
-			// …
-			pemStr = string(b)
-		}
-	}
-	if pemStr != "" {
-		block, _ := pem.Decode([]byte(pemStr))
+	if keyPath := os.Getenv("GATEWAY_PRIVATE_KEY_FILE"); keyPath != "" {
+		pemBytes, err := os.ReadFile(keyPath)
+		// …
+		block, _ := pem.Decode(pemBytes)
 		// … must be valid PEM, PKCS#8, and an RSA key
-		kid := os.Getenv("GATEWAY_KEY_ID")
-		if kid == "" {
-			kid = "cv-gateway-1"
-		}
-		return rsaKey, kid, nil
+		return rsaKey, cmp.Or(os.Getenv("GATEWAY_KEY_ID"), "cv-gateway-1"), nil
 	}
 
-	log.Println("WARNING: GATEWAY_PRIVATE_KEY not set — generating an ephemeral key. …")
+	log.Println("WARNING: GATEWAY_PRIVATE_KEY_FILE not set — generating an ephemeral key. …")
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	// …
 	return key, "ephemeral-dev-key", nil
@@ -225,9 +215,7 @@ func loadOrGenerateKey() (*rsa.PrivateKey, string, error) {
 
 .mermaid
     flowchart TD
-        A{"GATEWAY_PRIVATE_KEY set?"} -- yes --> P["parse PEM, PKCS#8, must be RSA"]
-        A -- no --> F{"GATEWAY_PRIVATE_KEY_FILE set?"}
-        F -- yes --> R["read file"] --> P
+        F{"GATEWAY_PRIVATE_KEY_FILE set?"} -- yes --> R["read file"] --> P["parse PEM, PKCS#8, must be RSA"]
         F -- no --> G["generate 2048-bit key,<br/>kid ephemeral-dev-key, log a warning"]
         P --> K["kid = GATEWAY_KEY_ID or cv-gateway-1"]
 
@@ -900,7 +888,7 @@ Changing a password takes three steps: read the user's email from Keycloak, **ch
 | `REGISTRATION_CLIENT_ID`, `REGISTRATION_CLIENT_SECRET` | required | The confidential client for the password grant and the admin calls |
 | `TENANCY_URL` | required | Base URL of `tenancy` |
 | `INTERNAL_SIGNING_SECRET` | required | HMAC secret shared with `tenancy` |
-| `GATEWAY_PRIVATE_KEY`, `GATEWAY_PRIVATE_KEY_FILE` | generated | RSA key, PEM PKCS#8 |
+| `GATEWAY_PRIVATE_KEY_FILE` | generated | RSA key, PEM PKCS#8 |
 | `GATEWAY_KEY_ID` | `cv-gateway-1` | The `kid` |
 | `GATEWAY_ISSUER` | `cv-gateway` | The `iss` of the internal JWT |
 | `ADDR` | `:3000` | Listen address |
