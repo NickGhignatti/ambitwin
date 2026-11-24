@@ -52,21 +52,21 @@ func Load() (Config, error) {
 	// single-hostname deployments use one URL for both
 	discoveryURL := cmp.Or(os.Getenv("OIDC_DISCOVERY_URL"), issuer)
 
-	key, kid, err := loadOrGenerateKey()
+	key, keyID, err := loadOrGenerateKey()
 	if err != nil {
 		return Config{}, err
 	}
 
 	addr := cmp.Or(os.Getenv("ADDR"), ":3000")
-	gwIssuer := cmp.Or(os.Getenv("GATEWAY_ISSUER"), "cv-gateway")
+	gatewayIssuer := cmp.Or(os.Getenv("GATEWAY_ISSUER"), "cv-gateway")
 
 	keycloakBaseURL := strings.TrimSuffix(discoveryURL, "/realms/"+keycloakRealm)
 
 	return Config{
 		Addr: addr, OIDCDiscoveryURL: discoveryURL, OIDCIssuer: issuer, OIDCClientID: clientID,
 		TenancyURL: tenancyURL, InternalSecret: []byte(secret),
-		Issuer: gwIssuer, TokenTTL: 15 * time.Minute,
-		SigningKey: key, SigningKeyID: kid,
+		Issuer: gatewayIssuer, TokenTTL: 15 * time.Minute,
+		SigningKey: key, SigningKeyID: keyID,
 		KeycloakBaseURL: keycloakBaseURL, KeycloakRealm: keycloakRealm,
 		KeycloakClientID: keycloakClientID, KeycloakClientSecret: keycloakClientSecret,
 	}, nil

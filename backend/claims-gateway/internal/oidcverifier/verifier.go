@@ -61,25 +61,25 @@ func discoverJWKSURL(ctx context.Context, client *http.Client, discoveryURL stri
 
 	// Rewrite jwks_uri onto discoveryURL's scheme+host — the discovery doc may
 	// advertise an external hostname this process can't route to.
-	discU, err := url.Parse(discoveryURL)
+	discoveryLocation, err := url.Parse(discoveryURL)
 	if err != nil {
 		return "", err
 	}
-	jwksU, err := url.Parse(doc.JWKSURI)
+	keySetLocation, err := url.Parse(doc.JWKSURI)
 	if err != nil {
 		return "", fmt.Errorf("parsing jwks_uri %q: %w", doc.JWKSURI, err)
 	}
-	jwksU.Scheme, jwksU.Host = discU.Scheme, discU.Host
-	return jwksU.String(), nil
+	keySetLocation.Scheme, keySetLocation.Host = discoveryLocation.Scheme, discoveryLocation.Host
+	return keySetLocation.String(), nil
 }
 
 func (v *Verifier) Verify(ctx context.Context, rawIDToken string) (service.IDTokenClaims, error) {
-	tok, err := v.inner.Verify(ctx, rawIDToken)
+	token, err := v.inner.Verify(ctx, rawIDToken)
 	if err != nil {
 		return service.IDTokenClaims{}, err
 	}
 
-	var raw struct {
+	var claims struct {
 		PreferredUsername string `json:"preferred_username"`
 		// Name is Keycloak's "full name" mapper output (firstName+lastName),
 		// set by Google brokering and by registration (see keycloakadmin).
@@ -88,17 +88,17 @@ func (v *Verifier) Verify(ctx context.Context, rawIDToken string) (service.IDTok
 		Organization  []string `json:"organization"`
 		Roles         []string `json:"roles"`
 	}
-	if err := tok.Claims(&raw); err != nil {
+	if err := token.Claims(&claims); err != nil {
 		return service.IDTokenClaims{}, fmt.Errorf("decoding id token claims: %w", err)
 	}
 
 	return service.IDTokenClaims{
-		Sub:               tok.Subject,
-		PreferredUsername: raw.PreferredUsername,
-		Name:              raw.Name,
-		EmailVerified:     raw.EmailVerified,
-		Organization:      firstOrganizationName(raw.Organization),
-		Roles:             raw.Roles,
+		Sub:               token.Subject,
+		PreferredUsername: claims.PreferredUsername,
+		Name:              claims.Name,
+		EmailVerified:     claims.EmailVerified,
+		Organization:      firstOrganizationName(claims.Organization),
+		Roles:             claims.Roles,
 	}, nil
 }
 

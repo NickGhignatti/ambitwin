@@ -70,27 +70,27 @@ func New(verifier Verifier, tenancy TenancyClient, signer Signer, keycloak Keycl
 // Exchange is the whole login: verify -> lookup (JIT-provisioning on first login) -> mint.
 // It is the only place these three steps are stitched together.
 func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, error) {
-	kc, err := g.verifier.Verify(ctx, rawIDToken)
+	identity, err := g.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidIDToken, err)
 	}
 
-	memberships, err := g.tenancy.MembershipsFor(ctx, kc.Sub)
+	memberships, err := g.tenancy.MembershipsFor(ctx, identity.Sub)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)
 	}
 
 	// The tenancy service has no record but keycloak does.
-	if len(memberships) == 0 && kc.Organization != "" {
-		memberships, err = g.provisionOnFirstLogin(ctx, kc)
+	if len(memberships) == 0 && identity.Organization != "" {
+		memberships, err = g.provisionOnFirstLogin(ctx, identity)
 		if err != nil {
 			return "", err
 		}
 	}
 
 	return g.signer.Sign(authcontracts.StandardClaims{
-		Sub:         kc.Sub,
-		AccountName: accountName(kc),
+		Sub:         identity.Sub,
+		AccountName: accountName(identity),
 		Memberships: memberships,
 	}, g.ttl)
 }
@@ -104,22 +104,22 @@ func (g *Gateway) RefreshSession(ctx context.Context, current authcontracts.Stan
 	return g.signer.Sign(current, g.ttl)
 }
 
-func accountName(kc IDTokenClaims) string {
-	if kc.Name != "" {
-		return kc.Name
+func accountName(identity IDTokenClaims) string {
+	if identity.Name != "" {
+		return identity.Name
 	}
-	return kc.PreferredUsername
+	return identity.PreferredUsername
 }
 
 // If no memberships exist yet and the token carries an Organization claim.
-func (g *Gateway) provisionOnFirstLogin(ctx context.Context, kc IDTokenClaims) ([]authcontracts.Membership, error) {
-	role := HighestRole(kc.Roles)
+func (g *Gateway) provisionOnFirstLogin(ctx context.Context, identity IDTokenClaims) ([]authcontracts.Membership, error) {
+	role := HighestRole(identity.Roles)
 	err := g.tenancy.Provision(ctx, ProvisionRequest{
-		AccountID: kc.Sub, DomainName: kc.Organization, Role: role, ExternalID: kc.Sub,
+		AccountID: identity.Sub, DomainName: identity.Organization, Role: role, ExternalID: identity.Sub,
 	})
 	switch {
 	case err == nil:
-		return []authcontracts.Membership{{Domain: kc.Organization, Role: role}}, nil
+		return []authcontracts.Membership{{Domain: identity.Organization, Role: role}}, nil
 	case errors.Is(err, ErrInviteOnly):
 		return []authcontracts.Membership{}, nil
 	default:
@@ -129,9 +129,9 @@ func (g *Gateway) provisionOnFirstLogin(ctx context.Context, kc IDTokenClaims) (
 
 func HighestRole(roles []string) string {
 	best, bestWeight := "standard_customer", authcontracts.RoleWeights["standard_customer"]
-	for _, r := range roles {
-		if w, ok := authcontracts.RoleWeights[r]; ok && w > bestWeight {
-			best, bestWeight = r, w
+	for _, role := range roles {
+		if weight, known := authcontracts.RoleWeights[role]; known && weight > bestWeight {
+			best, bestWeight = role, weight
 		}
 	}
 	return best

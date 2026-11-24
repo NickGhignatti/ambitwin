@@ -226,30 +226,30 @@ A generated key changes at every restart, so every cookie signed before it stops
 ## `main.go`: starting up
 
 ```go
-verifier, err := oidcverifier.New(ctx, cfg.OIDCDiscoveryURL, cfg.OIDCIssuer, cfg.OIDCClientID)
+verifier, err := oidcverifier.New(ctx, settings.OIDCDiscoveryURL, settings.OIDCIssuer, settings.OIDCClientID)
 if err != nil {
 	log.Fatalf("oidc discovery: %v", err)
 }
-tenancy := tenancyclient.New(cfg.TenancyURL, cfg.InternalSecret)
-sign := signer.New(cfg.SigningKey, cfg.SigningKeyID, cfg.Issuer)
+tenancy := tenancyclient.New(settings.TenancyURL, settings.InternalSecret)
+tokenSigner := signer.New(settings.SigningKey, settings.SigningKeyID, settings.Issuer)
 ```
 
 Reach Keycloak **at start**. If Keycloak is unreachable the process exits, so the orchestrator restarts it until Keycloak is up. Then build the other two real clients.
 
 ```go
-kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.KeycloakClientID, cfg.KeycloakClientSecret)
-gw := service.New(verifier, tenancy, sign, kcAdmin, cfg.TokenTTL)
+keycloakClient := keycloakadmin.New(settings.KeycloakBaseURL, settings.KeycloakRealm, settings.KeycloakClientID, settings.KeycloakClientSecret)
+gateway := service.New(verifier, tenancy, tokenSigner, keycloakClient, settings.TokenTTL)
 ```
 
 `keycloakadmin` is the only thing holding the secret of the confidential client, and the only thing that talks to Keycloak's token and admin endpoints. It fills the one `Keycloak` port: password grant, create, read and update a user, reset a password.
 
 ```go
-publicKeySet := sign.JWKS()
+publicKeySet := tokenSigner.JWKS()
 verifyKeys, err := keyfunc.NewJWKSetJSON(publicKeySet)
 if err != nil {
 	log.Fatalf("building self-verification keyfunc: %v", err)
 }
-r := api.Mount(gw, publicKeySet, verifyKeys, cfg.Issuer)
+router := api.Mount(gateway, publicKeySet, verifyKeys, settings.Issuer)
 ```
 
 The routes that need a signed-in caller (`/me`, `/refresh`, `/verify`, `/profile`) check the **gateway's own** tokens. So the keys to check them are built straight from the signer's own public key, with no network call.
@@ -284,29 +284,29 @@ The library is not allowed to do its own discovery because of the two-addresses 
 ```go
 docURL := strings.TrimSuffix(discoveryURL, "/") + "/.well-known/openid-configuration"
 // … GET it, decode {"jwks_uri": "..."}
-discU, err := url.Parse(discoveryURL)
-jwksU, err := url.Parse(doc.JWKSURI)
-jwksU.Scheme, jwksU.Host = discU.Scheme, discU.Host
-return jwksU.String(), nil
+discoveryLocation, err := url.Parse(discoveryURL)
+keySetLocation, err := url.Parse(doc.JWKSURI)
+keySetLocation.Scheme, keySetLocation.Host = discoveryLocation.Scheme, discoveryLocation.Host
+return keySetLocation.String(), nil
 ```
 
 The discovery document may say `"jwks_uri": "http://localhost:8090/realms/…/certs"`, an address this container cannot reach. So the scheme and host are replaced with the ones from `discoveryURL`: `http://keycloak:8080/realms/…/certs`.
 
 ```go
 func (v *Verifier) Verify(ctx context.Context, rawIDToken string) (service.IDTokenClaims, error) {
-	tok, err := v.inner.Verify(ctx, rawIDToken)
+	token, err := v.inner.Verify(ctx, rawIDToken)
 	if err != nil {
 		return service.IDTokenClaims{}, err
 	}
 
-	var raw struct {
+	var claims struct {
 		PreferredUsername string   `json:"preferred_username"`
 		Name              string   `json:"name"`
 		EmailVerified     bool     `json:"email_verified"`
 		Organization      []string `json:"organization"`
 		Roles             []string `json:"roles"`
 	}
-	if err := tok.Claims(&raw); err != nil {
+	if err := token.Claims(&claims); err != nil {
 		return service.IDTokenClaims{}, fmt.Errorf("decoding id token claims: %w", err)
 	}
 ```
@@ -332,8 +332,8 @@ The same shape as in [Provisioner](provisioner.qd): 5 s timeout, signed requests
 
 ```go
 func (c *Client) MembershipsFor(ctx context.Context, accountID string) ([]authcontracts.Membership, error) {
-	u := c.baseURL + "/internal/memberships?" + url.Values{"accountId": {accountID}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	membershipsURL := c.baseURL + "/internal/memberships?" + url.Values{"accountId": {accountID}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, membershipsURL, nil)
 	// …
 	req.Header.Set(authcontracts.SignatureHeader, authcontracts.Sign(c.secret, nil))
 
@@ -378,27 +378,27 @@ default:
 
 ```go
 func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, error) {
-	kc, err := g.verifier.Verify(ctx, rawIDToken)
+	identity, err := g.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidIDToken, err)
 	}
 
-	memberships, err := g.tenancy.MembershipsFor(ctx, kc.Sub)
+	memberships, err := g.tenancy.MembershipsFor(ctx, identity.Sub)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)
 	}
 
 	// The tenancy service has no record but keycloak does.
-	if len(memberships) == 0 && kc.Organization != "" {
-		memberships, err = g.provisionOnFirstLogin(ctx, kc)
+	if len(memberships) == 0 && identity.Organization != "" {
+		memberships, err = g.provisionOnFirstLogin(ctx, identity)
 		if err != nil {
 			return "", err
 		}
 	}
 
 	return g.signer.Sign(authcontracts.StandardClaims{
-		Sub:         kc.Sub,
-		AccountName: accountName(kc),
+		Sub:         identity.Sub,
+		AccountName: accountName(identity),
 		Memberships: memberships,
 	}, g.ttl)
 }
@@ -414,11 +414,11 @@ Three steps, with a fallback in the middle:
 `fmt.Errorf("%w: %v", ErrInvalidIDToken, err)` keeps the *kind* of error (`%w`, so `errors.Is` works) and the *details* (`%v`, for the log).
 
 ```go
-func accountName(kc IDTokenClaims) string {
-	if kc.Name != "" {
-		return kc.Name
+func accountName(identity IDTokenClaims) string {
+	if identity.Name != "" {
+		return identity.Name
 	}
-	return kc.PreferredUsername
+	return identity.PreferredUsername
 }
 ```
 
@@ -442,14 +442,14 @@ The display name is the full name when there is one, else the username.
 ### First sign-in through an organization
 
 ```go
-func (g *Gateway) provisionOnFirstLogin(ctx context.Context, kc IDTokenClaims) ([]authcontracts.Membership, error) {
-	role := HighestRole(kc.Roles)
+func (g *Gateway) provisionOnFirstLogin(ctx context.Context, identity IDTokenClaims) ([]authcontracts.Membership, error) {
+	role := HighestRole(identity.Roles)
 	err := g.tenancy.Provision(ctx, ProvisionRequest{
-		AccountID: kc.Sub, DomainName: kc.Organization, Role: role, ExternalID: kc.Sub,
+		AccountID: identity.Sub, DomainName: identity.Organization, Role: role, ExternalID: identity.Sub,
 	})
 	switch {
 	case err == nil:
-		return []authcontracts.Membership{{Domain: kc.Organization, Role: role}}, nil
+		return []authcontracts.Membership{{Domain: identity.Organization, Role: role}}, nil
 	case errors.Is(err, ErrInviteOnly):
 		return []authcontracts.Membership{}, nil
 	default:
@@ -466,9 +466,9 @@ func (g *Gateway) provisionOnFirstLogin(ctx context.Context, kc IDTokenClaims) (
 ```go
 func HighestRole(roles []string) string {
 	best, bestWeight := "standard_customer", authcontracts.RoleWeights["standard_customer"]
-	for _, r := range roles {
-		if w, ok := authcontracts.RoleWeights[r]; ok && w > bestWeight {
-			best, bestWeight = r, w
+	for _, role := range roles {
+		if weight, known := authcontracts.RoleWeights[role]; known && weight > bestWeight {
+			best, bestWeight = role, weight
 		}
 	}
 	return best
@@ -693,7 +693,7 @@ The browser signs in at Keycloak (PKCE), gets an ID token, then calls `/gateway/
         T->>Tn: GET /internal/memberships?accountId=sub<br/>X-Signature
         Tn-->>T: 200 [memberships]
         alt no memberships and token names an organization
-            X->>X: provisionOnFirstLogin(kc)
+            X->>X: provisionOnFirstLogin(identity)
         end
         X->>S: Sign(StandardClaims{sub, accountName, new sid, memberships}, 15 min)
         S-->>X: JWT

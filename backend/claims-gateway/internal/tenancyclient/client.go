@@ -25,8 +25,8 @@ func New(baseURL string, secret []byte) *Client {
 }
 
 func (c *Client) MembershipsFor(ctx context.Context, accountID string) ([]authcontracts.Membership, error) {
-	u := c.baseURL + "/internal/memberships?" + url.Values{"accountId": {accountID}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	membershipsURL := c.baseURL + "/internal/memberships?" + url.Values{"accountId": {accountID}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, membershipsURL, nil)
 	if err != nil {
 		return nil, err
 	}
