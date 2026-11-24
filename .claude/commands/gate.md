@@ -7,7 +7,7 @@ Scope: `$ARGUMENTS` — `all` runs the full suite, anything else (or empty) runs
 branch touched.
 
 CI is one job per service (`.github/workflows/ci-gate.yml` fans out to `tpl-rust-ci.yml`,
-`tpl-go-ci.yml`, `tpl-python-ci.yml`, `tpl-node-ci.yml`, `ci-frontend.yml`), and the single
+`tpl-go-ci.yml`, `tpl-python-ci.yml`, `ci-frontend.yml`), and the single
 required check is `ci-gate / ci-passed`. Each Rust job runs, in order: `cargo fmt --check` →
 `clippy --release --all-targets -- -D warnings` → `cargo audit` → unit tests → **integration
 tests against real Mongo/Redis/Timescale/Kafka** → release build.

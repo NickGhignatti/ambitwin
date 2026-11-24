@@ -29,7 +29,7 @@ Each file name starts with its kind.
 | Kind | Started by | Files |
 |---|---|---|
 | `ci-` | A pull request, or a call from `ci-gate.yml` | `ci-gate`, `ci-frontend`, `ci-docker`, `ci-k8s`, `ci-infra`, `ci-simulators`, `ci-acceptance`, `ci-docs`, `ci-dependency-review`, `ci-codeql` |
-| `tpl-` | A call only: reusable workflow per language | `tpl-rust-ci`, `tpl-go-ci`, `tpl-python-ci`, `tpl-node-ci`, `tpl-*-coverage` |
+| `tpl-` | A call only: reusable workflow per language | `tpl-rust-ci`, `tpl-go-ci`, `tpl-python-ci`, `tpl-*-coverage` |
 | `cd-` | A push to `master` | `cd-registry`, `cd-release`, `cd-coverage`, `cd-documentation` |
 | `maint-` | A weekly timer | `maint-renovate`, `maint-cleanup` |
 
@@ -196,7 +196,6 @@ Each language has one reusable workflow. The gate calls it with `service_key` an
 | `tpl-go-ci.yml` | `setup-go` (version from `.mise.toml`, Go module cache), `gofmt -l` loop, `go vet`, `govulncheck`, `go build`, `go test -tags=integration ./...` | Everything except `govulncheck`, which is `continue-on-error` |
 | `tpl-python-ci.yml` | `setup-python` (`.mise.toml` pin, `uv` cache, `uv sync --locked`), `ruff check`, `ruff format --check`, `pyright`, `uv audit`, `pytest` | Everything. Builds no artifact |
 | `ci-frontend.yml` | Job `quality`: `npm ci`, lint, type-check, `npm audit --omit=dev`. Job `test`: Vitest in 3 shards | Everything except the full `npm audit` including dev deps |
-| `tpl-node-ci.yml` | Lint, build, test, audit, upload `dist-<key>` | Not called by any workflow |
 
 - `gofmt -l` lists bad files and still exits 0, so the step loops over its output and fails itself.
 - `-tags=integration` **adds** the testcontainers suites to the normal run. Without the tag those files compile nowhere.
@@ -350,7 +349,6 @@ From the repository rulesets:
 
 ## Traps
 
-- **`tpl-node-ci.yml` and `.github/actions/filter-languages` are unused.** No workflow calls them.
 - **`govulncheck` never blocks.** Its step has `continue-on-error: true`.
 - **`.github/.trivyignore` waivers expire.** Any fixable HIGH or CRITICAL OS finding fails the image job; a waiver is a line there with its reason and an `exp:` date, so the job fails again when the date passes.
 - **Distroless lags Debian.** Go and Rust images run on `gcr.io/distroless/*-debian12`, which has no package manager: a Debian fix reaches the image only when Google rebuilds the base.
