@@ -1,5 +1,4 @@
-// Package oidcverifier implements service.Verifier against a real OIDC provider
-// (Keycloak or a customer's own IdP) — the only package that speaks OIDC.
+// Package oidcverifier checks ID tokens from an OIDC sign-in server; no other package speaks OIDC.
 package oidcverifier
 
 import (
@@ -20,8 +19,8 @@ type Verifier struct {
 	inner *oidc.IDTokenVerifier
 }
 
-// New validates tokens' `iss` against issuerURL (it differs from discoveryURL across
-// internal/browser hosts) and fetches JWKS manually so jwks_uri can be rewritten onto discoveryURL's host.
+// New checks tokens against issuerURL (the browser's Keycloak address) but downloads
+// keys from discoveryURL (the address this container can reach).
 func New(ctx context.Context, discoveryURL, issuerURL, clientID string) (*Verifier, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	jwksURL, err := discoverJWKSURL(ctx, client, discoveryURL)
@@ -59,8 +58,7 @@ func discoverJWKSURL(ctx context.Context, client *http.Client, discoveryURL stri
 		return "", fmt.Errorf("discovery document has no jwks_uri")
 	}
 
-	// Rewrite jwks_uri onto discoveryURL's scheme+host — the discovery doc may
-	// advertise an external hostname this process can't route to.
+	// keycloak advertises its public host, which this container may not reach
 	discoveryLocation, err := url.Parse(discoveryURL)
 	if err != nil {
 		return "", err
@@ -80,13 +78,11 @@ func (v *Verifier) Verify(ctx context.Context, rawIDToken string) (service.IDTok
 	}
 
 	var claims struct {
-		PreferredUsername string `json:"preferred_username"`
-		// Name is Keycloak's "full name" mapper output (firstName+lastName),
-		// set by Google brokering and by registration (see keycloakadmin).
-		Name          string   `json:"name"`
-		EmailVerified bool     `json:"email_verified"`
-		Organization  []string `json:"organization"`
-		Roles         []string `json:"roles"`
+		PreferredUsername string   `json:"preferred_username"`
+		Name              string   `json:"name"` // first + last name; empty when the account has none
+		EmailVerified     bool     `json:"email_verified"`
+		Organization      []string `json:"organization"`
+		Roles             []string `json:"roles"`
 	}
 	if err := token.Claims(&claims); err != nil {
 		return service.IDTokenClaims{}, fmt.Errorf("decoding id token claims: %w", err)
@@ -102,8 +98,7 @@ func (v *Verifier) Verify(ctx context.Context, rawIDToken string) (service.IDTok
 	}, nil
 }
 
-// firstOrganizationName narrows Keycloak's `organization` claim (a JSON array of
-// org names, not a map) to one; the gateway JIT-provisions the first it sees.
+// firstOrganizationName keeps the first organization: a user is set up in one domain at first login.
 func firstOrganizationName(orgs []string) string {
 	if len(orgs) == 0 {
 		return ""
