@@ -237,7 +237,7 @@ sign := signer.New(cfg.SigningKey, cfg.SigningKeyID, cfg.Issuer)
 Reach Keycloak **at start**. If Keycloak is unreachable the process exits, so the orchestrator restarts it until Keycloak is up. Then build the other two real clients.
 
 ```go
-kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.RegistrationClientID, cfg.RegistrationClientSecret)
+kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.KeycloakClientID, cfg.KeycloakClientSecret)
 gw := service.New(verifier, tenancy, sign, kcAdmin, cfg.TokenTTL)
 ```
 

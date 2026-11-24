@@ -26,7 +26,7 @@ func TestLoad_RequiresKeycloakRealm(t *testing.T) {
 	}
 }
 
-func TestLoad_RequiresRegistrationClientSecret(t *testing.T) {
+func TestLoad_RequiresKeycloakClientSecret(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("REGISTRATION_CLIENT_SECRET", "")
 

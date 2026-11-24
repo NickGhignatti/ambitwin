@@ -14,20 +14,20 @@ import (
 )
 
 type Config struct {
-	Addr                     string
-	OIDCDiscoveryURL         string // how THIS process reaches the IdP (e.g. internal Docker hostname)
-	OIDCIssuer               string // the canonical `iss` browsers' tokens carry (may differ from the above)
-	OIDCClientID             string
-	TenancyURL               string
-	InternalSecret           []byte
-	Issuer                   string // this gateway's own iss claim, e.g. "cv-gateway"
-	TokenTTL                 time.Duration
-	SigningKey               *rsa.PrivateKey
-	SigningKeyID             string
-	KeycloakBaseURL          string // OIDCDiscoveryURL with the "/realms/<realm>" suffix stripped
-	KeycloakRealm            string
-	RegistrationClientID     string // the confidential client used for both grants, e.g. "cv-gateway"
-	RegistrationClientSecret string
+	Addr                 string
+	OIDCDiscoveryURL     string // how THIS process reaches the IdP (e.g. internal Docker hostname)
+	OIDCIssuer           string // the canonical `iss` browsers' tokens carry (may differ from the above)
+	OIDCClientID         string
+	TenancyURL           string
+	InternalSecret       []byte
+	Issuer               string // this gateway's own iss claim, e.g. "cv-gateway"
+	TokenTTL             time.Duration
+	SigningKey           *rsa.PrivateKey
+	SigningKeyID         string
+	KeycloakBaseURL      string // OIDCDiscoveryURL with the "/realms/<realm>" suffix stripped
+	KeycloakRealm        string
+	KeycloakClientID     string
+	KeycloakClientSecret string
 }
 
 func Load() (Config, error) {
@@ -44,8 +44,8 @@ func Load() (Config, error) {
 	tenancyURL := required("TENANCY_URL")
 	secret := required("INTERNAL_SIGNING_SECRET")
 	keycloakRealm := required("KEYCLOAK_REALM")
-	registrationClientID := required("REGISTRATION_CLIENT_ID")
-	registrationClientSecret := required("REGISTRATION_CLIENT_SECRET")
+	keycloakClientID := required("REGISTRATION_CLIENT_ID")
+	keycloakClientSecret := required("REGISTRATION_CLIENT_SECRET")
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required env: %s", strings.Join(missing, ", "))
 	}
@@ -68,7 +68,7 @@ func Load() (Config, error) {
 		Issuer: gwIssuer, TokenTTL: 15 * time.Minute,
 		SigningKey: key, SigningKeyID: kid,
 		KeycloakBaseURL: keycloakBaseURL, KeycloakRealm: keycloakRealm,
-		RegistrationClientID: registrationClientID, RegistrationClientSecret: registrationClientSecret,
+		KeycloakClientID: keycloakClientID, KeycloakClientSecret: keycloakClientSecret,
 	}, nil
 }
 
