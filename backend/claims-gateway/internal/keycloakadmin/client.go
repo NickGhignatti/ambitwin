@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -64,11 +65,6 @@ func (c *Client) PasswordGrant(ctx context.Context, username, password string) (
 }
 
 func (c *Client) CreateUser(ctx context.Context, email, password, name string) error {
-	adminToken, err := c.adminToken(ctx)
-	if err != nil {
-		return err
-	}
-
 	userFields := map[string]any{
 		"username":      email,
 		"email":         email,
@@ -81,83 +77,46 @@ func (c *Client) CreateUser(ctx context.Context, email, password, name string) e
 	if name != "" {
 		userFields["firstName"] = name
 	}
-
-	body, err := json.Marshal(userFields)
+	status, err := c.adminCall(ctx, http.MethodPost, "", userFields, nil)
 	if err != nil {
 		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.usersURL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("keycloak admin API unreachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusCreated:
 		return nil
 	case http.StatusConflict:
 		return service.ErrEmailTaken
 	default:
-		return fmt.Errorf("keycloak admin API returned %d", resp.StatusCode)
+		return fmt.Errorf("keycloak admin API returned %d", status)
 	}
 }
 
 func (c *Client) GetUser(ctx context.Context, userID string) (email, name, picture string, err error) {
-	adminToken, err := c.adminToken(ctx)
+	var user struct {
+		Email      string `json:"email"`
+		FirstName  string `json:"firstName"`
+		Attributes struct {
+			Picture []string `json:"picture"`
+		} `json:"attributes"`
+	}
+	status, err := c.adminCall(ctx, http.MethodGet, "/"+userID, nil, &user)
 	if err != nil {
 		return "", "", "", err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.usersURL+"/"+userID, nil)
-	if err != nil {
-		return "", "", "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", "", "", fmt.Errorf("keycloak admin API unreachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusOK:
-		var user struct {
-			Email      string `json:"email"`
-			FirstName  string `json:"firstName"`
-			Attributes struct {
-				Picture []string `json:"picture"`
-			} `json:"attributes"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-			return "", "", "", fmt.Errorf("decoding user response: %w", err)
-		}
-		var pic string
 		if len(user.Attributes.Picture) > 0 {
-			pic = user.Attributes.Picture[0]
+			picture = user.Attributes.Picture[0]
 		}
-		return user.Email, user.FirstName, pic, nil
+		return user.Email, user.FirstName, picture, nil
 	case http.StatusNotFound:
 		return "", "", "", service.ErrUserNotFound
 	default:
-		return "", "", "", fmt.Errorf("keycloak admin API returned %d", resp.StatusCode)
+		return "", "", "", fmt.Errorf("keycloak admin API returned %d", status)
 	}
 }
 
 func (c *Client) UpdateUser(ctx context.Context, userID, email, name string) error {
-	adminToken, err := c.adminToken(ctx)
-	if err != nil {
-		return err
-	}
-
 	fields := map[string]any{}
 	if email != "" {
 		fields["username"] = email
@@ -166,26 +125,11 @@ func (c *Client) UpdateUser(ctx context.Context, userID, email, name string) err
 	if name != "" {
 		fields["firstName"] = name
 	}
-
-	body, err := json.Marshal(fields)
+	status, err := c.adminCall(ctx, http.MethodPut, "/"+userID, fields, nil)
 	if err != nil {
 		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.usersURL+"/"+userID, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("keycloak admin API unreachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusNoContent, http.StatusOK:
 		return nil
 	case http.StatusConflict:
@@ -193,44 +137,59 @@ func (c *Client) UpdateUser(ctx context.Context, userID, email, name string) err
 	case http.StatusNotFound:
 		return service.ErrUserNotFound
 	default:
-		return fmt.Errorf("keycloak admin API returned %d", resp.StatusCode)
+		return fmt.Errorf("keycloak admin API returned %d", status)
 	}
 }
 
 func (c *Client) ResetPassword(ctx context.Context, userID, newPassword string) error {
-	adminToken, err := c.adminToken(ctx)
+	status, err := c.adminCall(ctx, http.MethodPut, "/"+userID+"/reset-password",
+		map[string]any{"type": "password", "value": newPassword, "temporary": false}, nil)
 	if err != nil {
 		return err
 	}
-
-	body, err := json.Marshal(map[string]any{
-		"type": "password", "value": newPassword, "temporary": false,
-	})
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.usersURL+"/"+userID+"/reset-password", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("keycloak admin API unreachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusNoContent, http.StatusOK:
 		return nil
 	case http.StatusNotFound:
 		return service.ErrUserNotFound
 	default:
-		return fmt.Errorf("keycloak admin API returned %d", resp.StatusCode)
+		return fmt.Errorf("keycloak admin API returned %d", status)
 	}
+}
+
+// adminCall sends one request to the users admin API; a 200 body is decoded into decoded when given.
+func (c *Client) adminCall(ctx context.Context, method, path string, payload, decoded any) (int, error) {
+	adminToken, err := c.adminToken(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var body io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return 0, err
+		}
+		body = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, c.usersURL+path, body)
+	if err != nil {
+		return 0, err
+	}
+	if payload != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	request.Header.Set("Authorization", "Bearer "+adminToken)
+	response, err := c.http.Do(request)
+	if err != nil {
+		return 0, fmt.Errorf("keycloak admin API unreachable: %w", err)
+	}
+	defer response.Body.Close()
+	if decoded != nil && response.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(response.Body).Decode(decoded); err != nil {
+			return 0, fmt.Errorf("decoding user response: %w", err)
+		}
+	}
+	return response.StatusCode, nil
 }
 
 func (c *Client) adminToken(ctx context.Context) (string, error) {
