@@ -68,7 +68,7 @@ The layout is flat on purpose. There are no domain rules worth layers, so there 
 | `src/infra/db.rs` | `connect`, `load_all`, `upsert_preference`, `upsert_cards` |
 | `src/infra/discovery.rs` | `discover_services`: reads every `*_METRICS_URL` |
 | `src/infra/claims.rs` | The `GatewayClaims` extractor |
-| `src/infra/authz.rs` | `require_edit`, `can_edit`: Cedar `Edit` on a building's domains |
+| `src/infra/authz.rs` | `require_read`, `require_edit`: Cedar `Read` / `Edit` on a building's domains |
 | `src/infra/twin.rs` | `TwinDirectory`: asks `digital-twin` which domains a building belongs to |
 | `src/infra/metrics.rs` | Prometheus counters, `/metrics` and `/health` |
 
@@ -321,7 +321,7 @@ This makes `GatewayClaims` an Axum **extractor**: put it in a handler's argument
 3. No `sub`: `401`.
 4. Otherwise the claims are stored in the struct: `payload` decoded, `raw` exactly as received.
 
-Every route except `/metrics` and `/health` takes it. `payload` decides who may save (see *Who may save*). `raw` is forwarded unchanged when `dashboard` asks `digital-twin` on the caller's behalf, so `digital-twin` sees the same caller the edge verified.
+Every route except `/metrics` and `/health` takes it. `payload` decides who may save (see *Who may read and save*). `raw` is forwarded unchanged when `dashboard` asks `digital-twin` on the caller's behalf, so `digital-twin` sees the same caller the edge verified.
 
 ---
 
@@ -331,10 +331,13 @@ Every route except `/metrics` and `/health` takes it. `payload` decides who may 
 
 ```rust
 pub async fn get_preferences(
-    _claims: GatewayClaims,
+    claims: GatewayClaims,
     Path(building_id): Path<String>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+) -> Response {
+    if let Err(status) = require_read(&state.twin, &claims, &building_id).await {
+        return status.into_response();
+    }
     match state.building_preferences.get(&building_id) {
         Some(columns) => (
             StatusCode::OK,
@@ -349,9 +352,9 @@ pub async fn get_preferences(
 }
 ```
 
-The handler's arguments are its inputs, and Axum fills them in order. `_claims` is the check from above (the leading underscore says "I need it to run, but I do not use it"). `Path` is the `{building_id}` from the URL. `State` is the shared notebook.
+The handler's arguments are its inputs, and Axum fills them in order. `claims` is the check from above. `Path` is the `{building_id}` from the URL. `State` is the shared notebook.
 
-Look the building up in memory. Found: `200` with the columns. Not found: `404`. MongoDB is never asked.
+First `require_read`: may this caller see this building? No: `403`. `digital-twin` cannot say: `503` (see *Who may read and save*). Then look the building up in memory. Found: `200` with the columns. Not found: `404`. MongoDB is never asked.
 
 ### Saving
 
@@ -392,7 +395,7 @@ pub async fn update_preferences(
 In order:
 
 1. `Json(payload)` is an extractor too: it reads and checks the body as `{"allowed_columns": [...]}`. A body that is not that shape is refused by Axum before the handler runs.
-2. `require_edit`: may this caller change this building? No: `403`. `digital-twin` cannot say: `503`. Either way nothing is stored. See *Who may save*.
+2. `require_edit`: may this caller change this building? No: `403`. `digital-twin` cannot say: `503`. Either way nothing is stored. See *Who may read and save*.
 3. Put the new list in the `DashMap` **now**. Readers see it at once.
 4. `tokio::spawn` starts the MongoDB write in the background and moves on. If it fails, the only trace is a log line.
 5. Answer `200` right away. `active_columns` is the **count** (3), not the list.
@@ -434,39 +437,45 @@ The edge strips `/dashboard` (`handle_path` in the `Caddyfile`), so `/dashboard/
 
 ---
 
-## Who may save
+## Who may read and save
 
-Saving a building's columns changes what **everyone** looking at that building sees, so only someone who may edit the building can do it: Cedar `Edit` on one of its domains, which means `business_staff` or higher there.
+A building's columns are part of that building, so the same rules guard them as the building itself:
 
-`dashboard` knows who is asking (the claims), but not which domains a building belongs to. Only `digital-twin` knows that, so `dashboard` asks it on every save, with the caller's own claims header:
+| Action | Needs | Which means |
+|---|---|---|
+| Read (`GET`) | Cedar `Read` on one of the building's domains | any role there, `standard_customer` included |
+| Save (`POST`) | Cedar `Edit` on one of the building's domains | `business_staff` or higher there. A save changes what **everyone** looking at the building sees |
+
+`dashboard` knows who is asking (the claims), but not which domains a building belongs to. Only `digital-twin` knows that, so `dashboard` asks it on every read and save, with the caller's own claims header:
 
 ```rust
-pub async fn require_edit(twin: &TwinDirectory, claims: &GatewayClaims, building_id: &str) -> Result<(), StatusCode> {
+pub async fn require_read(twin, claims, building_id) -> Result<(), StatusCode> { require(twin, claims, building_id, can_read).await }
+pub async fn require_edit(twin, claims, building_id) -> Result<(), StatusCode> { require(twin, claims, building_id, can_edit).await }
+
+async fn require(twin: &TwinDirectory, claims: &GatewayClaims, building_id: &str, is_allowed: fn(&ClaimsPayload, &[String]) -> bool) -> Result<(), StatusCode> {
     let domains = twin
         .domains_of(building_id, &claims.raw)
         .await
         .map_err(|error| { /* logged */ StatusCode::SERVICE_UNAVAILABLE })?;
-    if can_edit(&claims.payload, &domains) { Ok(()) } else { Err(StatusCode::FORBIDDEN) }
+    if is_allowed(&claims.payload, &domains) { Ok(()) } else { Err(StatusCode::FORBIDDEN) }
 }
 ```
 
 1. `TwinDirectory::domains_of` (`infra/twin.rs`) sends `GET {DIGITAL_TWIN_URL}/domain/{building}`, the same lookup `telemetry`, `notification` and `socket` use. 2 s timeout: a hung `digital-twin` raises no error, and the save would hang with it.
 2. `digital-twin` down, slow or answering an error: `503`. Never allow on doubt.
-3. `can_edit` (`infra/authz.rs`) runs the shared Cedar bundle from `backend/libs/auth-policy` once per domain. Any one allowed is enough.
-4. An unknown building has no domains, so nobody may edit it: `403`.
+3. `can_read` / `can_edit` (`infra/authz.rs`) run the shared Cedar bundle from `backend/libs/auth-policy` once per domain. Any one allowed is enough.
+4. An unknown building has no domains, so nobody may read or edit it: `403`, not `404`.
 
 | Caller | `b1` belongs to | Answer |
 |---|---|---|
-| `business_staff` in `eng` | `["eng"]` | `200`, saved |
-| `standard_customer` in `eng` | `["eng"]` | `403`, nothing stored |
-| `business_admin` in `sales` | `["eng"]` | `403`, nothing stored |
-| anyone | `digital-twin` times out | `503`, nothing stored |
+| `business_staff` in `eng` | `["eng"]` | read `200`; save `200`, saved |
+| `standard_customer` in `eng` | `["eng"]` | read `200`; save `403`, nothing stored |
+| `business_admin` in `sales` | `["eng"]` | read `403`; save `403`, nothing stored |
+| anyone | `digital-twin` times out | read `503`; save `503`, nothing stored |
 
-Why ask every time instead of keeping a copy of the domains? A copy goes stale when `digital-twin` moves a building to another domain, and then it gives the wrong answer. Saves are rare, so one extra call each costs nothing.
+Why ask every time instead of keeping a copy of the domains? A copy goes stale when `digital-twin` moves a building to another domain, and then it gives the wrong answer. The page reads the columns once per building it opens, so one extra call each is cheap.
 
-`infra/authz.rs` is `dashboard`'s own copy of the Cedar glue, like `telemetry` and `digital-twin` have theirs. Its test replays every `Edit` case of `backend/libs/auth-policy/fixtures/conformance.json`, so its decisions cannot drift from the other services'.
-
-Reading is not checked: the answer is a list of metric names, and a check would cost a `digital-twin` call on every dashboard load.
+`infra/authz.rs` is `dashboard`'s own copy of the Cedar glue, like `telemetry` and `digital-twin` have theirs. Its test replays every `Read` and `Edit` case of `backend/libs/auth-policy/fixtures/conformance.json`, so its decisions cannot drift from the other services'.
 
 ---
 
@@ -951,7 +960,7 @@ Every route except `/metrics` and `/health` needs the claims header.
 | `REDIS_URL` | `redis://127.0.0.1/` | The tunnel's connection, in and out |
 | `PORT` | `3000` | HTTP port |
 | `*_METRICS_URL` | none | Each value is one catalog source |
-| `DIGITAL_TWIN_URL` | `http://digital-twin:3000` | Who owns a building, asked on every save |
+| `DIGITAL_TWIN_URL` | `http://digital-twin:3000` | Who owns a building, asked on every read and save |
 
 The compose file sets `MONGO_URI=mongodb://dashboard-db:27017/contractsdb`, but `infra/db.rs` always opens `ambitwin`. The `contractsdb` in the URI is ignored.
 
@@ -989,9 +998,9 @@ just test dashboard-integration   # tests/*.rs against throwaway MongoDB and Red
 | `src/api/data.rs`, `init.rs` | Save stores, overwrites, accepts an empty list. Init gives exactly `room_name` and `room_max_occupancy`. A second init keeps the columns |
 | `src/api/cards.rs` | No saved cards: `404`. Saved cards keep their order. A card named twice, an empty id or too many cards: `400`, nothing stored |
 | `src/api/dashboard.rs` | `push_unique_metric` cases. Both catalog shapes fill `source`. An unparseable, unreachable or slow source is skipped while the others stay |
-| `src/infra/authz.rs` | Every golden `Edit` case of the shared Cedar fixture decides the same here. Staff of any one domain may edit. No domains: nobody |
+| `src/infra/authz.rs` | Every golden `Read` and `Edit` case of the shared Cedar fixture decides the same here. Staff of any one domain may edit. No domains: nobody |
 | `src/infra/twin.rs` | Asks with the caller's claims and an encoded building id. An error answer is an error, not an empty list |
-| `src/api/data.rs` (access) | Staff of another domain, or a customer: `403`, nothing stored. `digital-twin` down: `503`, nothing stored |
+| `src/api/data.rs` (access) | Save: staff of another domain, or a customer: `403`, nothing stored. Read: any member `200`, an outsider `403`. `digital-twin` down: `503` for both |
 | `src/infra/claims.rs` | Valid claims. URL-safe base64. Missing, malformed, no `sub`: `401` |
 | `src/infra/discovery.rs` | Only `*_METRICS_URL` keys are read |
 | `tests/tunnel.rs` | Real Redis: a tick republished byte for byte. A building with no columns dropped. A non-tick does not stop the loop |
@@ -1003,7 +1012,6 @@ How can the unit tests of the handlers run without MongoDB? The MongoDB driver c
 
 ## Gaps
 
-- **Reads are open.** Any signed-in person can read any building's columns. Saves need `Edit` on the building.
 - **A saved column can be lost.** `200` comes before the MongoDB write, and a failure is only logged.
 - **No delete.** A removed building keeps its entry in MongoDB and in memory, and its ticks keep being forwarded.
 - **The tunnel never reconnects** after a Redis restart, and a failed `PUBLISH` is neither logged nor counted as a failure.

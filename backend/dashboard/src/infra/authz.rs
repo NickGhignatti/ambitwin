@@ -28,12 +28,31 @@ static POLICIES: LazyLock<PolicySet> = LazyLock::new(|| {
         .expect("cedar policy parses")
 });
 
-/// `Ok` when the caller may change the building's view; `403` when not, `503` when
-/// digital-twin cannot say which domains the building belongs to. Never allows on doubt.
+/// `Ok` when the caller may see the building's view: Cedar `Read` on one of its domains.
+/// `403` when not, `503` when digital-twin cannot say. Never allows on doubt.
+pub async fn require_read(
+    twin: &TwinDirectory,
+    claims: &GatewayClaims,
+    building_id: &str,
+) -> Result<(), StatusCode> {
+    require(twin, claims, building_id, can_read).await
+}
+
+/// `Ok` when the caller may change the building's view: Cedar `Edit` on one of its domains.
+/// `403` when not, `503` when digital-twin cannot say. Never allows on doubt.
 pub async fn require_edit(
     twin: &TwinDirectory,
     claims: &GatewayClaims,
     building_id: &str,
+) -> Result<(), StatusCode> {
+    require(twin, claims, building_id, can_edit).await
+}
+
+async fn require(
+    twin: &TwinDirectory,
+    claims: &GatewayClaims,
+    building_id: &str,
+    is_allowed: fn(&ClaimsPayload, &[String]) -> bool,
 ) -> Result<(), StatusCode> {
     let domains = twin
         .domains_of(building_id, &claims.raw)
@@ -42,11 +61,18 @@ pub async fn require_edit(
             log::error!("cannot read the domains of {building_id}: {error}");
             StatusCode::SERVICE_UNAVAILABLE
         })?;
-    if can_edit(&claims.payload, &domains) {
+    if is_allowed(&claims.payload, &domains) {
         Ok(())
     } else {
         Err(StatusCode::FORBIDDEN)
     }
+}
+
+/// Whether the caller may see a building's view: Cedar `Read` on any of its domains.
+pub fn can_read(claims: &ClaimsPayload, building_domains: &[String]) -> bool {
+    building_domains
+        .iter()
+        .any(|domain| authorize(claims, "Read", domain))
 }
 
 /// Whether the caller may change a building's view: Cedar `Edit` on any of its domains.
@@ -152,7 +178,7 @@ fn resource_entity(uid: EntityUid, domain: &str) -> Entity {
 
 #[cfg(test)]
 mod tests {
-    use super::can_edit;
+    use super::{can_edit, can_read};
     use claims_schema::{ClaimsPayload, Membership};
     use serde::Deserialize;
 
@@ -187,9 +213,9 @@ mod tests {
         }
     }
 
-    // the bundle is shared but this glue is dashboard's own copy: the golden Edit cases keep it in step
+    // the bundle is shared but this glue is dashboard's own copy: the golden cases keep it in step
     #[test]
-    fn every_golden_edit_case_decides_as_in_every_other_service() {
+    fn every_golden_read_and_edit_case_decides_as_in_every_other_service() {
         #[derive(Deserialize)]
         struct Fixture {
             cases: Vec<Case>,
@@ -199,19 +225,26 @@ mod tests {
         ))
         .expect("fixture parses");
 
-        let edit_cases: Vec<&Case> = fixture
+        let cases: Vec<&Case> = fixture
             .cases
             .iter()
-            .filter(|case| case.action == "Edit" && case.context.is_none())
+            .filter(|case| ["Read", "Edit"].contains(&case.action.as_str()))
+            .filter(|case| case.context.is_none())
             .collect();
-        assert!(!edit_cases.is_empty());
-        for case in edit_cases {
+        assert!(cases.iter().any(|case| case.action == "Read"));
+        assert!(cases.iter().any(|case| case.action == "Edit"));
+        for case in cases {
+            let decide = if case.action == "Read" {
+                can_read
+            } else {
+                can_edit
+            };
             let memberships: Vec<(&str, &str)> = case
                 .memberships
                 .iter()
                 .map(|membership| (membership.domain.as_str(), membership.role.as_str()))
                 .collect();
-            let allowed = can_edit(
+            let allowed = decide(
                 &claims_with(&memberships),
                 std::slice::from_ref(&case.domain),
             );
