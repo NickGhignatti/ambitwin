@@ -1,4 +1,4 @@
-use telemetry_schema::{MetricsDiscoveryResponse, ServiceMetricsContract};
+use telemetry_schema::{Aggregation, MetricsDiscoveryResponse, ServiceMetricsContract};
 
 const FIXTURE: &str = include_str!("../../fixtures/metric-contract.json");
 
@@ -81,6 +81,29 @@ fn a_limit_says_which_ends_a_metric_takes_and_where_they_start() {
     assert_eq!(limit_of("people_count").min, None);
     assert_eq!(limit_of("temperature").min, Some(Some(18.0)));
     assert_eq!(limit_of("temperature").max, Some(Some(27.0)));
+}
+
+// a building card adds counts and averages measures; guessing it from the name is how a sum gets averaged
+#[test]
+fn every_telemetry_metric_declares_how_its_rooms_add_up() {
+    let catalog: ServiceMetricsContract = serde_json::from_str(FIXTURE).expect("fixture parses");
+    let aggregation_of = |kind: &str| {
+        catalog
+            .metrics
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .unwrap()
+            .aggregation
+    };
+
+    assert_eq!(aggregation_of("temperature"), Some(Aggregation::Average));
+    assert_eq!(aggregation_of("people_count"), Some(Aggregation::Sum));
+    assert!(
+        catalog
+            .metrics
+            .iter()
+            .all(|metric| metric.aggregation.is_some())
+    );
 }
 
 #[test]

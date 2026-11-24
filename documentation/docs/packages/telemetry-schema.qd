@@ -301,16 +301,17 @@ A reading has one value, so an alert has one `value`. It sits under `value`, nev
   {"kind":"temperature","label":"Temperature","interface":"ITemperature","unit":"°C",
    "actions":[{"name":"setTarget","label":"Set target temperature",
                "parameters":[{"name":"target","type":"Finite","required":true}]}],
-   "limit":{"min":18,"max":27}},
+   "limit":{"min":18,"max":27},"aggregation":"average"},
   {"kind":"people_count","label":"People Count","interface":"IPeopleCount","unit":"people",
-   "actions":[],"limit":{"max":null}}
+   "actions":[],"limit":{"max":null},"aggregation":"sum"}
 ]}
 ```
 
 | Struct | Fields | Rules |
 |---|---|---|
 | `ServiceMetricsContract` | `service`, `metrics` | |
-| `MetricContract` | `kind`, `label`, `interface`, `unit`, `actions`, `limit`, `source` | `unit` always written, `null` when none. `actions` and `limit` may be missing on read, then empty. `source` left out when empty |
+| `MetricContract` | `kind`, `label`, `interface`, `unit`, `actions`, `limit`, `aggregation`, `source` | `unit` always written, `null` when none. `actions` and `limit` may be missing on read, then empty. `aggregation` and `source` left out when empty |
+| `Aggregation` | `"average"` or `"sum"` | How a building card adds up its rooms. See below |
 | `LimitContract` | `min`, `max` | Which ends of the metric's limit can be set. See below |
 | `ActionContract` | `name`, `label`, `parameters` | A command a device accepts |
 | `ActionParameterContract` | `name`, `type`, `required` | |
@@ -322,6 +323,16 @@ A reading has one value, so an alert has one `value`. It sits under `value`, nev
 | `{"min": 18, "max": 27}` | Both ends can be set. A new building starts at 18 and 27 |
 | `{"max": null}` | Only `max` can be set, with no starting value (`people_count`: it comes from room capacity) |
 | `{}` | No limit. A client offers no input |
+
+`aggregation` says how a building's dashboard card turns each room's latest reading into one figure, so a client never guesses it from the metric's name:
+
+| Value | Meaning | Example |
+|---|---|---|
+| `"average"` | The mean of the rooms that report | temperature 20 and 22 give 21 |
+| `"sum"` | The total of the rooms that report | estimated people 3 and 4 give 7 |
+| absent | A room attribute, not a reading. It offers no card | `room_name`, `room_max_occupancy` from `digital-twin` |
+
+Every `telemetry` plugin must declare one: `MetricDescriptor.aggregation` is not optional, so a new plugin without it does not compile. It is optional on the wire only for sources that serve room attributes.
 
 `LimitContract` keeps a present `null` apart from an absent end, so each end is an `Option<Option<f64>>`. One `Option` would lose that difference.
 
@@ -403,7 +414,7 @@ What the tests here pin down:
 |---|---|
 | `src/telemetry.rs` | Wire names; `20` reads as `20.0`; no envelope without `buildingId` or `readings`; channel round trip |
 | `src/alerts.rs` | The wire shape carries `type` and `value`; `unit` left out when empty; `low` on the wire; write then read gives the same alert; `b1:r1` key; only listed metrics are alertable |
-| `src/lib.rs` | Single-word names; `actions` and `limit` optional on read; a present `null` end kept apart from a missing one; both catalog forms |
+| `src/lib.rs` | Single-word names; `actions` and `limit` optional on read; a present `null` end kept apart from a missing one; both catalog forms; `aggregation` lowercase, left out when absent |
 | `telemetry_envelope_conformance.rs` | Every fixture tick re-serialises **byte for byte**; every rejected tick fails |
 | `metric_contract_conformance.rs` | The fixture parses, re-serialises byte for byte, keeps `"unit": null`; device counts have `{}`, `people_count` has `{"max": null}`, temperature has `min` 18 and `max` 27 |
 | `*_schema.rs` | Accepted cases pass, rejected cases fail, plus the 500-reading cap, and a reading with any extra key refused |

@@ -1,5 +1,7 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{ActionSpec, FieldKind, FieldSpec, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{
+    ActionSpec, Aggregation, FieldKind, FieldSpec, LimitSpec, MetricDescriptor,
+};
 
 static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
@@ -43,6 +45,7 @@ pub fn metric() -> Metric {
                 min: Some(Some(18.0)),
                 max: Some(Some(27.0)),
             },
+            aggregation: Aggregation::Average,
         },
         actions: ACTIONS,
     }

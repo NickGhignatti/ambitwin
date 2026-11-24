@@ -1,5 +1,5 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{Aggregation, FieldKind, LimitSpec, MetricDescriptor};
 
 // counts of devices a router hears; a phone count is no measure to alert on, so no limit
 
@@ -15,6 +15,7 @@ pub fn total_device_count() -> Metric {
                 min: None,
                 max: None,
             },
+            aggregation: Aggregation::Sum,
         },
         actions: &[],
     }
@@ -32,6 +33,7 @@ pub fn ratio_device_count() -> Metric {
                 min: None,
                 max: None,
             },
+            aggregation: Aggregation::Sum,
         },
         actions: &[],
     }
@@ -49,6 +51,7 @@ pub fn estimated_occupancy() -> Metric {
                 min: None,
                 max: None,
             },
+            aggregation: Aggregation::Sum,
         },
         actions: &[],
     }

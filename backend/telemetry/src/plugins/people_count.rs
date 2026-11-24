@@ -1,5 +1,5 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{Aggregation, FieldKind, LimitSpec, MetricDescriptor};
 
 /// People in a room. The max has no start: each room's comes from its capacity.
 pub fn metric() -> Metric {
@@ -14,6 +14,7 @@ pub fn metric() -> Metric {
                 min: None,
                 max: Some(None),
             },
+            aggregation: Aggregation::Sum,
         },
         actions: &[],
     }

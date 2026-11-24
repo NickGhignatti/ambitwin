@@ -3,6 +3,7 @@
   "metrics": [
     {
       "kind": "temperature",
+      "aggregation": "average",
       "label": "Temperature",
       "interface": "ITemperature",
       "unit": "C",
@@ -49,6 +50,7 @@
     },
     {
       "kind": "people_count",
+      "aggregation": "sum",
       "label": "People Count",
       "interface": "IPeopleCount",
       "unit": "people",
@@ -60,6 +62,7 @@
     },
     {
       "kind": "co2",
+      "aggregation": "average",
       "label": "CO2",
       "interface": "ICo2",
       "unit": "ppm",
@@ -71,6 +74,7 @@
     },
     {
       "kind": "indoor_aqi",
+      "aggregation": "average",
       "label": "Indoor AQI",
       "interface": "IIndoorAqi",
       "unit": null,
@@ -82,6 +86,7 @@
     },
     {
       "kind": "humidity",
+      "aggregation": "average",
       "label": "Humidity",
       "interface": "IHumidity",
       "unit": "%",
@@ -94,6 +99,7 @@
     },
     {
       "kind": "total_device_count",
+      "aggregation": "sum",
       "label": "Total Device Count",
       "interface": "ITotalDeviceCount",
       "unit": "devices",
@@ -103,6 +109,7 @@
     },
     {
       "kind": "ratio_device_count",
+      "aggregation": "sum",
       "label": "Estimated People Count",
       "interface": "IRatioDeviceCount",
       "unit": "people",
@@ -112,6 +119,7 @@
     },
     {
       "kind": "estimated_occupancy",
+      "aggregation": "sum",
       "label": "Estimated Occupancy",
       "interface": "IEstimatedOccupancy",
       "unit": "devices",

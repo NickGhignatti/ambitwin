@@ -51,7 +51,7 @@ actions are the union of its device's metrics' actions.
 **Adding a metric = a plugin file plus its line in `plugins::all()` and a device in
 `plugins::devices()`.** A plugin with a limit also
 joins `telemetry_schema::ALERTABLE_METRICS` (test-enforced) — that is its delivery path in
-notification. A plugin is data: a `MetricDescriptor` (`key`, `label`, `interface_name`, `unit`,
+notification. A plugin is data: a `MetricDescriptor` (`key`, `label`, `interface_name`, `unit`, `aggregation`,
 `value_kind`, `limit: LimitSpec`) in one generic `Metric` (`plugins/common.rs`), plus optional
 `actions`; `PluginRegistry::new` rejects two plugins sharing a key. Plugins never import each other. `/contracts` serves what the registry holds, and dashboard parses that
 same `telemetry_schema` definition, so a rename is a compile error rather than an empty

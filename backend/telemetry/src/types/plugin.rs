@@ -1,4 +1,4 @@
-pub use telemetry_schema::BoundDirection;
+pub use telemetry_schema::{Aggregation, BoundDirection};
 
 use crate::types::reading::Reading;
 use serde_json::Value;
@@ -52,6 +52,7 @@ pub struct MetricDescriptor {
     /// What `value` must be: `Finite`, or `NonNegativeInt` for a count.
     pub value_kind: FieldKind,
     pub limit: LimitSpec,
+    pub aggregation: Aggregation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,6 +247,7 @@ mod tests {
             min: None,
             max: Some(None),
         },
+        aggregation: Aggregation::Sum,
     };
 
     fn count_reading(value: Value) -> Value {

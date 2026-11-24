@@ -6,7 +6,7 @@ use crate::kernel::ports::{
 use crate::types::building::RegisteredBuilding;
 use crate::types::event::{AlertPayload, TelemetryEvent};
 use crate::types::plugin::{
-    ActionSpec, FieldKind, FieldSpec, LimitSpec, MAX, MetricDescriptor, SensorPlugin,
+    ActionSpec, Aggregation, FieldKind, FieldSpec, LimitSpec, MAX, MetricDescriptor, SensorPlugin,
     validate_reading,
 };
 use crate::types::query::Bucket;
@@ -29,6 +29,7 @@ static FAKE_DESCRIPTOR: MetricDescriptor = MetricDescriptor {
         min: Some(None),
         max: Some(None),
     },
+    aggregation: Aggregation::Average,
 };
 
 pub struct FakePlugin {
