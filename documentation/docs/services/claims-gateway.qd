@@ -636,12 +636,7 @@ The cookie name comes from `auth-middleware`, the library that reads it back, so
 ### `verify`: the edge asks
 
 ```go
-func verifyHandler(w http.ResponseWriter, r *http.Request) {
-	claims, ok := authmiddleware.FromContext(r.Context())
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
+func verifyHandler(w http.ResponseWriter, _ *http.Request, claims authcontracts.StandardClaims) {
 	body, err := json.Marshal(claims)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -652,7 +647,7 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-By the time this runs, `RequireAuthentication` has already checked the token. All that is left is: turn the claims back into JSON, encode as base64, put them in the **reply header** `X-Gateway-Claims`, answer `200`. Caddy copies that header onto the original request as `x-gateway-claims`.
+By the time this runs, `RequireAuthentication` has already checked the token, and `withClaims` has taken the claims out of the request (a `401` if they are missing). Every signed-in route is wrapped the same way. All that is left is: turn the claims back into JSON, encode as base64, put them in the **reply header** `X-Gateway-Claims`, answer `200`. Caddy copies that header onto the original request as `x-gateway-claims`.
 
 ### Errors to status codes
 
