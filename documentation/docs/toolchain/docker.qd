@@ -283,7 +283,7 @@ Every image on GHCR is the production stage of the Dockerfiles above. A PR and `
 
 ## Traps
 
-- **Distroless cannot be patched in place.** It has no package manager, so a Debian fix in `libssl3` or `tzdata` reaches the Go and Rust images only when Google rebuilds the base. Until then the Trivy gate fails, or the CVE needs an expiring line in `.trivyignore`.
+- **Distroless cannot be patched in place.** It has no package manager, so a Debian fix in `libssl3` or `tzdata` reaches the Go and Rust images only when Google rebuilds the base. Until then the Trivy gate fails, or the CVE needs an expiring line in `.github/.trivyignore`.
 - **`just k8s build` names images by hand.** It lists 12 `docker build` lines with their own paths and contexts, separate from `.github/services.json`. A new service must be added to both.
 - **A new path dependency means four `COPY` lines.** One in `planner`, one before each cook (`dev` or `debug-deps`, `builder`). Missing one fails only that stage.
 - **Python and Node images run as root.** `kube-score`'s user check is switched off in `ci-k8s`.

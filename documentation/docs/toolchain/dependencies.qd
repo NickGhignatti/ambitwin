@@ -117,14 +117,14 @@ Runs on every image a PR changes, and again before `cd-registry` publishes.
 
 - `vuln-type: os`: only operating-system packages. Language packages are already covered by the audits above.
 - `severity: HIGH,CRITICAL`, `ignore-unfixed: true`: only holes that have a fix fail the job.
-- `.trivyignore` holds waived advisories, one per line with its reason and an `exp:` date. Today: `CVE-2026-84782` (`libssl3` in distroless), until 2026-12-07.
+- `.github/.trivyignore` holds waived advisories, one per line with its reason and an `exp:` date. Today: `CVE-2026-84782` (`libssl3` in distroless), until 2026-12-07.
 - Python images run `apt-get upgrade` while building: a base image is often older than its own package mirror. Go and Rust run on distroless, which has no package manager and gets a fix only when Google rebuilds it.
 
 ---
 
 ## Renovate: updates arrive as pull requests
 
-`maint-renovate.yml` runs Renovate every Monday at 02:00 (Europe/Rome rules in `renovate.json`), or by hand.
+`maint-renovate.yml` runs Renovate every Monday at 02:00 (Europe/Rome rules in `.github/renovate.json`), or by hand.
 
 .mermaid
     sequenceDiagram

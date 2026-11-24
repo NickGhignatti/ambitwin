@@ -352,7 +352,7 @@ From the repository rulesets:
 
 - **`tpl-node-ci.yml` and `.github/actions/filter-languages` are unused.** No workflow calls them.
 - **`govulncheck` never blocks.** Its step has `continue-on-error: true`.
-- **`.trivyignore` waivers expire.** Any fixable HIGH or CRITICAL OS finding fails the image job; a waiver is a line there with its reason and an `exp:` date, so the job fails again when the date passes.
+- **`.github/.trivyignore` waivers expire.** Any fixable HIGH or CRITICAL OS finding fails the image job; a waiver is a line there with its reason and an `exp:` date, so the job fails again when the date passes.
 - **Distroless lags Debian.** Go and Rust images run on `gcr.io/distroless/*-debian12`, which has no package manager: a Debian fix reaches the image only when Google rebuilds the base.
 - **SARIF output ignores `severity` unless told otherwise.** `trivy-action` with `format: sarif` reports every severity, so `cd-registry.yml` sets `limit-severities-for-sarif: true`; without it an UNKNOWN finding fails the job.
 - **A Trivy finding can appear with no code change.** The scan reads today's advisory database, so an old base image can fail tomorrow.

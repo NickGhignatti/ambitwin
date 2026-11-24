@@ -9,7 +9,7 @@
     | Scope | The part changed, in brackets | `twin`, `gateway` |
     | Breaking change | A change that needs users to adapt; `!` after the type, or a `BREAKING CHANGE:` line | `feat(gateway)!: drop /v1` |
     | Component | One package with its own version | `backend/chat`, component `chat` |
-    | Manifest | The file that holds the last released version of each component | `.release-please-manifest.json` |
+    | Manifest | The file that holds the last released version of each component | `.github/.release-please-manifest.json` |
     | Release PR | The pull request Release Please keeps open with the next versions and changelog | `chore: release master` |
     | Pre-major | A version below `1.0.0` | `0.3.1-alpha` |
     | Prerelease | A version with a suffix that marks it unfinished | `-alpha` |
@@ -25,8 +25,8 @@ Related pages: [GitHub Actions CI](ci.qd), commit scopes in [Naming](toolchain-o
 | File | Holds |
 |---|---|
 | `.github/workflows/cd-release.yml` | Runs `googleapis/release-please-action` with the two files below, token `SEMANTIC_RELEASE_TOKEN` |
-| `release-please-config.json` | One entry per component: path, `release-type`, `component`, options |
-| `.release-please-manifest.json` | Last released version per path, written by the release PR |
+| `.github/release-please-config.json` | One entry per component: path, `release-type`, `component`, options |
+| `.github/.release-please-manifest.json` | Last released version per path, written by the release PR |
 | `CHANGELOG.md` | Root changelog, one section per release |
 | `backend/digital-twin/CHANGELOG.md` | The only component changelog so far |
 
@@ -112,7 +112,7 @@ The scope in the title is only text for the changelog. Release Please picks comp
 | Step | Detail |
 |---|---|
 | 4 | The last release of each path is found through the merged release PR and the manifest |
-| 6 | One PR for all components, the `Merge` plugin. Title `chore: release master`. Its diff: `CHANGELOG.md` files, version files, `.release-please-manifest.json` |
+| 6 | One PR for all components, the `Merge` plugin. Title `chore: release master`. Its diff: `CHANGELOG.md` files, version files, `.github/.release-please-manifest.json` |
 | 7 | Opened with `SEMANTIC_RELEASE_TOKEN`, a personal token: a PR made with the default `GITHUB_TOKEN` starts no workflows, and could never pass the gate |
 | 8 | A normal squash merge, so `cd-registry` also runs on it |
 | 11 | Only for `.`; components have `skip-github-release` |

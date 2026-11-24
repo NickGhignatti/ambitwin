@@ -5,7 +5,7 @@
 Ambitwin — digital-twin facility management. Real-time occupancy and telemetry, 3D
 building model, alerting, multi-tenant, RAG assistant.
 
-Source-available, **not** open source (`LICENSE`, `CONTRIBUTING.md`). Single owner, no
+Source-available, **not** open source (`LICENSE`, `.github/CONTRIBUTING.md`). Single owner, no
 external PRs.
 
 Docs are the source of truth for architecture: `documentation/**.qd` (Quarkdown,

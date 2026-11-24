@@ -30,7 +30,7 @@ The path a change takes, from the editor to a running cluster, and the tool that
 | Images | `docker` | Packs each service | each `Dockerfile`, `infra/rust-base/` | [Docker](docker.qd) |
 | Local stack | `docker compose` | Runs every service together on one machine | `docker-compose.yml` files | [Compose](compose.qd) |
 | Gate | GitHub Actions | Runs the checks on every pull request | `.github/workflows/`, `.github/services.json` | [CI](ci.qd) |
-| Versions of the product | release-please | Turns commit messages into releases and changelogs | `release-please-config.json` | [Release Please](release-please.qd) |
+| Versions of the product | release-please | Turns commit messages into releases and changelogs | `.github/release-please-config.json` | [Release Please](release-please.qd) |
 | Cluster | `k3d`, `kubectl`, `istioctl` | Runs the images with Istio in front | `infra/k8s/` | [Kubernetes](kubernetes.qd) |
 | Docs | Quarkdown | Builds this site | `documentation/` | `just docs build` |
 
