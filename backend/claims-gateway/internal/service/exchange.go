@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
 	authcontracts "github.com/NickGhignatti/ambitwin/server/auth-contracts"
 )
 
@@ -91,7 +89,6 @@ func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, erro
 	return g.signer.Sign(authcontracts.StandardClaims{
 		Sub:         kc.Sub,
 		AccountName: accountName(kc),
-		SID:         uuid.NewString(),
 		Memberships: memberships,
 	}, g.ttl)
 }

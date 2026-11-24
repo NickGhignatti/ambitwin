@@ -412,7 +412,6 @@ func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, erro
 	return g.signer.Sign(authcontracts.StandardClaims{
 		Sub:         kc.Sub,
 		AccountName: accountName(kc),
-		SID:         uuid.NewString(),
 		Memberships: memberships,
 	}, g.ttl)
 }
@@ -423,7 +422,7 @@ Three steps, with a fallback in the middle:
 1. **Verify** the Keycloak token. Bad token: `ErrInvalidIDToken` (`401`).
 2. **Look up** the memberships in `tenancy`. Failure: `ErrTenancyUnavailable` (`503`). The service fails *closed*: no wristband without the seating plan.
 3. **First sign-in fallback.** If `tenancy` has no membership for this person, but Keycloak says they belong to an organization, create the membership now (see below).
-4. **Sign** the wristband with a brand-new `sid`.
+4. **Sign** the wristband. The signer adds a brand-new `sid`.
 
 `fmt.Errorf("%w: %v", ErrInvalidIDToken, err)` keeps the *kind* of error (`%w`, so `errors.Is` works) and the *details* (`%v`, for the log).
 
