@@ -237,13 +237,18 @@ paths:
       summary: Give a new building its default columns
       description: |
         Sets `room_name` and `room_max_occupancy` when the building has no columns yet. A building
-        that already has columns keeps them, so calling twice is safe.
+        that already has columns keeps them, so calling twice is safe. Needs Cedar `Edit` on the
+        building: an entry turns on its live feed.
       tags: [Preferences]
       parameters:
         - $ref: "#/components/parameters/BuildingId"
       responses:
         "200":
           description: Defaults set, or already present. Empty body.
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Nothing stored.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored.
 
   /health:
     get:

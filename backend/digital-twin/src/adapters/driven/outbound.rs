@@ -111,12 +111,14 @@ pub async fn init_building_preferences(
         config.dashboard_url,
         urlencoding::encode(building_id)
     );
+    // a refused init (403) is a response, not a transport error: without this it passes silently
     if let Err(err) = config
         .client
         .post(&url)
         .headers(auth_headers(claims_header))
         .send()
         .await
+        .and_then(reqwest::Response::error_for_status)
     {
         log::error!("[contracts] failed to init building preferences: {err}");
     }

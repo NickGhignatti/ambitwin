@@ -87,68 +87,13 @@ pub async fn update_preferences(
 #[cfg(test)]
 mod tests {
     use super::{UpdatePreferencesRequest, get_preferences, update_preferences};
-    use crate::infra::claims::{ClaimsPayload, GatewayClaims};
-    use crate::models::PreferenceDocument;
+    use crate::api::testing::{claims, claims_in, make_state, state_with};
+    use crate::infra::claims::GatewayClaims;
     use crate::state::AppState;
     use axum::Json;
     use axum::extract::{Path, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
-    use claims_schema::Membership;
-    use wiremock::matchers::{method, path_regex};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn claims() -> GatewayClaims {
-        claims_in("eng", "business_staff")
-    }
-
-    fn claims_in(domain: &str, role: &str) -> GatewayClaims {
-        GatewayClaims {
-            payload: ClaimsPayload {
-                sub: Some("u1".to_string()),
-                memberships: vec![Membership {
-                    domain: domain.to_string(),
-                    role: Some(role.to_string()),
-                    external_id: None,
-                }],
-                ..ClaimsPayload::default()
-            },
-            raw: "caller-claims".to_string(),
-        }
-    }
-
-    /// A digital-twin that places every building in `eng`, or answers `500` when `is_down`.
-    async fn twin(is_down: bool) -> MockServer {
-        let server = MockServer::start().await;
-        let response = if is_down {
-            ResponseTemplate::new(500)
-        } else {
-            ResponseTemplate::new(200).set_body_json(["eng"])
-        };
-        Mock::given(method("GET"))
-            .and(path_regex("^/domain/"))
-            .respond_with(response)
-            .mount(&server)
-            .await;
-        server
-    }
-
-    // the twin is returned so it outlives the test: a dropped MockServer goes back to a shared pool
-    async fn make_state() -> (AppState, MockServer) {
-        state_with(false).await
-    }
-
-    async fn state_with(is_twin_down: bool) -> (AppState, MockServer) {
-        let twin = twin(is_twin_down).await;
-        let opts = mongodb::options::ClientOptions::parse("mongodb://localhost:27017")
-            .await
-            .unwrap();
-        let client = mongodb::Client::with_options(opts).unwrap();
-        let col = client
-            .database("_unit_test")
-            .collection::<PreferenceDocument>("_prefs");
-        (AppState::new(col, twin.uri()), twin)
-    }
 
     async fn save_as(claims: GatewayClaims, state: &AppState) -> StatusCode {
         update_preferences(
