@@ -62,6 +62,24 @@ async fn domain_lookup_answers_internal_callers_that_hold_no_membership() {
 }
 
 #[tokio::test]
+async fn domain_lookup_tells_an_outsider_nothing() {
+    let app = app().await;
+    let building_id = register(&app, mock_building()).await;
+
+    let res = request(
+        app,
+        "GET",
+        &format!("/domain/{building_id}"),
+        Some(&admin_of("someone-elses-domain")),
+        None,
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body, json!([]));
+}
+
+#[tokio::test]
 async fn drops_domains_the_caller_does_not_belong_to_from_counts() {
     let app = app().await;
     register(&app, mock_building()).await;

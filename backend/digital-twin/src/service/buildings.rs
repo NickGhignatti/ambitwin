@@ -67,6 +67,23 @@ impl Buildings {
         Ok(self.store.counts_by_domain(&scoped).await?)
     }
 
+    /// The building's owning domains as this caller may know them: all of them for an internal
+    /// owner lookup, otherwise only those the caller belongs to. An outsider gets none, so it
+    /// cannot tell another tenant's building from a missing one.
+    pub async fn domains_known_to(
+        &self,
+        building: &str,
+        claims: &GatewayClaims,
+    ) -> Result<Vec<String>, DomainError> {
+        let domains = self.domains_of(building).await?;
+        if authz::resolves_any_owner(claims) {
+            return Ok(domains);
+        }
+        Ok(authz::filter_readable_domains_from_memberships(
+            &domains, claims,
+        ))
+    }
+
     pub async fn domains_of(&self, building: &str) -> Result<Vec<String>, DomainError> {
         Ok(match self.store.find_by_id(building).await? {
             Some(found) => found.domains,
@@ -278,6 +295,43 @@ mod tests {
             buildings.counts_per_domain(&many, &claims).await,
             Err(DomainError::Validation(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_caller_learns_only_the_owning_domains_it_belongs_to() {
+        let (buildings, store, _) = buildings();
+        seeded(&store, vec!["eng", "ops"]);
+
+        let member = claims_with(vec![("eng", "standard_customer")]);
+        assert_eq!(
+            buildings.domains_known_to("b1", &member).await.unwrap(),
+            ["eng"]
+        );
+
+        let outsider = claims_with(vec![("other", "admin")]);
+        assert!(
+            buildings
+                .domains_known_to("b1", &outsider)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn notification_learns_every_owning_domain_to_route_an_alert() {
+        let (buildings, store, _) = buildings();
+        seeded(&store, vec!["eng", "ops"]);
+        let mut notification = claims_with(vec![]);
+        notification.payload.sub = Some("system:notification-service".to_string());
+
+        assert_eq!(
+            buildings
+                .domains_known_to("b1", &notification)
+                .await
+                .unwrap(),
+            ["eng", "ops"]
+        );
     }
 
     #[tokio::test]

@@ -758,17 +758,41 @@ pub async fn domains_of(&self, building: &str) -> Result<Vec<String>, DomainErro
         None => self.store.find_by_name(building).await?.into_iter().flat_map(|b| b.domains).collect(),
     })
 }
+
+pub async fn domains_known_to(&self, building: &str, claims: &GatewayClaims) -> Result<Vec<String>, DomainError> {
+    let domains = self.domains_of(building).await?;
+    if authz::resolves_any_owner(claims) {
+        return Ok(domains);
+    }
+    Ok(authz::filter_readable_domains_from_memberships(&domains, claims))
+}
 ```
 
-`GET /domain/{building}` answers which domains own a building: first by **id**, then, if there is none, by exact **name** (all buildings with that name, domains joined). Three services ask it:
+`GET /domain/{building}` answers which domains own a building: first by **id**, then, if there is none, by exact **name** (all buildings with that name, domains joined). Four services ask it:
 
 | Caller | Why | Identity sent | Its own limits |
 |---|---|---|---|
 | `notification` | Who receives a breach alert | `system:notification-service`, no memberships | 2 s timeout, 15 min cache |
 | `socket` | May this browser subscribe to this building? | The browser's claims | 2 s timeout, 60 s cache |
 | `telemetry` | May this caller read this building's data? | The caller's claims | 5 s timeout, 60 s cache |
+| `dashboard` | May this caller read or save this building's columns? | The caller's claims | 2 s timeout, no cache |
 
-The route checks only that a caller is signed in. It does **not** scope the answer to the caller: `system:` callers have no memberships and would always get `[]`.
+The answer is **scoped to the caller**:
+
+| Caller | Gets |
+|---|---|
+| `system:notification-service` (`OWNER_RESOLVERS`) | Every owning domain: an alert goes to all of them, and it holds no memberships |
+| Anyone else | Only the owning domains it can `Read`, that is belongs to |
+
+An outsider gets `[]`, the same answer as for a building that does not exist, so it cannot learn which tenant owns a building or whether it exists. The callers need no change: each one already denies when none of the answered domains is the caller's, and a member still sees every domain it could act through.
+
+**Example.** `b1` belongs to `eng` and `ops`.
+
+| Caller | `GET /domain/b1` |
+|---|---|
+| `standard_customer` in `eng` | `["eng"]` |
+| `business_admin` in `sales` | `[]` |
+| `system:notification-service` | `["eng","ops"]` |
 
 **Example.** Two buildings named `Main Hall`, one in `eng`, one in `ops`. `GET /domain/Main%20Hall` answers `["eng","ops"]`. Asking by id answers only that building's domain.
 
@@ -919,7 +943,7 @@ The edge strips `/twin`. Every route except the public ones needs `x-gateway-cla
 | `POST` | `/building/{id}/sync` | Editor in one of its domains | Announce it to `telemetry` again | `202` |
 | `GET` | `/buildings/{domain}` | Member of that domain | All its buildings | `[Building]` |
 | `POST` | `/buildings/counts` | Any signed-in caller | Count per domain, unreadable domains dropped | `{counts: {domain: n}}` |
-| `GET` | `/domain/{building}` | Any signed-in caller | Domains owning the building, by id then by name | `["eng"]` |
+| `GET` | `/domain/{building}` | Any signed-in caller; the answer keeps only the caller's own domains, except for `system:notification-service` | Domains owning the building, by id then by name | `["eng"]` |
 | `GET` | `/building/{id}/placements` | Member, or `system:ap-simulator` | Sensor positions, sorted by id | `[{sensorId, position}]` |
 | `PUT` | `/building/{id}/placements` | Editor in one of its domains | Add, move, remove positions in one batch | `204` |
 | `GET` | `/contracts` | Public | The metric catalog: `room_name`, `room_max_occupancy` | `ServiceMetricsContract` |
