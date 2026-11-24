@@ -15,16 +15,12 @@ import (
 
 const CookieName = "authentication_token"
 
-type jwksProvider interface {
-	JWKS() []byte
-}
-
-func Mount(gw *service.Gateway, jwks jwksProvider, verifyKeys keyfunc.Keyfunc, issuer string) chi.Router {
+func Mount(gw *service.Gateway, publicKeySet []byte, verifyKeys keyfunc.Keyfunc, issuer string) chi.Router {
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(jwks.JWKS())
+		_, _ = w.Write(publicKeySet)
 	})
 	r.Post("/exchange", exchangeHandler(gw))
 	r.Post("/login", loginHandler(gw))

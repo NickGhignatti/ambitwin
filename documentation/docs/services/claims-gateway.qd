@@ -258,11 +258,12 @@ gw := service.New(verifier, tenancy, sign, cfg.TokenTTL).
 `keycloakadmin` is the only thing holding the secret of the confidential client, and the only thing that talks to Keycloak's token and admin endpoints. The same object fills five different ports (`PasswordAuthenticator`, `UserRegistrar`, `ProfileReader`, `ProfileUpdater`, `PasswordChanger`). The `With…` calls plug the optional features into the `Gateway`.
 
 ```go
-verifyKeys, err := keyfunc.NewJWKSetJSON(sign.JWKS())
+publicKeySet := sign.JWKS()
+verifyKeys, err := keyfunc.NewJWKSetJSON(publicKeySet)
 if err != nil {
 	log.Fatalf("building self-verification keyfunc: %v", err)
 }
-r := api.Mount(gw, sign, verifyKeys, cfg.Issuer)
+r := api.Mount(gw, publicKeySet, verifyKeys, cfg.Issuer)
 ```
 
 The routes that need a signed-in caller (`/me`, `/refresh`, `/verify`, `/profile`) check the **gateway's own** tokens. So the keys to check them are built straight from the signer's own public key, with no network call.

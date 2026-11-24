@@ -20,7 +20,7 @@ import (
 
 func TestVerifyHandler_EmitsTheClaimsHeaderTheEdgeCopies(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodGet, "/verify", "", key)
 	rec := httptest.NewRecorder()
@@ -52,7 +52,7 @@ func TestVerifyHandler_EmitsTheClaimsHeaderTheEdgeCopies(t *testing.T) {
 // the two drifting apart: a change to either encoding breaks this test.
 func TestVerifyHandler_HeaderRoundTripsThroughRequireMeshClaims(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, authedRequest(t, http.MethodGet, "/verify", "", key))
@@ -83,7 +83,7 @@ func TestVerifyHandler_HeaderRoundTripsThroughRequireMeshClaims(t *testing.T) {
 
 func TestVerifyHandler_RejectsAnUnauthenticatedCall(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/verify", nil))

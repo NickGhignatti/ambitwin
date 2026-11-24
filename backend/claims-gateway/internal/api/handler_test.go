@@ -43,7 +43,8 @@ type fakeSigner struct{}
 func (fakeSigner) Sign(claims authcontracts.StandardClaims, _ time.Duration) (string, error) {
 	return "signed." + claims.Sub, nil
 }
-func (fakeSigner) JWKS() []byte { return []byte(`{"keys":[{"kid":"test-kid"}]}`) }
+
+var testKeySet = []byte(`{"keys":[{"kid":"test-kid"}]}`)
 
 func TestExchangeHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 	gw := service.New(
@@ -51,7 +52,7 @@ func TestExchangeHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 		&fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}},
 		fakeSigner{}, time.Hour,
 	)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	body := strings.NewReader(`{"idToken":"raw-token"}`)
 	req := httptest.NewRequest(http.MethodPost, "/exchange", body)
@@ -78,7 +79,7 @@ func TestExchangeHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 
 func TestExchangeHandler_RejectsMissingBody(t *testing.T) {
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
@@ -91,7 +92,7 @@ func TestExchangeHandler_RejectsMissingBody(t *testing.T) {
 
 func TestExchangeHandler_InvalidIDTokenIs401(t *testing.T) {
 	gw := service.New(&fakeVerifier{err: service.ErrInvalidIDToken}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{"idToken":"bad"}`))
 	rec := httptest.NewRecorder()
@@ -104,7 +105,7 @@ func TestExchangeHandler_InvalidIDTokenIs401(t *testing.T) {
 
 func TestExchangeHandler_TenancyUnavailableIs503(t *testing.T) {
 	gw := service.New(&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1"}}, &erroringTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{"idToken":"ok"}`))
 	rec := httptest.NewRecorder()
@@ -124,7 +125,7 @@ func (erroringTenancy) Provision(context.Context, service.ProvisionRequest) erro
 
 func TestJWKSHandler_ServesTheKeySet(t *testing.T) {
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
 	rec := httptest.NewRecorder()
@@ -143,7 +144,7 @@ func TestJWKSHandler_ServesTheKeySet(t *testing.T) {
 
 func TestHealthHandler(t *testing.T) {
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -156,7 +157,7 @@ func TestHealthHandler(t *testing.T) {
 
 func TestLogoutHandler_ClearsTheCookie(t *testing.T) {
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	rec := httptest.NewRecorder()
@@ -213,7 +214,7 @@ func TestMeHandler_ReturnsTheCallersClaims(t *testing.T) {
 		t.Fatalf("generating key: %v", err)
 	}
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	token := signRealToken(t, key, authcontracts.StandardClaims{
 		Sub: "acc-1", AccountName: "mario",
@@ -239,7 +240,7 @@ func TestMeHandler_ReturnsTheCallersClaims(t *testing.T) {
 func TestMeHandler_RequiresAuthentication(t *testing.T) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	rec := httptest.NewRecorder()

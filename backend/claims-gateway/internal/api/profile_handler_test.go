@@ -65,7 +65,7 @@ func authedRequest(t *testing.T, method, path, body string, key *rsa.PrivateKey)
 
 func TestProfileHandler_ReturnsEmailNameAndPicture(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{email: "mario@unibo.it", name: "Mario Rossi", picture: "https://lh3.googleusercontent.com/a/abc"}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodGet, "/profile", "", key)
 	rec := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestProfileHandler_ReturnsEmailNameAndPicture(t *testing.T) {
 
 func TestProfileHandler_OmitsPictureWhenAccountHasNone(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{email: "mario@unibo.it", name: "Mario Rossi"}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodGet, "/profile", "", key)
 	rec := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestProfileHandler_OmitsPictureWhenAccountHasNone(t *testing.T) {
 
 func TestProfileHandler_RequiresAuthentication(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/profile", nil)
 	rec := httptest.NewRecorder()
@@ -112,7 +112,7 @@ func TestProfileHandler_RequiresAuthentication(t *testing.T) {
 func TestUpdateProfileHandler_UpdatesAndReturnsNoContent(t *testing.T) {
 	updater := &fakeProfileUpdater{}
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, updater, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPatch, "/profile", `{"email":"new@unibo.it","name":"Mario Rossi"}`, key)
 	rec := httptest.NewRecorder()
@@ -128,7 +128,7 @@ func TestUpdateProfileHandler_UpdatesAndReturnsNoContent(t *testing.T) {
 func TestUpdateProfileHandler_RefreshesTheSessionCookie(t *testing.T) {
 	updater := &fakeProfileUpdater{}
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, updater, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPatch, "/profile", `{"name":"Mario Bianchi"}`, key)
 	rec := httptest.NewRecorder()
@@ -149,7 +149,7 @@ func TestUpdateProfileHandler_RefreshesTheSessionCookie(t *testing.T) {
 func TestUpdateProfileHandler_EmailTakenIs409(t *testing.T) {
 	updater := &fakeProfileUpdater{err: service.ErrEmailTaken}
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, updater, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPatch, "/profile", `{"email":"taken@unibo.it"}`, key)
 	rec := httptest.NewRecorder()
@@ -162,7 +162,7 @@ func TestUpdateProfileHandler_EmailTakenIs409(t *testing.T) {
 
 func TestUpdateProfileHandler_RequiresAuthentication(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := httptest.NewRequest(http.MethodPatch, "/profile", strings.NewReader(`{"email":"new@unibo.it"}`))
 	rec := httptest.NewRecorder()
@@ -176,7 +176,7 @@ func TestUpdateProfileHandler_RequiresAuthentication(t *testing.T) {
 func TestChangePasswordHandler_ChangesAndReturnsNoContent(t *testing.T) {
 	reader := &fakeProfileReader{email: "mario@unibo.it"}
 	gw, key := gatewayWithProfileManagement(reader, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPost, "/profile/password", `{"currentPassword":"old","newPassword":"new-s3cret!"}`, key)
 	rec := httptest.NewRecorder()
@@ -191,7 +191,7 @@ func TestChangePasswordHandler_WrongCurrentPasswordIs401(t *testing.T) {
 	reader := &fakeProfileReader{email: "mario@unibo.it"}
 	gw, key := gatewayWithProfileManagement(reader, &fakeProfileUpdater{}, &fakePasswordChanger{})
 	gw.WithPasswordAuth(&fakeAuthenticator{err: service.ErrInvalidCredentials}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPost, "/profile/password", `{"currentPassword":"wrong","newPassword":"new-s3cret!"}`, key)
 	rec := httptest.NewRecorder()
@@ -204,7 +204,7 @@ func TestChangePasswordHandler_WrongCurrentPasswordIs401(t *testing.T) {
 
 func TestChangePasswordHandler_RejectsMissingBody(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPost, "/profile/password", `{"currentPassword":"old"}`, key)
 	rec := httptest.NewRecorder()
@@ -217,7 +217,7 @@ func TestChangePasswordHandler_RejectsMissingBody(t *testing.T) {
 
 func TestChangePasswordHandler_RequiresAuthentication(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/profile/password", strings.NewReader(`{"currentPassword":"old","newPassword":"new"}`))
 	rec := httptest.NewRecorder()
@@ -233,7 +233,7 @@ func TestChangePasswordHandler_RequiresAuthentication(t *testing.T) {
 // every user out mid-session rather than failing loudly.
 func TestRefreshHandler_ReMintsTheSessionCookie(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/refresh", "", key))
@@ -257,7 +257,7 @@ func TestRefreshHandler_ReMintsTheSessionCookie(t *testing.T) {
 
 func TestRefreshHandler_RequiresAuthentication(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/refresh", nil))
@@ -269,7 +269,7 @@ func TestRefreshHandler_RequiresAuthentication(t *testing.T) {
 
 func TestUpdateProfileHandler_RejectsMalformedBody(t *testing.T) {
 	gw, key := gatewayWithProfileManagement(&fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, authedRequest(t, http.MethodPatch, "/profile", "{not json", key))
@@ -293,7 +293,7 @@ func TestWriteAuthError_MapsEachServiceErrorToItsOwnStatus(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			gw, key := gatewayWithProfileManagement(&fakeProfileReader{err: tc.err}, &fakeProfileUpdater{}, &fakePasswordChanger{})
-			r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+			r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, authedRequest(t, http.MethodGet, "/profile", "", key))
@@ -323,7 +323,7 @@ func TestChangePasswordHandler_DistinguishesEachUpstreamFailure(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			gw, key := gatewayWithProfileManagement(tc.reader, &fakeProfileUpdater{}, tc.changer)
-			r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+			r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/profile/password",
@@ -342,7 +342,7 @@ func TestChangePasswordHandler_DistinguishesEachUpstreamFailure(t *testing.T) {
 func TestRefreshHandler_TenancyFailureIsReportedNotSilentlyReMinted(t *testing.T) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 	gw := service.New(&fakeVerifier{}, erroringTenancy{}, fakeSigner{}, time.Hour)
-	r := api.Mount(gw, fakeSigner{}, realKeyfunc(t, &key.PublicKey), issuer)
+	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/refresh", "", key))

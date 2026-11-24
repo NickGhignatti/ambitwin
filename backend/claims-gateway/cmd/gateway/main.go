@@ -45,11 +45,12 @@ func main() {
 									WithProfileManagement(kcAdmin, kcAdmin, kcAdmin)
 
 	// /me verifies the gateway's OWN minted tokens.
-	verifyKeys, err := keyfunc.NewJWKSetJSON(sign.JWKS())
+	publicKeySet := sign.JWKS()
+	verifyKeys, err := keyfunc.NewJWKSetJSON(publicKeySet)
 	if err != nil {
 		log.Fatalf("building self-verification keyfunc: %v", err)
 	}
-	r := api.Mount(gw, sign, verifyKeys, cfg.Issuer)
+	r := api.Mount(gw, publicKeySet, verifyKeys, cfg.Issuer)
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r}
 	go func() {
