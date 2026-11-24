@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	authcontracts "github.com/NickGhignatti/ambitwin/server/auth-contracts"
 )
@@ -34,15 +32,13 @@ func (g *Gateway) WithProfileManagement(r ProfileReader, u ProfileUpdater, p Pas
 }
 
 func (g *Gateway) Profile(ctx context.Context, userID string) (email, name, picture string, err error) {
-	return g.profileReader.GetUser(ctx, userID)
+	email, name, picture, err = g.profileReader.GetUser(ctx, userID)
+	return email, name, picture, keycloakError(err, ErrUserNotFound)
 }
 
 func (g *Gateway) UpdateProfile(ctx context.Context, current authcontracts.StandardClaims, email, name string) (string, error) {
 	if err := g.profileUpdater.UpdateUser(ctx, current.Sub, email, name); err != nil {
-		if errors.Is(err, ErrEmailTaken) || errors.Is(err, ErrUserNotFound) {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return "", keycloakError(err, ErrEmailTaken, ErrUserNotFound)
 	}
 	if name != "" {
 		current.AccountName = name
@@ -55,21 +51,10 @@ func (g *Gateway) UpdateProfile(ctx context.Context, current authcontracts.Stand
 func (g *Gateway) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
 	email, _, _, err := g.profileReader.GetUser(ctx, userID)
 	if err != nil {
-		if errors.Is(err, ErrUserNotFound) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return keycloakError(err, ErrUserNotFound)
 	}
-
 	if _, err := g.authenticator.PasswordGrant(ctx, email, currentPassword); err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return keycloakError(err, ErrInvalidCredentials)
 	}
-
-	if err := g.passwordChanger.ResetPassword(ctx, userID, newPassword); err != nil {
-		return fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
-	}
-	return nil
+	return keycloakError(g.passwordChanger.ResetPassword(ctx, userID, newPassword), ErrUserNotFound)
 }

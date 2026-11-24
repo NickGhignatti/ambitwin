@@ -750,25 +750,20 @@ Used by the app's own forms (`frontend/src/composables/authentication/useKeycloa
 func (g *Gateway) Login(ctx context.Context, username, password string) (string, error) {
 	idToken, err := g.authenticator.PasswordGrant(ctx, username, password)
 	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return "", keycloakError(err, ErrInvalidCredentials)
 	}
 	return g.Exchange(ctx, idToken)
 }
 
 func (g *Gateway) Register(ctx context.Context, email, password, name string) (string, error) {
 	if err := g.registrar.CreateUser(ctx, email, password, name); err != nil {
-		if errors.Is(err, ErrEmailTaken) {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return "", keycloakError(err, ErrEmailTaken)
 	}
 	return g.Login(ctx, email, password)
 }
 ```
 
+- `keycloakError`: keep the errors listed, turn any other Keycloak failure into `ErrKeycloakUnavailable` (`503`). Every Keycloak call in `service` goes through it.
 - `Login`: ask Keycloak for an ID token with the username and password. Wrong password is its own error (`401`). Any other failure is "Keycloak unavailable" (`503`). Then run the normal `Exchange` on that token.
 - `Register`: create the user first. A taken email is `409`. Then `Login` with the same email and password.
 
@@ -887,19 +882,13 @@ In the cluster, Istio does steps 2 to 5 itself: `infra/k8s/istio-request-authent
 ```go
 func (g *Gateway) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
 	email, _, _, err := g.profileReader.GetUser(ctx, userID)
-	// … not found → ErrUserNotFound, other → ErrKeycloakUnavailable
-
+	if err != nil {
+		return keycloakError(err, ErrUserNotFound)
+	}
 	if _, err := g.authenticator.PasswordGrant(ctx, email, currentPassword); err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
+		return keycloakError(err, ErrInvalidCredentials)
 	}
-
-	if err := g.passwordChanger.ResetPassword(ctx, userID, newPassword); err != nil {
-		return fmt.Errorf("%w: %v", ErrKeycloakUnavailable, err)
-	}
-	return nil
+	return keycloakError(g.passwordChanger.ResetPassword(ctx, userID, newPassword), ErrUserNotFound)
 }
 ```
 

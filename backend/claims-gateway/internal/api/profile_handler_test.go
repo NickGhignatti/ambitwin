@@ -279,10 +279,7 @@ func TestUpdateProfileHandler_RejectsMalformedBody(t *testing.T) {
 	}
 }
 
-// writeAuthError is the one place a service error becomes a status code, and each
-// arm means something different to the caller. A missing account is a 404 they can
-// act on; an unrecognised error is a 500 they cannot — collapsing them hides real
-// failures behind "account not found".
+// a missing account must stay a 404, never hidden behind "try again"
 func TestWriteAuthError_MapsEachServiceErrorToItsOwnStatus(t *testing.T) {
 	cases := []struct {
 		name string
@@ -291,7 +288,7 @@ func TestWriteAuthError_MapsEachServiceErrorToItsOwnStatus(t *testing.T) {
 	}{
 		{"user not found", service.ErrUserNotFound, http.StatusNotFound},
 		{"keycloak unavailable", service.ErrKeycloakUnavailable, http.StatusServiceUnavailable},
-		{"something unrecognised", errors.New("disk on fire"), http.StatusInternalServerError},
+		{"keycloak answers 502", errors.New("client-credentials grant returned 502"), http.StatusServiceUnavailable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

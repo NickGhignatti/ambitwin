@@ -192,3 +192,23 @@ func TestChangePassword_DoesNotResetWhenProfileLookupFails(t *testing.T) {
 		t.Fatal("must not reset the password when the profile lookup fails")
 	}
 }
+
+func TestProfile_WrapsKeycloakFailureAsUnavailable(t *testing.T) {
+	reader := &fakeProfileReader{err: errors.New("client-credentials grant returned 502")}
+	gw, _ := newGatewayWithProfileManagement(t, reader, &fakeProfileUpdater{}, &fakePasswordChanger{}, &fakeAuthenticator{})
+
+	_, _, _, err := gw.Profile(context.Background(), "acc-1")
+	if !errors.Is(err, service.ErrKeycloakUnavailable) {
+		t.Fatalf("got %v, want ErrKeycloakUnavailable", err)
+	}
+}
+
+func TestChangePassword_PassesThroughUserNotFoundOnReset(t *testing.T) {
+	changer := &fakePasswordChanger{err: service.ErrUserNotFound}
+	gw, _ := newGatewayWithProfileManagement(t, &fakeProfileReader{email: "mario@unibo.it"}, &fakeProfileUpdater{}, changer, &fakeAuthenticator{})
+
+	err := gw.ChangePassword(context.Background(), "acc-1", "current", "new-s3cret!")
+	if !errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrKeycloakUnavailable) {
+		t.Fatalf("got %v, want ErrUserNotFound", err)
+	}
+}
