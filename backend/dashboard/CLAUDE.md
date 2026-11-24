@@ -1,7 +1,7 @@
 # dashboard
 
-Rust / Axum / MongoDB. Two jobs: serve the per-building column preferences the dashboard UI
-renders, and filter the telemetry stream down to what a building actually subscribed to.
+Rust / Axum / MongoDB. Two jobs: serve the per-building column and card preferences the dashboard
+UI renders, and filter the telemetry stream down to what a building actually subscribed to.
 Route `/dashboard*`, gated at the edge.
 Docs: `documentation/docs/architecture/dashboard-architecture.qd`,
 `documentation/docs/design/tunneling.qd`.
@@ -33,6 +33,12 @@ Mongo in a spawned task whose failure is only logged (`api/data.rs`). So the res
 not mean it was persisted, and a restart replays whatever Mongo actually holds. Deliberate,
 and the reason the unit tests need no Mongo — but it is where a lost preference would come
 from.
+
+**Columns and cards share one document, saved apart.** Each save is a `$set` of its own field
+(`infra/db.rs`), never a replace: a replace would wipe the other list. Cards live in their own
+`DashMap` (`building_cards`), absent = nobody chose, so the client shows its default; the tunnel
+reads only `building_preferences`. `PUT .../cards` refuses a bad list (`api/cards.rs`) before
+storing anything.
 
 **Initialising a building is idempotent**: a second init keeps the existing columns; a new
 building gets exactly `room_name` and `room_max_occupancy`.

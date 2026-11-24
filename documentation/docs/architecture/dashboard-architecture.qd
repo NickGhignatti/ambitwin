@@ -15,7 +15,7 @@ Realises part of the [Telemetry Distribution](../domain-model/domain-distributio
 Two jobs:
 
 - **Route** every tick to its own building's feed.
-- **Remember** each building's columns, and collect the metric catalog.
+- **Remember** each building's columns and summary cards, and collect the metric catalog.
 
 ---
 
@@ -25,7 +25,7 @@ Two jobs:
     flowchart LR
         T["telemetry"] -. "every tick" .-> D["dashboard"]
         D -. "one feed per building" .-> S["socket"]
-        C["client"] -- "columns, catalog" --> D
+        C["client"] -- "columns, cards, catalog" --> D
         Tw["digital-twin"] -- "starting columns" --> D
         D -- "catalog?" --> T
         D -- "catalog?" --> Tw

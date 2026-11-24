@@ -1,0 +1,155 @@
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::{Deserialize, Serialize};
+
+use crate::infra::claims::GatewayClaims;
+use crate::infra::db;
+use crate::state::AppState;
+
+const MAX_CARDS: usize = 32;
+const MAX_CARD_ID_LENGTH: usize = 64;
+
+/// A building's dashboard cards, in display order: metric kinds or `rooms` / `alerts`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardsBody {
+    pub cards: Vec<String>,
+}
+
+/// `GET /preferences/{building_id}/cards`: the saved cards, or `404` when nobody chose any,
+/// so the client shows its default.
+pub async fn get_cards(
+    _claims: GatewayClaims,
+    Path(building_id): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    match state.building_cards.get(&building_id) {
+        Some(cards) => Json(CardsBody {
+            cards: cards.clone(),
+        })
+        .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `PUT /preferences/{building_id}/cards`: replaces the building's cards for every viewer.
+/// `400` on a list that is too long, has an empty or overlong id, or names a card twice.
+pub async fn put_cards(
+    _claims: GatewayClaims,
+    State(state): State<AppState>,
+    Path(building_id): Path<String>,
+    Json(body): Json<CardsBody>,
+) -> Response {
+    if let Some(problem) = find_problem(&body.cards) {
+        return (StatusCode::BAD_REQUEST, problem).into_response();
+    }
+    state
+        .building_cards
+        .insert(building_id.clone(), body.cards.clone());
+
+    let collection = state.mongo_col.clone();
+    tokio::spawn(async move {
+        if let Err(error) = db::upsert_cards(&collection, &building_id, &body.cards).await {
+            log::error!("Failed to persist cards for {building_id}: {error}");
+        }
+    });
+    StatusCode::NO_CONTENT.into_response()
+}
+
+fn find_problem(cards: &[String]) -> Option<String> {
+    if cards.len() > MAX_CARDS {
+        return Some(format!("at most {MAX_CARDS} cards"));
+    }
+    if cards
+        .iter()
+        .any(|card| card.is_empty() || card.len() > MAX_CARD_ID_LENGTH)
+    {
+        return Some(format!("a card id is 1 to {MAX_CARD_ID_LENGTH} characters"));
+    }
+    let mut seen = std::collections::HashSet::new();
+    cards
+        .iter()
+        .find(|card| !seen.insert(card.as_str()))
+        .map(|card| format!("card {card} appears twice"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CardsBody, MAX_CARDS, get_cards, put_cards};
+    use crate::infra::claims::{ClaimsPayload, GatewayClaims};
+    use crate::models::PreferenceDocument;
+    use crate::state::AppState;
+    use axum::Json;
+    use axum::extract::{Path, State};
+    use axum::http::StatusCode;
+
+    fn claims() -> GatewayClaims {
+        GatewayClaims {
+            payload: ClaimsPayload {
+                sub: Some("u1".to_string()),
+                ..ClaimsPayload::default()
+            },
+        }
+    }
+
+    async fn make_state() -> AppState {
+        let opts = mongodb::options::ClientOptions::parse("mongodb://localhost:27017")
+            .await
+            .unwrap();
+        let client = mongodb::Client::with_options(opts).unwrap();
+        AppState::new(
+            client
+                .database("_unit_test")
+                .collection::<PreferenceDocument>("_prefs"),
+        )
+    }
+
+    async fn put(state: &AppState, cards: &[&str]) -> StatusCode {
+        let body = CardsBody {
+            cards: cards.iter().map(|card| card.to_string()).collect(),
+        };
+        put_cards(
+            claims(),
+            State(state.clone()),
+            Path("b1".to_string()),
+            Json(body),
+        )
+        .await
+        .status()
+    }
+
+    #[tokio::test]
+    async fn a_building_nobody_customised_has_no_cards_so_the_client_shows_its_default() {
+        let state = make_state().await;
+        let response = get_cards(claims(), Path("b1".to_string()), State(state)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn saved_cards_keep_their_order() {
+        let state = make_state().await;
+        assert_eq!(
+            put(&state, &["alerts", "temperature", "rooms"]).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            *state.building_cards.get("b1").unwrap(),
+            vec!["alerts", "temperature", "rooms"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_card_named_twice_or_too_many_cards_are_refused_and_nothing_is_stored() {
+        let state = make_state().await;
+        let too_many: Vec<String> = (0..=MAX_CARDS).map(|i| format!("m{i}")).collect();
+        let too_many: Vec<&str> = too_many.iter().map(String::as_str).collect();
+
+        assert_eq!(put(&state, &["co2", "co2"]).await, StatusCode::BAD_REQUEST);
+        assert_eq!(put(&state, &[""]).await, StatusCode::BAD_REQUEST);
+        assert_eq!(put(&state, &too_many).await, StatusCode::BAD_REQUEST);
+        assert!(state.building_cards.get("b1").is_none());
+    }
+}

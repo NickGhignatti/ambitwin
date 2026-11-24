@@ -49,6 +49,9 @@ async fn main() {
         .await
         .expect("Failed to load preferences from MongoDB")
     {
+        if let Some(cards) = doc.cards {
+            state.building_cards.insert(doc.building_id.clone(), cards);
+        }
         state
             .building_preferences
             .insert(doc.building_id, doc.allowed_columns);
@@ -65,6 +68,10 @@ async fn main() {
         .route(
             "/preferences/{building_id}",
             get(api::data::get_preferences).post(api::data::update_preferences),
+        )
+        .route(
+            "/preferences/{building_id}/cards",
+            get(api::cards::get_cards).put(api::cards::put_cards),
         )
         .route(
             "/preferences/init/{building_id}",
