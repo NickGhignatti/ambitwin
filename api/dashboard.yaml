@@ -9,7 +9,9 @@ info:
       telemetry tick only to buildings with preferences.
     - Writes land in memory and return `200` at once; saving to the database happens after, and
       a failure there is only logged. So `200` does not promise the change survives a restart.
-    - Every route needs a session but checks no role or domain.
+    - Every route needs a session. Reading a building's columns or cards needs Cedar `Read` on the
+      building (any role in one of its domains); saving them needs `Edit` (`business_staff` or higher).
+      Dashboard asks digital-twin which domains the building belongs to.
   version: 1.0.0
 servers:
   - url: http://localhost/dashboard
@@ -156,6 +158,7 @@ paths:
       - $ref: "#/components/parameters/BuildingId"
     get:
       summary: Get a building's columns
+      description: Needs Cedar `Read` on the building.
       tags: [Preferences]
       responses:
         "200":
@@ -164,10 +167,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetPreferencesResponse"
+        "403":
+          description: The caller may not see this building, or the building is unknown. Empty body.
         "404":
           description: The building has no preferences. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Empty body.
     post:
       summary: Replace a building's columns
+      description: |
+        Needs Cedar `Edit` on the building. Dashboard asks digital-twin which domains the building
+        belongs to, with the caller's claims; nothing is stored unless the answer allows it.
       tags: [Preferences]
       requestBody:
         required: true
@@ -182,12 +192,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdatePreferencesResponse"
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored. Empty body.
 
   /preferences/{building_id}/cards:
     parameters:
       - $ref: "#/components/parameters/BuildingId"
     get:
       summary: Get a building's cards
+      description: Needs Cedar `Read` on the building.
       tags: [Preferences]
       responses:
         "200":
@@ -198,10 +213,15 @@ paths:
                 $ref: "#/components/schemas/Cards"
         "404":
           description: Nobody saved cards for this building; the client shows its default. Empty body.
+        "403":
+          description: The caller may not see this building, or the building is unknown. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Empty body.
     put:
       summary: Replace a building's cards
       description: |
-        The same cards for everyone who views the building. Columns are left as they are.
+        The same cards for everyone who views the building. Columns are left as they are. Needs
+        Cedar `Edit` on the building.
       tags: [Preferences]
       requestBody:
         required: true
@@ -217,19 +237,28 @@ paths:
           content:
             text/plain:
               schema: { type: string, example: "card co2 appears twice" }
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Nothing stored. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored. Empty body.
 
   /preferences/init/{building_id}:
     post:
       summary: Give a new building its default columns
       description: |
         Sets `room_name` and `room_max_occupancy` when the building has no columns yet. A building
-        that already has columns keeps them, so calling twice is safe.
+        that already has columns keeps them, so calling twice is safe. Needs Cedar `Edit` on the
+        building: an entry turns on its live feed.
       tags: [Preferences]
       parameters:
         - $ref: "#/components/parameters/BuildingId"
       responses:
         "200":
           description: Defaults set, or already present. Empty body.
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Nothing stored.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored.
 
   /health:
     get:
