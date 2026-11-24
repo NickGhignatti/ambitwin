@@ -2,6 +2,7 @@ use dashmap::DashMap;
 use mongodb::Collection;
 use std::sync::Arc;
 
+use crate::infra::twin::TwinDirectory;
 use crate::models::PreferenceDocument;
 
 #[derive(Clone)]
@@ -9,14 +10,16 @@ pub struct AppState {
     pub building_preferences: Arc<DashMap<String, Vec<String>>>,
     pub building_cards: Arc<DashMap<String, Vec<String>>>,
     pub mongo_col: Collection<PreferenceDocument>,
+    pub twin: TwinDirectory,
 }
 
 impl AppState {
-    pub fn new(mongo_col: Collection<PreferenceDocument>) -> Self {
+    pub fn new(mongo_col: Collection<PreferenceDocument>, twin_url: String) -> Self {
         Self {
             building_preferences: Arc::new(DashMap::new()),
             building_cards: Arc::new(DashMap::new()),
             mongo_col,
+            twin: TwinDirectory::new(twin_url),
         }
     }
 }
@@ -34,7 +37,7 @@ mod tests {
         let col = client
             .database("_unit_test")
             .collection::<PreferenceDocument>("_prefs");
-        AppState::new(col)
+        AppState::new(col, "http://127.0.0.1:1".to_string())
     }
 
     #[tokio::test]

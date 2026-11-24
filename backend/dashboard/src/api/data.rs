@@ -2,10 +2,11 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 
+use crate::infra::authz::require_edit;
 use crate::infra::claims::GatewayClaims;
 use crate::infra::db;
 use crate::state::AppState;
@@ -49,11 +50,14 @@ pub async fn get_preferences(
 
 // POST /preferences/:building_id
 pub async fn update_preferences(
-    _claims: GatewayClaims,
+    claims: GatewayClaims,
     State(state): State<AppState>,
     Path(building_id): Path<String>,
     Json(payload): Json<UpdatePreferencesRequest>,
-) -> impl IntoResponse {
+) -> Response {
+    if let Err(status) = require_edit(&state.twin, &claims, &building_id).await {
+        return status.into_response();
+    }
     let column_count = payload.allowed_columns.len();
 
     state
@@ -74,7 +78,7 @@ pub async fn update_preferences(
         active_columns: column_count,
     };
 
-    (StatusCode::OK, Json(response))
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 #[cfg(test)]
@@ -87,17 +91,50 @@ mod tests {
     use axum::extract::{Path, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+    use claims_schema::Membership;
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn claims() -> GatewayClaims {
+        claims_in("eng", "business_staff")
+    }
+
+    fn claims_in(domain: &str, role: &str) -> GatewayClaims {
         GatewayClaims {
             payload: ClaimsPayload {
                 sub: Some("u1".to_string()),
+                memberships: vec![Membership {
+                    domain: domain.to_string(),
+                    role: Some(role.to_string()),
+                    external_id: None,
+                }],
                 ..ClaimsPayload::default()
             },
+            raw: "caller-claims".to_string(),
         }
     }
 
+    /// A digital-twin that places every building in `eng`, or answers `500` when `is_down`.
+    async fn twin(is_down: bool) -> MockServer {
+        let server = MockServer::start().await;
+        let response = if is_down {
+            ResponseTemplate::new(500)
+        } else {
+            ResponseTemplate::new(200).set_body_json(["eng"])
+        };
+        Mock::given(method("GET"))
+            .and(path_regex("^/domain/"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        server
+    }
+
     async fn make_state() -> AppState {
+        state_with_twin(&twin(false).await).await
+    }
+
+    async fn state_with_twin(twin: &MockServer) -> AppState {
         let opts = mongodb::options::ClientOptions::parse("mongodb://localhost:27017")
             .await
             .unwrap();
@@ -105,7 +142,52 @@ mod tests {
         let col = client
             .database("_unit_test")
             .collection::<PreferenceDocument>("_prefs");
-        AppState::new(col)
+        AppState::new(col, twin.uri())
+    }
+
+    async fn save_as(claims: GatewayClaims, state: &AppState) -> StatusCode {
+        update_preferences(
+            claims,
+            State(state.clone()),
+            Path("bldg-1".to_string()),
+            Json(UpdatePreferencesRequest {
+                allowed_columns: vec!["temperature".to_string()],
+            }),
+        )
+        .await
+        .into_response()
+        .status()
+    }
+
+    // ── access ────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn staff_of_another_domain_is_refused_and_nothing_is_stored() {
+        let state = make_state().await;
+        assert_eq!(
+            save_as(claims_in("sales", "business_admin"), &state).await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(state.building_preferences.get("bldg-1").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_customer_of_the_buildings_domain_is_refused() {
+        let state = make_state().await;
+        assert_eq!(
+            save_as(claims_in("eng", "standard_customer"), &state).await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn a_save_is_refused_when_digital_twin_cannot_say_who_may_edit() {
+        let state = state_with_twin(&twin(true).await).await;
+        assert_eq!(
+            save_as(claims(), &state).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(state.building_preferences.get("bldg-1").is_none());
     }
 
     // ── get_preferences ───────────────────────────────────────────────────────

@@ -85,4 +85,5 @@ No layers on purpose: there is no domain logic to protect. Two loops share one i
 ## Gaps
 
 - **A building with no columns gets no live feed.** Its ticks are dropped. Starting columns come from a best effort call by `digital-twin`, so a failed call leaves a building dark until someone saves columns.
+- **Reads are open.** Anyone signed in can read any building's columns. Saving needs `Edit` on the building, which `dashboard` checks by asking `digital-twin` for its domains.
 - **A saved column can be lost.** The answer comes before MongoDB has it. On a restart, the map is rebuilt from what MongoDB holds.

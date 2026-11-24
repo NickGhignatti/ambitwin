@@ -50,6 +50,7 @@ mod tests {
                 sub: Some("u1".to_string()),
                 ..ClaimsPayload::default()
             },
+            raw: String::new(),
         }
     }
 
@@ -61,7 +62,7 @@ mod tests {
         let col = client
             .database("_unit_test")
             .collection::<PreferenceDocument>("_prefs");
-        AppState::new(col)
+        AppState::new(col, "http://127.0.0.1:1".to_string())
     }
 
     #[tokio::test]

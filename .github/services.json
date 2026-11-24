@@ -203,6 +203,8 @@
     "cd_context": ".",
     "dockerfile": "backend/dashboard/Dockerfile",
     "depends_on": [
+      "backend/libs/auth-contracts",
+      "backend/libs/auth-policy",
       "schemas/claims-schema",
       "schemas/telemetry-schema"
     ]

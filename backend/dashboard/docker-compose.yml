@@ -12,6 +12,7 @@ services:
       - MONGO_URI=mongodb://dashboard-db:27017/contractsdb
       - SENSOR_METRICS_URL=http://telemetry:3000
       - TWIN_METRICS_URL=http://digital-twin:3000
+      - DIGITAL_TWIN_URL=http://digital-twin:3000
     depends_on:
       - redis
       - dashboard-db

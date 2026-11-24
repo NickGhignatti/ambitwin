@@ -30,7 +30,7 @@ async fn state_with(preferences: &[(&str, &[&str])]) -> AppState {
     let col: Collection<dashboard::models::PreferenceDocument> =
         client.database("ambitwin_test").collection("tunnel_prefs");
 
-    let state = AppState::new(col);
+    let state = AppState::new(col, "http://127.0.0.1:1".to_string());
     for (building, columns) in preferences {
         state.building_preferences.insert(
             (*building).to_string(),

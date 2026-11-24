@@ -9,6 +9,11 @@ tasks:
       - 'src/**/*'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      # infra/authz.rs embeds the shared Cedar bundle and replays its golden cases
+      - '/backend/libs/auth-policy/policy.cedar'
+      - '/backend/libs/auth-policy/schema.cedarschema'
+      - '/backend/libs/auth-policy/fixtures/conformance.json'
+      - '/backend/libs/auth-contracts/roles.json'
     options:
       mergeArgs: 'replace'
 

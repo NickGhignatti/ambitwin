@@ -9,7 +9,8 @@ info:
       telemetry tick only to buildings with preferences.
     - Writes land in memory and return `200` at once; saving to the database happens after, and
       a failure there is only logged. So `200` does not promise the change survives a restart.
-    - Every route needs a session but checks no role or domain.
+    - Every route needs a session. Saving columns also needs Cedar `Edit` on the building:
+      `business_staff` or higher in one of its domains, which dashboard asks digital-twin for.
   version: 1.0.0
 servers:
   - url: http://localhost/dashboard
@@ -168,6 +169,9 @@ paths:
           description: The building has no preferences. Empty body.
     post:
       summary: Replace a building's columns
+      description: |
+        Needs Cedar `Edit` on the building. Dashboard asks digital-twin which domains the building
+        belongs to, with the caller's claims; nothing is stored unless the answer allows it.
       tags: [Preferences]
       requestBody:
         required: true
@@ -182,6 +186,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdatePreferencesResponse"
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored. Empty body.
 
   /preferences/{building_id}/cards:
     parameters:
