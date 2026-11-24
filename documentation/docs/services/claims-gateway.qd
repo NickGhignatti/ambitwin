@@ -388,7 +388,7 @@ func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, erro
 		return "", fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)
 	}
 
-	// The tenancy service has no record but keycloak does.
+	// first login from an organization: tenancy has no record yet
 	if len(memberships) == 0 && identity.Organization != "" {
 		memberships, err = g.provisionOnFirstLogin(ctx, identity)
 		if err != nil {
@@ -451,6 +451,7 @@ func (g *Gateway) provisionOnFirstLogin(ctx context.Context, identity IDTokenCla
 	case err == nil:
 		return []authcontracts.Membership{{Domain: identity.Organization, Role: role}}, nil
 	case errors.Is(err, ErrInviteOnly):
+		// invite-only domain: sign in with no membership instead of failing
 		return []authcontracts.Membership{}, nil
 	default:
 		return nil, fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)

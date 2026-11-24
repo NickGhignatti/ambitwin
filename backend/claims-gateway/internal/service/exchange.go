@@ -67,8 +67,7 @@ func New(verifier Verifier, tenancy TenancyClient, signer Signer, keycloak Keycl
 	return &Gateway{verifier: verifier, tenancy: tenancy, signer: signer, keycloak: keycloak, ttl: ttl}
 }
 
-// Exchange is the whole login: verify -> lookup (JIT-provisioning on first login) -> mint.
-// It is the only place these three steps are stitched together.
+// Exchange turns a verified ID token into a gateway token, creating the membership on first login.
 func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, error) {
 	identity, err := g.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
@@ -80,7 +79,7 @@ func (g *Gateway) Exchange(ctx context.Context, rawIDToken string) (string, erro
 		return "", fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)
 	}
 
-	// The tenancy service has no record but keycloak does.
+	// first login from an organization: tenancy has no record yet
 	if len(memberships) == 0 && identity.Organization != "" {
 		memberships, err = g.provisionOnFirstLogin(ctx, identity)
 		if err != nil {
@@ -111,7 +110,6 @@ func accountName(identity IDTokenClaims) string {
 	return identity.PreferredUsername
 }
 
-// If no memberships exist yet and the token carries an Organization claim.
 func (g *Gateway) provisionOnFirstLogin(ctx context.Context, identity IDTokenClaims) ([]authcontracts.Membership, error) {
 	role := HighestRole(identity.Roles)
 	err := g.tenancy.Provision(ctx, ProvisionRequest{
@@ -121,6 +119,7 @@ func (g *Gateway) provisionOnFirstLogin(ctx context.Context, identity IDTokenCla
 	case err == nil:
 		return []authcontracts.Membership{{Domain: identity.Organization, Role: role}}, nil
 	case errors.Is(err, ErrInviteOnly):
+		// invite-only domain: sign in with no membership instead of failing
 		return []authcontracts.Membership{}, nil
 	default:
 		return nil, fmt.Errorf("%w: %v", ErrTenancyUnavailable, err)

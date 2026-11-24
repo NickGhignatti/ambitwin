@@ -19,7 +19,6 @@ func (g *Gateway) UpdateProfile(ctx context.Context, current authcontracts.Stand
 		current.AccountName = name
 	}
 
-	// Re-sign with updated claims
 	return g.signer.Sign(current, g.ttl)
 }
 
