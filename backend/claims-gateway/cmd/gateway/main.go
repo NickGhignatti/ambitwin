@@ -29,7 +29,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// OIDC discovery against Keycloak, fail-fast if unreachable at boot.
+	// fails at boot when keycloak is unreachable
 	verifier, err := oidcverifier.New(ctx, settings.OIDCDiscoveryURL, settings.OIDCIssuer, settings.OIDCClientID)
 	if err != nil {
 		log.Fatalf("oidc discovery: %v", err)
@@ -37,12 +37,10 @@ func main() {
 	tenancy := tenancyclient.New(settings.TenancyURL, settings.InternalSecret)
 	tokenSigner := signer.New(settings.SigningKey, settings.SigningKeyID, settings.Issuer)
 
-	// keycloakadmin holds the confidential cv-gateway client secret and is
-	// the only thing that ever talks to Keycloak's token/admin endpoints.
 	keycloakClient := keycloakadmin.New(settings.KeycloakBaseURL, settings.KeycloakRealm, settings.KeycloakClientID, settings.KeycloakClientSecret)
 	gateway := service.New(verifier, tenancy, tokenSigner, keycloakClient, settings.TokenTTL)
 
-	// /me verifies the gateway's OWN minted tokens.
+	// signed-in routes accept only tokens this gateway signed
 	publicKeySet := tokenSigner.JWKS()
 	verifyKeys, err := keyfunc.NewJWKSetJSON(publicKeySet)
 	if err != nil {
@@ -52,7 +50,7 @@ func main() {
 
 	server := &http.Server{Addr: settings.Addr, Handler: router}
 	go func() {
-		log.Printf("claims-gateway listening on %s (issuer=%s)", settings.Addr, settings.OIDCIssuer)
+		log.Printf("claims-gateway listening on %s (keycloak issuer=%s)", settings.Addr, settings.OIDCIssuer)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server: %v", err)
 		}
