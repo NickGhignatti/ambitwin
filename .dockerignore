@@ -25,7 +25,6 @@ landing-page
 documentation
 devices/simulators
 infra
-graphify-out
 **/*.md
 
 # Secrets and local state never belong in a build context.

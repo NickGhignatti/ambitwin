@@ -23,7 +23,6 @@ landing-page
 documentation
 devices/simulators
 infra
-graphify-out
 **/*.md
 
 .env
