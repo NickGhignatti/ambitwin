@@ -36,20 +36,20 @@ type fakePasswordChanger struct{ err error }
 
 func (f *fakePasswordChanger) ResetPassword(context.Context, string, string) error { return f.err }
 
-// gatewayWithProfileManagement wires a Gateway with password-auth and profile deps
-// plus a real signing key, so authenticated routes can be exercised with a genuine JWT.
 func gatewayWithProfileManagement(
-	reader service.ProfileReader, updater service.ProfileUpdater, changer service.PasswordChanger,
+	reader *fakeProfileReader, updater *fakeProfileUpdater, changer *fakePasswordChanger,
 ) (*service.Gateway, *rsa.PrivateKey) {
+	return gatewayWithKeycloak(fakeKeycloak{&fakeAuthenticator{}, &fakeRegistrar{}, reader, updater, changer})
+}
+
+// the real key lets signed-in routes run with a genuine JWT
+func gatewayWithKeycloak(keycloak fakeKeycloak) (*service.Gateway, *rsa.PrivateKey) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	gw := service.New(
+	return service.New(
 		&fakeVerifier{},
 		&fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}},
-		fakeSigner{}, time.Hour,
-	)
-	gw.WithPasswordAuth(&fakeAuthenticator{}, &fakeRegistrar{})
-	gw.WithProfileManagement(reader, updater, changer)
-	return gw, key
+		fakeSigner{}, keycloak, time.Hour,
+	), key
 }
 
 func authedRequest(t *testing.T, method, path, body string, key *rsa.PrivateKey) *http.Request {
@@ -190,8 +190,9 @@ func TestChangePasswordHandler_ChangesAndReturnsNoContent(t *testing.T) {
 
 func TestChangePasswordHandler_WrongCurrentPasswordIs401(t *testing.T) {
 	reader := &fakeProfileReader{email: "mario@unibo.it"}
-	gw, key := gatewayWithProfileManagement(reader, &fakeProfileUpdater{}, &fakePasswordChanger{})
-	gw.WithPasswordAuth(&fakeAuthenticator{err: service.ErrInvalidCredentials}, &fakeRegistrar{})
+	gw, key := gatewayWithKeycloak(fakeKeycloak{
+		&fakeAuthenticator{err: service.ErrInvalidCredentials}, &fakeRegistrar{}, reader, &fakeProfileUpdater{}, &fakePasswordChanger{},
+	})
 	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := authedRequest(t, http.MethodPost, "/profile/password", `{"currentPassword":"wrong","newPassword":"new-s3cret!"}`, key)
@@ -342,7 +343,7 @@ func TestChangePasswordHandler_DistinguishesEachUpstreamFailure(t *testing.T) {
 // may no longer have.
 func TestRefreshHandler_TenancyFailureIsReportedNotSilentlyReMinted(t *testing.T) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	gw := service.New(&fakeVerifier{}, erroringTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, erroringTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	rec := httptest.NewRecorder()

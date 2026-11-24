@@ -45,24 +45,26 @@ type Signer interface {
 	Sign(claims authcontracts.StandardClaims, ttl time.Duration) (string, error)
 }
 
+// Keycloak is the sign-in server's account API: password sign-in and self-service account changes.
+type Keycloak interface {
+	PasswordGrant(ctx context.Context, username, password string) (idToken string, err error)
+	CreateUser(ctx context.Context, email, password, name string) error
+	GetUser(ctx context.Context, userID string) (email, name, picture string, err error)
+	UpdateUser(ctx context.Context, userID, email, name string) error
+	// ResetPassword sets the password without checking the old one; the caller checks it first.
+	ResetPassword(ctx context.Context, userID, newPassword string) error
+}
+
 type Gateway struct {
 	verifier Verifier
 	tenancy  TenancyClient
 	signer   Signer
+	keycloak Keycloak
 	ttl      time.Duration
-
-	// authenticator/registrar back the in-app password login/registration path.
-	authenticator PasswordAuthenticator
-	registrar     UserRegistrar
-
-	// profileReader/profileUpdater/passwordChanger back the self-service account settings path.
-	profileReader   ProfileReader
-	profileUpdater  ProfileUpdater
-	passwordChanger PasswordChanger
 }
 
-func New(v Verifier, t TenancyClient, s Signer, ttl time.Duration) *Gateway {
-	return &Gateway{verifier: v, tenancy: t, signer: s, ttl: ttl}
+func New(verifier Verifier, tenancy TenancyClient, signer Signer, keycloak Keycloak, ttl time.Duration) *Gateway {
+	return &Gateway{verifier: verifier, tenancy: tenancy, signer: signer, keycloak: keycloak, ttl: ttl}
 }
 
 // Exchange is the whole login: verify -> lookup (JIT-provisioning on first login) -> mint.

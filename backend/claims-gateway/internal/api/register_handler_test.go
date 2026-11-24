@@ -33,12 +33,21 @@ func (f *fakeRegistrar) CreateUser(_ context.Context, _, _, name string) error {
 	return f.err
 }
 
-func gatewayWithPasswordAuth(auth service.PasswordAuthenticator, reg service.UserRegistrar) *service.Gateway {
+// fakeKeycloak joins the per-call fakes into the one Keycloak port.
+type fakeKeycloak struct {
+	*fakeAuthenticator
+	*fakeRegistrar
+	*fakeProfileReader
+	*fakeProfileUpdater
+	*fakePasswordChanger
+}
+
+func gatewayWithPasswordAuth(auth *fakeAuthenticator, reg *fakeRegistrar) *service.Gateway {
 	return service.New(
 		&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1", PreferredUsername: "mario"}},
 		&fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}},
-		fakeSigner{}, time.Hour,
-	).WithPasswordAuth(auth, reg)
+		fakeSigner{}, fakeKeycloak{auth, reg, &fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{}}, time.Hour,
+	)
 }
 
 func TestLoginHandler_ReturnsTokenAndSetsCookie(t *testing.T) {

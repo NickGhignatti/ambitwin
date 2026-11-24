@@ -71,7 +71,7 @@ Steps 1 to 5 happen once per sign-in. Steps 6 to 8 happen on every request.
 | `internal/signer/signer.go` | `Sign` the internal JWT, and publish the public key (`JWKS`) |
 | `internal/tenancyclient/client.go` | Signed calls to `tenancy`: `MembershipsFor`, `Provision` |
 
-`service` holds **only interfaces** (`Verifier`, `TenancyClient`, `Signer`, `PasswordAuthenticator`, and more). Tests pass fakes. `main.go` passes the real clients. Here is the map:
+`service` holds **only interfaces** (`Verifier`, `TenancyClient`, `Signer`, `Keycloak`). Tests pass fakes. `main.go` passes the real clients. Here is the map:
 
 .mermaid
     flowchart TD
@@ -80,7 +80,7 @@ Steps 1 to 5 happen once per sign-in. Steps 6 to 8 happen on every request.
         S --> V{{"Verifier"}}
         S --> T{{"TenancyClient"}}
         S --> SG{{"Signer"}}
-        S --> PA{{"PasswordAuthenticator,<br/>UserRegistrar, Profile*"}}
+        S --> PA{{"Keycloak"}}
         V -.-> OV["oidcverifier"]
         T -.-> TC["tenancyclient"]
         SG -.-> SI["signer"]
@@ -250,12 +250,10 @@ Reach Keycloak **at start**. If Keycloak is unreachable the process exits, so th
 
 ```go
 kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.RegistrationClientID, cfg.RegistrationClientSecret)
-gw := service.New(verifier, tenancy, sign, cfg.TokenTTL).
-	WithPasswordAuth(kcAdmin, kcAdmin).
-	WithProfileManagement(kcAdmin, kcAdmin, kcAdmin)
+gw := service.New(verifier, tenancy, sign, kcAdmin, cfg.TokenTTL)
 ```
 
-`keycloakadmin` is the only thing holding the secret of the confidential client, and the only thing that talks to Keycloak's token and admin endpoints. The same object fills five different ports (`PasswordAuthenticator`, `UserRegistrar`, `ProfileReader`, `ProfileUpdater`, `PasswordChanger`). The `With…` calls plug the optional features into the `Gateway`.
+`keycloakadmin` is the only thing holding the secret of the confidential client, and the only thing that talks to Keycloak's token and admin endpoints. It fills the one `Keycloak` port: password grant, create, read and update a user, reset a password.
 
 ```go
 publicKeySet := sign.JWKS()
@@ -735,7 +733,7 @@ Used by the app's own forms (`frontend/src/composables/authentication/useKeycloa
 
 ```go
 func (g *Gateway) Login(ctx context.Context, username, password string) (string, error) {
-	idToken, err := g.authenticator.PasswordGrant(ctx, username, password)
+	idToken, err := g.keycloak.PasswordGrant(ctx, username, password)
 	if err != nil {
 		return "", keycloakError(err, ErrInvalidCredentials)
 	}
@@ -743,7 +741,7 @@ func (g *Gateway) Login(ctx context.Context, username, password string) (string,
 }
 
 func (g *Gateway) Register(ctx context.Context, email, password, name string) (string, error) {
-	if err := g.registrar.CreateUser(ctx, email, password, name); err != nil {
+	if err := g.keycloak.CreateUser(ctx, email, password, name); err != nil {
 		return "", keycloakError(err, ErrEmailTaken)
 	}
 	return g.Login(ctx, email, password)
@@ -868,14 +866,14 @@ In the cluster, Istio does steps 2 to 5 itself: `infra/k8s/istio-request-authent
 
 ```go
 func (g *Gateway) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
-	email, _, _, err := g.profileReader.GetUser(ctx, userID)
+	email, _, _, err := g.keycloak.GetUser(ctx, userID)
 	if err != nil {
 		return keycloakError(err, ErrUserNotFound)
 	}
-	if _, err := g.authenticator.PasswordGrant(ctx, email, currentPassword); err != nil {
+	if _, err := g.keycloak.PasswordGrant(ctx, email, currentPassword); err != nil {
 		return keycloakError(err, ErrInvalidCredentials)
 	}
-	return keycloakError(g.passwordChanger.ResetPassword(ctx, userID, newPassword), ErrUserNotFound)
+	return keycloakError(g.keycloak.ResetPassword(ctx, userID, newPassword), ErrUserNotFound)
 }
 ```
 

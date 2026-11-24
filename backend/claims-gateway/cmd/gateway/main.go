@@ -40,9 +40,7 @@ func main() {
 	// keycloakadmin holds the confidential cv-gateway client secret and is
 	// the only thing that ever talks to Keycloak's token/admin endpoints.
 	kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.RegistrationClientID, cfg.RegistrationClientSecret)
-	gw := service.New(verifier, tenancy, sign, cfg.TokenTTL). // RSA signer for internal token
-									WithPasswordAuth(kcAdmin, kcAdmin).
-									WithProfileManagement(kcAdmin, kcAdmin, kcAdmin)
+	gw := service.New(verifier, tenancy, sign, kcAdmin, cfg.TokenTTL)
 
 	// /me verifies the gateway's OWN minted tokens.
 	publicKeySet := sign.JWKS()

@@ -224,9 +224,4 @@ func (c *Client) postForm(ctx context.Context, form url.Values) (*http.Response,
 	return c.http.Do(req)
 }
 
-// compile-time interface assertions in order to ensure the Client implements
-// the required interfaces.
-var (
-	_ service.PasswordAuthenticator = (*Client)(nil)
-	_ service.UserRegistrar         = (*Client)(nil)
-)
+var _ service.Keycloak = (*Client)(nil)

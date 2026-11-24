@@ -50,7 +50,7 @@ func TestExchangeHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 	gw := service.New(
 		&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1", PreferredUsername: "mario"}},
 		&fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}},
-		fakeSigner{}, time.Hour,
+		fakeSigner{}, nil, time.Hour,
 	)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
@@ -78,7 +78,7 @@ func TestExchangeHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 }
 
 func TestExchangeHandler_RejectsMissingBody(t *testing.T) {
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{}`))
@@ -91,7 +91,7 @@ func TestExchangeHandler_RejectsMissingBody(t *testing.T) {
 }
 
 func TestExchangeHandler_InvalidIDTokenIs401(t *testing.T) {
-	gw := service.New(&fakeVerifier{err: service.ErrInvalidIDToken}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{err: service.ErrInvalidIDToken}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{"idToken":"bad"}`))
@@ -104,7 +104,7 @@ func TestExchangeHandler_InvalidIDTokenIs401(t *testing.T) {
 }
 
 func TestExchangeHandler_TenancyUnavailableIs503(t *testing.T) {
-	gw := service.New(&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1"}}, &erroringTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1"}}, &erroringTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", strings.NewReader(`{"idToken":"ok"}`))
@@ -124,7 +124,7 @@ func (erroringTenancy) MembershipsFor(context.Context, string) ([]authcontracts.
 func (erroringTenancy) Provision(context.Context, service.ProvisionRequest) error { return nil }
 
 func TestJWKSHandler_ServesTheKeySet(t *testing.T) {
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
@@ -143,7 +143,7 @@ func TestJWKSHandler_ServesTheKeySet(t *testing.T) {
 }
 
 func TestHealthHandler(t *testing.T) {
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -156,7 +156,7 @@ func TestHealthHandler(t *testing.T) {
 }
 
 func TestLogoutHandler_ClearsTheCookie(t *testing.T) {
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
@@ -213,7 +213,7 @@ func TestMeHandler_ReturnsTheCallersClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generating key: %v", err)
 	}
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	token := signRealToken(t, key, authcontracts.StandardClaims{
@@ -239,7 +239,7 @@ func TestMeHandler_ReturnsTheCallersClaims(t *testing.T) {
 
 func TestMeHandler_RequiresAuthentication(t *testing.T) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, &fakeTenancy{}, fakeSigner{}, nil, time.Hour)
 	r := api.Mount(gw, testKeySet, realKeyfunc(t, &key.PublicKey), issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
