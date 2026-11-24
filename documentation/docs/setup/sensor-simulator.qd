@@ -15,9 +15,9 @@ Ambitwin ships three simulators. They are not microservices: they stand in for h
 
 | Simulator | Location | Image | Pretends to be |
 |---|---|---|---|
-| Sensor | `simulators/sensor-simulator/`, Node | `ambitwin-simulator` | Thermostats (`temperature`), people counters (`people_count`) |
-| Air quality | `simulators/aq-simulator/`, Python | `ambitwin-aq-simulator` | Air-quality stations (`air_quality`) |
-| Routers | `simulators/ap-simulator/`, Python | `ambitwin-ap-simulator` | OpenWrt routers (`router`), polled by `devices/ap-collector` |
+| Sensor | `devices/simulators/sensor-simulator/`, Node | `ambitwin-simulator` | Thermostats (`temperature`), people counters (`people_count`) |
+| Air quality | `devices/simulators/aq-simulator/`, Python | `ambitwin-aq-simulator` | Air-quality stations (`air_quality`) |
+| Routers | `devices/simulators/ap-simulator/`, Python | `ambitwin-ap-simulator` | OpenWrt routers (`router`), polled by `devices/ap-collector` |
 
 ---
 

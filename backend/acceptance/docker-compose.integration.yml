@@ -28,7 +28,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # Mounts the repo-root Caddyfile itself, not a copy — a trimmed fragment would
+  # Mounts the real infra/Caddyfile itself, not a copy — a trimmed fragment would
   # stop being the file that ships. It boots fine with tenancy/chat/agent/grafana
   # all absent: reverse_proxy resolves upstream DNS per request, not at config
   # load, so unused routes just 502 and nothing here asks for them.
@@ -36,7 +36,7 @@ services:
   gateway:
     image: caddy:2.11.9
     volumes:
-      - ../../Caddyfile:/etc/caddy/Caddyfile:z
+      - ../../infra/Caddyfile:/etc/caddy/Caddyfile:z
     # /gateway/* is the one prefix Caddy proxies without require_gateway_auth,
     # so this proves the Caddyfile parsed AND is routing — not merely listening.
     healthcheck:

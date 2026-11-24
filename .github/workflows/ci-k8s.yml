@@ -33,7 +33,7 @@ jobs:
 
       - name: Validate manifests
         run: |
-          find k8s/ -type f -name '*.yml' -print0 | xargs -0 kubeconform \
+          find infra/k8s/ -type f -name '*.yml' -print0 | xargs -0 kubeconform \
             -strict \
             -summary \
             -kubernetes-version 1.32.0 \
@@ -41,11 +41,11 @@ jobs:
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
       - name: Check for deprecated API versions
-        run: pluto detect-files -d k8s/
+        run: pluto detect-files -d infra/k8s/
 
       - name: Score manifests
         run: |
-          find k8s/ -type f -name '*.yml' -print0 | xargs -0 kube-score score \
+          find infra/k8s/ -type f -name '*.yml' -print0 | xargs -0 kube-score score \
             --ignore-test pod-networkpolicy \
             --ignore-test pod-disruption-budget \
             --ignore-test container-security-context-user-group-id \

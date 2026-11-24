@@ -29,7 +29,7 @@ Every deployable part ships as one image. Each service keeps its `Dockerfile` be
 | `agent` | Python, two stages | `backend/agent/Dockerfile` | repo root | `python:3.14.8-slim` | 3000 |
 | `aq-simulator`, `ap-simulator`, `ap-collector` | Python, one stage | `<dir>/Dockerfile` | own folder | `python:3.14.8-slim` | 3000 |
 | `frontend` | Static site | `frontend/Dockerfile` | `frontend/` | `nginx:1.31.5-alpine` | 8080 |
-| `sensor-simulator` | Node | `simulators/sensor-simulator/Dockerfile` | own folder | `node:24.21.0-alpine` | 3000 |
+| `sensor-simulator` | Node | `devices/simulators/sensor-simulator/Dockerfile` | own folder | `node:24.21.0-alpine` | 3000 |
 
 Why the repo root is the context for most of them: a service reads files that live **outside** its own folder.
 
@@ -146,7 +146,7 @@ RUN --mount=type=cache,target=/sccache,sharing=shared \
 
 Then `dev` runs a plain `cargo build`, with the same flags `cargo run` uses. A container then starts with nothing left to compile.
 
-### `docker/rust-base`
+### `infra/rust-base`
 
 A build-only image every Rust Dockerfile starts from.
 
@@ -161,9 +161,9 @@ How each builder finds it:
 
 | Where | How `FROM rust-base` resolves |
 |---|---|
-| Compose | `build.additional_contexts: rust-base: service:rust-base`. `docker/rust-base/docker-compose.yml` declares it with `scale: 0`, so it is built but never run |
+| Compose | `build.additional_contexts: rust-base: service:rust-base`. `infra/rust-base/docker-compose.yml` declares it with `scale: 0`, so it is built but never run |
 | `cd-registry` | `build-contexts: rust-base=docker-image://ghcr.io/<owner>/ambitwin-rust-base:<rust>-<hash>`. The hash is the first 12 characters of the Dockerfile's SHA-256, so an unchanged base is never rebuilt |
-| Integration runners | Include `docker/rust-base/docker-compose.yml` and export `RUST_VERSION` themselves |
+| Integration runners | Include `infra/rust-base/docker-compose.yml` and export `RUST_VERSION` themselves |
 
 ---
 
@@ -205,7 +205,7 @@ The libraries keep their real paths because each service's `go.mod` replaces the
 | Image | Stages | Notes |
 |---|---|---|
 | `frontend` | `build-stage`: `npm ci`, `npm run build` with `VITE_SERVER_URL`, `VITE_KEYCLOAK_URL`. `production-stage`: nginx serves `dist/` | `VITE_*` values are baked in at build time: one image per URL |
-| `sensor-simulator` | `builder`: build `dist/`. `production`: `npm ci --omit=dev` and `dist/` | Works in `/repo/simulators/sensor-simulator`, two levels deep, because the lockfile links `../../tooling/eslint-config`. At `/app` the link would point above the file system root and `npm ci` refuses the lockfile |
+| `sensor-simulator` | `builder`: build `dist/`. `production`: `npm ci --omit=dev` and `dist/` | — |
 
 nginx serves the frontend because a static site needs no Node: about 64 MB against 167 MB, and it starts at once.
 
@@ -283,7 +283,7 @@ Every image on GHCR is the production stage of the Dockerfiles above. A PR and `
 
 ## Traps
 
-- **Distroless cannot be patched in place.** It has no package manager, so a Debian fix in `libssl3` or `tzdata` reaches the Go and Rust images only when Google rebuilds the base. Until then the Trivy gate fails, or the CVE needs an expiring line in `.trivyignore`.
+- **Distroless cannot be patched in place.** It has no package manager, so a Debian fix in `libssl3` or `tzdata` reaches the Go and Rust images only when Google rebuilds the base. Until then the Trivy gate fails, or the CVE needs an expiring line in `.github/.trivyignore`.
 - **`just k8s build` names images by hand.** It lists 12 `docker build` lines with their own paths and contexts, separate from `.github/services.json`. A new service must be added to both.
 - **A new path dependency means four `COPY` lines.** One in `planner`, one before each cook (`dev` or `debug-deps`, `builder`). Missing one fails only that stage.
 - **Python and Node images run as root.** `kube-score`'s user check is switched off in `ci-k8s`.

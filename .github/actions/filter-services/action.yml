@@ -19,7 +19,7 @@ runs:
       run: |
         # its own command, not inside { ...; printf; }: a group exits with its last command,
         # so a depends_on that disagrees with go.mod/Cargo.toml would not stop the job
-        python3 scripts/service-filters.py > filter-services.yml
+        python3 .github/scripts/service-filters.py > filter-services.yml
         printf '%s\n' "$EXTRA_FILTERS" >> filter-services.yml
 
     - name: Detect changed services

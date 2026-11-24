@@ -16,7 +16,6 @@ __pycache__/
 node_modules/
 package.json
 # Agents utilities
-graphify-out/
 .planning/
 .claude/settings.local.json
 
@@ -26,7 +25,7 @@ graphify-out/
 compose.runtime.yml
 compose.integration-tests.runtime.yml
 # Documentation — landing-page/ is entirely build output (just docs build).
-# Its sources live in documentation/ and api/.
+# Its sources live in documentation/ and schemas/openapi/.
 landing-page/
 output/
 # Build artifacts

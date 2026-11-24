@@ -35,35 +35,37 @@ istio-install:
 
 [doc("Create or update all Kubernetes secrets from your .env file.")]
 secrets:
-    mise exec -- sh scripts/k8s/k8s-secrets.sh
+    mise exec -- sh infra/k8s/k8s-secrets.sh
 
 [doc("Validate all manifests without touching the cluster (dry run).")]
 validate:
-    kubectl apply --dry-run=client -f k8s/namespace.yml
-    kubectl apply --dry-run=client -f k8s/configmaps/
-    kubectl apply --dry-run=client -f k8s/stateful/
-    kubectl apply --dry-run=client -f k8s/deployments/
-    kubectl apply --dry-run=client -f k8s/istio-peer-authentication.yml
-    kubectl apply --dry-run=client -f k8s/istio-gateway.yml
-    kubectl apply --dry-run=client -f k8s/istio-request-authentication.yml
-    kubectl apply --dry-run=client -f k8s/istio-agent-authz.yml
-    kubectl apply --dry-run=client -f k8s/monitoring/
+    kubectl apply --dry-run=client -f infra/k8s/namespace.yml
+    kubectl apply --dry-run=client -f infra/k8s/configmaps/
+    kubectl apply --dry-run=client -f infra/k8s/stateful/
+    kubectl apply --dry-run=client -f infra/k8s/deployments/
+    kubectl apply --dry-run=client -f infra/k8s/istio-peer-authentication.yml
+    kubectl apply --dry-run=client -f infra/k8s/istio-gateway.yml
+    kubectl apply --dry-run=client -f infra/k8s/istio-request-authentication.yml
+    kubectl apply --dry-run=client -f infra/k8s/istio-agent-authz.yml
+    kubectl create configmap prometheus-rules -n ambitwin --from-file=infra/observability/prometheus.rules.yml --dry-run=client -o yaml | kubectl apply --dry-run=client -f -
+    kubectl apply --dry-run=client -f infra/k8s/monitoring/
 
 [doc("Apply all manifests in dependency order — idempotent, safe to re-run.")]
 apply:
-    kubectl apply -f k8s/namespace.yml
-    kubectl apply -f k8s/configmaps/
-    kubectl apply -f k8s/stateful/
-    kubectl apply -f k8s/deployments/
-    kubectl apply -f k8s/istio-peer-authentication.yml
-    kubectl apply -f k8s/istio-gateway.yml
-    kubectl apply -f k8s/istio-request-authentication.yml
-    kubectl apply -f k8s/istio-agent-authz.yml
-    kubectl apply -f k8s/monitoring/
+    kubectl apply -f infra/k8s/namespace.yml
+    kubectl apply -f infra/k8s/configmaps/
+    kubectl apply -f infra/k8s/stateful/
+    kubectl apply -f infra/k8s/deployments/
+    kubectl apply -f infra/k8s/istio-peer-authentication.yml
+    kubectl apply -f infra/k8s/istio-gateway.yml
+    kubectl apply -f infra/k8s/istio-request-authentication.yml
+    kubectl apply -f infra/k8s/istio-agent-authz.yml
+    kubectl create configmap prometheus-rules -n ambitwin --from-file=infra/observability/prometheus.rules.yml --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -f infra/k8s/monitoring/
 
 [doc("Full first-time cluster setup: create → gateway-api → istio-install → namespace → secrets → manifests.")]
 setup: create gateway-api istio-install
-    kubectl apply -f k8s/namespace.yml
+    kubectl apply -f infra/k8s/namespace.yml
     just k8s secrets
     just k8s apply
 

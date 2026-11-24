@@ -877,7 +877,7 @@ The browser sends the cookie. The edge checks it before the request reaches a se
 | 4 | `{"sub":"a1b2…","accountName":"Ada Lovelace","sid":"5e0f…","memberships":[…]}` as base64 |
 | 6 | Caddy copies only that one header (`copy_headers X-Gateway-Claims`) |
 
-In the cluster, Istio does steps 2 to 5 itself: `k8s/istio-request-authentication.yml` checks the same JWT with this service's JWKS (fetched through `/gateway/.well-known/jwks.json`) and writes the payload to `x-gateway-claims`. `/verify` is then unused.
+In the cluster, Istio does steps 2 to 5 itself: `infra/k8s/istio-request-authentication.yml` checks the same JWT with this service's JWKS (fetched through `/gateway/.well-known/jwks.json`) and writes the payload to `x-gateway-claims`. `/verify` is then unused.
 
 ---
 

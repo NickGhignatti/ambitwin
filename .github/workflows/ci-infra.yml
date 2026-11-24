@@ -22,7 +22,7 @@ jobs:
       - name: Syntax-check JavaScript
         run: |
           status=0
-          files=$(git ls-files scripts tooling | grep -E '\.(mjs|js)$' | grep -v '^tooling/eslint-config/' || true)
+          files=$(git ls-files scripts | grep -E '\.(mjs|js)$' || true)
           for f in $files; do
             node --check "$f" || { echo "::error file=$f::JavaScript syntax error"; status=1; }
           done
@@ -31,24 +31,22 @@ jobs:
       - name: Syntax-check shell scripts
         run: |
           status=0
-          files=$(git ls-files scripts | grep -E '\.sh$' || true)
+          files=$(git ls-files scripts infra | grep -E '\.sh$' || true)
           for f in $files; do
             bash -n "$f" || { echo "::error file=$f::shell syntax error"; status=1; }
           done
           exit $status
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version-file: .python-version
+        uses: ./.github/actions/setup-python
 
-      # scripts/test_*.py are stdlib-only self-checks that ran nowhere until now,
+      # test_*.py are stdlib-only self-checks that ran nowhere until now,
       # so a regression in e.g. the coverage merge stayed invisible until the
       # published badge looked wrong.
       - name: Run script self-checks
         run: |
           status=0
-          files=$(git ls-files 'scripts/test_*.py' || true)
+          files=$(git ls-files '.github/scripts/test_*.py' || true)
           for f in $files; do
             echo "--- $f"
             python3 "$f" || { echo "::error file=$f::self-check failed"; status=1; }

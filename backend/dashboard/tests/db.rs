@@ -1,6 +1,6 @@
 //! MongoDB adapter, against a real MongoDB.
 //!
-//! Picked up by `scripts/test/rust-integration-tests.sh`, which runs `tests/*.rs`
+//! Picked up by `scripts/rust-integration-tests.sh`, which runs `tests/*.rs`
 //! and nothing else — the same runner every other Rust service uses. These moved
 //! here from `src/infra/db.rs`, where they sat behind `#[ignore]` and ran nowhere:
 //! CI started no Mongo for this service, nothing in the repo passes `--ignored`,

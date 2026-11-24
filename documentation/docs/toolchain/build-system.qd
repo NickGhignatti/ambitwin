@@ -72,7 +72,7 @@ QUARKDOWN_VERSION = "2.7.0"
 | Pin | Used for | Also read by |
 |---|---|---|
 | `node = "24"` | `frontend`, `sensor-simulator`, `eslint-config` | Only the major is pinned: `mise` takes the newest 24, today 24.21.0 |
-| `python = "3.14.8"` | `agent`, simulators, `ap-collector`, `scripts/*.py` | CI reads `.python-version` instead |
+| `python = "3.14.8"` | `agent`, simulators, `ap-collector`, `scripts/*.py` | CI's `setup-python` action |
 | `rust = "1.99.1"` | The six Rust services and four schema crates | CI's `setup-rust` action; `cd-registry.yml` builds the Rust base image with it |
 | `go = "1.27.3"` | The four Go services and three Go libraries | CI's `setup-go` action; the `golang` tag in the four Go `Dockerfile`s must match by hand |
 | `ubi:moonrepo/moon` | `moon` itself, from its GitHub release | |
@@ -147,7 +147,7 @@ Activation is optional. A fresh clone with only `just` and `mise` installed runs
 | Every `just` recipe calling `moon`, `uv`, `python3`, `npx`, `istioctl` or a script | Yes | `mise exec --` |
 | `moon` and every task it runs | Yes, through its parent | Inherited `PATH` |
 | `docker`, `k3d`, `kubectl`, `quarkdown` | No | Installed by hand; not managed |
-| CI per-language workflows | No | `setup-rust` and `setup-go` read `.mise.toml` with `grep`; `setup-node` asks for `24.x`; `setup-python` reads `.python-version` |
+| CI per-language workflows | No | `setup-rust`, `setup-go` and `setup-python` read `.mise.toml` with `grep`; `setup-node` asks for `24.x` |
 | `ci-acceptance.yml` | Yes | `jdx/mise-action` |
 | Docker images | No | Their own base image tags, kept equal to the pins by hand |
 
@@ -158,8 +158,7 @@ A version bump is its own commit, because CI reads the same numbers and lint rul
 1. Edit `.mise.toml`.
 2. `mise install`.
 3. For Go: change the `golang` tag in the four Go `Dockerfile`s too.
-4. For Python: change `.python-version` too.
-5. `just lint all` and `just test all`: a new `clippy` or `go vet` can fail code that passed before.
+4. `just lint all` and `just test all`: a new `clippy` or `go vet` can fail code that passed before.
 
 ---
 
@@ -364,7 +363,7 @@ Each module file starts with `set working-directory := '..'`, so every recipe ru
 | `test` | `all`, `affected`, one per project, `<svc>-integration`, `frontend-e2e`, `agent-integration`, `eval`, `integration` | `moon`, `uv`, Playwright, `backend/acceptance/run-integration-tests.sh` |
 | `lint` | `all`, `affected`, `fix`, `workflows` | `moon`, `scripts/check-workflow-registry.py` |
 | `db` | `clear`, `clear-telemetry` | `mongosh` and `psql` inside the running containers |
-| `agent` | `ingest` | `scripts/ops/ingest-docs.py` |
+| `agent` | `ingest` | `backend/agent/scripts/ingest-docs.py` |
 | `docs` | `build`, `preview`, `serve` | Quarkdown, `scripts/check-docs-links.sh`, `scripts/docs-meta.py` |
 | `k8s` | `create`, `setup`, `apply`, `validate`, `secrets`, `build`, `push`, `load`, `restart`, `logs`, … | `k3d`, `kubectl`, `istioctl`, `docker` |
 
@@ -408,7 +407,7 @@ A recipe can name others to run first.
 | Step | What happens |
 |---|---|
 | 2 | Eleven scripts, each adds only the keys `.env` lacks: VAPID keys, eval token secret, Keycloak, Langfuse, control plane, gateway signing key, ingest key, telemetry database, Rust settings |
-| 5 | Root `docker-compose.yml`, then each folder in `backend/`, `simulators/`, `devices/`, then `frontend/`. In `dev` mode each folder's `docker-compose.dev.yml` is added |
+| 5 | Root `docker-compose.yml`, then each folder in `backend/`, `devices/simulators/`, `devices/`, then `frontend/`. In `dev` mode each folder's `docker-compose.dev.yml` is added |
 | 6 | `--no-agent` is a group: it drops every name containing `agent`. Bare words work too: `just stack dev socket` drops `socket` |
 | 7 | `compose.runtime.yml` is generated and ignored by git. `just db` and `just stack logs` read it |
 | 9 | `dev` adds `--watch`, so file changes reach the containers. `start` uses `up --build -d` instead |

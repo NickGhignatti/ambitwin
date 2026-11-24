@@ -28,7 +28,7 @@ def main():
         if change:
             slug = "" if path.name == "main.qd" else path.stem
             pages[slug] = {"path": str(path.relative_to(ROOT)), "commit": change[0], "date": change[1]}
-    manifest = json.loads((ROOT / ".release-please-manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((ROOT / ".github" / ".release-please-manifest.json").read_text(encoding="utf-8"))
     pages["_version"] = "v" + manifest["."]
     Path(sys.argv[1]).write_text(json.dumps(pages, separators=(",", ":")), encoding="utf-8")
 

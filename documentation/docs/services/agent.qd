@@ -119,7 +119,7 @@ Every field and status code: [Agent API](../api/index.html?spec=agent.yaml) (Ope
 This is the one service where **model output drives calls to other services**, so it is the most fenced in.
 
 - The edge forwards `/agent/*` **without** checking a token, and strips any `x-gateway-claims` the client sent. A browser calling `/agent/ask` directly arrives with no claims, so `require_user` answers `401`.
-- In the cluster, the Istio rule `k8s/istio-agent-authz.yml` lets only two workloads reach `agent`: the gateway and `chat`.
+- In the cluster, the Istio rule `infra/k8s/istio-agent-authz.yml` lets only two workloads reach `agent`: the gateway and `chat`.
 - `chat` calls `agent:3000/ask` from inside the network and sets the user's own `x-gateway-claims`.
 
 ### The `/ask` body
@@ -949,7 +949,7 @@ This proves the marker points at a chunk the model really saw. It does **not** p
 .mermaid
     sequenceDiagram
         autonumber
-        participant I as scripts/ops/ingest-docs.py
+        participant I as backend/agent/scripts/ingest-docs.py
         participant R as routes/ingest.py
         participant S as services/ingest.py
         participant Ch as chunk_markdown
@@ -1122,7 +1122,7 @@ Behaviour with a real model is checked by the golden dataset in `evals/`, run on
 
 ## Gaps
 
-- **The ingester cannot pass the ingest gate.** `scripts/ops/ingest-docs.py` signs its token with `"roles": []`. `IngestDocuments` needs weight 100, and `test_no_roles_cannot_ingest` shows such a caller gets `403`. So every file would be refused.
+- **The ingester cannot pass the ingest gate.** `backend/agent/scripts/ingest-docs.py` signs its token with `"roles": []`. `IngestDocuments` needs weight 100, and `test_no_roles_cannot_ingest` shows such a caller gets `403`. So every file would be refused.
 - **`top_k` on `/ask` does nothing.** Search depth comes only from `search_docs` and `TOP_K_*`.
 - **`search_docs` can never return more than 6.** Its `top_k` allows up to 10, but the retriever already cut to `TOP_K_FINAL`, 6.
 - **Roles lose their domain.** `business_staff` in `eng` and `standard_customer` in `ops` reads as "has `business_staff`" everywhere. A chunk with permission `business_staff` is then visible to that user for any domain.

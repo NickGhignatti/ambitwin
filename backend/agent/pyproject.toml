@@ -90,6 +90,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
 "evals/**" = ["S"]
+# operator-run: the agent URL comes from the operator's own env
+"scripts/**" = ["S310"]
 "alembic/**" = ["N"]
 
 [tool.ruff.format]

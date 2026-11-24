@@ -16,7 +16,7 @@ KEYCLOAK_ADMIN_PASSWORD=$(hex 16)
 KEYCLOAK_DB_PASSWORD=$(hex 16)
 # Google social login (optional). Create an OAuth 2.0 client in Google
 # Cloud Console, then paste its id/secret here to enable the
-# "Continue with Google" button. See keycloak/README-google.md.
+# "Continue with Google" button. See infra/keycloak/README-google.md.
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 EOF

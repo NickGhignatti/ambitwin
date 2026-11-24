@@ -27,11 +27,11 @@ The path a change takes, from the editor to a running cluster, and the tool that
 | Dependencies | `npm`, `uv`, `cargo`, `go` | Install and lock each language's libraries | lockfiles | [Dependencies](dependencies.qd) |
 | Checks | `clippy`, `gofmt`, `go vet`, `eslint`, `ruff`, `pyright` | Style and mistakes | per project | [Linting](linting.qd) |
 | Tests | `cargo test`, `go test`, `vitest`, `pytest`, Playwright | Prove the code works | per project | [Testing](testing.qd) |
-| Images | `docker` | Packs each service | each `Dockerfile`, `docker/rust-base/` | [Docker](docker.qd) |
+| Images | `docker` | Packs each service | each `Dockerfile`, `infra/rust-base/` | [Docker](docker.qd) |
 | Local stack | `docker compose` | Runs every service together on one machine | `docker-compose.yml` files | [Compose](compose.qd) |
 | Gate | GitHub Actions | Runs the checks on every pull request | `.github/workflows/`, `.github/services.json` | [CI](ci.qd) |
-| Versions of the product | release-please | Turns commit messages into releases and changelogs | `release-please-config.json` | [Release Please](release-please.qd) |
-| Cluster | `k3d`, `kubectl`, `istioctl` | Runs the images with Istio in front | `k8s/` | [Kubernetes](kubernetes.qd) |
+| Versions of the product | release-please | Turns commit messages into releases and changelogs | `.github/release-please-config.json` | [Release Please](release-please.qd) |
+| Cluster | `k3d`, `kubectl`, `istioctl` | Runs the images with Istio in front | `infra/k8s/` | [Kubernetes](kubernetes.qd) |
 | Docs | Quarkdown | Builds this site | `documentation/` | `just docs build` |
 
 .mermaid
@@ -199,14 +199,14 @@ Each fact has one home. A second copy would drift.
 
 | Fact | Home | Read by |
 |---|---|---|
-| Tool versions | `.mise.toml` | `mise`; CI's `setup-rust` and `setup-go`; `docs.just`; `cd-registry.yml` for the Rust base image |
+| Tool versions | `.mise.toml` | `mise`; CI's `setup-rust`, `setup-go` and `setup-python`; `docs.just`; `cd-registry.yml` for the Rust base image |
 | Which projects exist | `.moon/workspace.yml` | `moon` |
 | How a language is built, tested, linted | `.moon/tasks/<language>.yml` | `moon` |
 | Which services exist, their image, their databases | `.github/services.json` | every CI workflow, `scripts/check-workflow-registry.py` |
 | Commands a person types | `Justfile`, `just/*.just` | `just` |
 
-.box {Two pins live outside the mise file} type:{warning}
-    CI's `setup-node` asks for Node `24.x`, and `setup-python` reads `.python-version` (`3.14`). Both agree with `.mise.toml` today, but nothing checks it. `just` itself is not pinned: CI installs 1.42.4.
+.box {One pin lives outside the mise file} type:{warning}
+    CI's `setup-node` asks for Node `24.x`. It agrees with `.mise.toml` today, but nothing checks it. `just` itself is not pinned: CI installs 1.42.4.
 
 ---
 
@@ -226,7 +226,7 @@ A service has **one short name**, the same on every surface, with no `-service` 
 | Compose service, hostname | `telemetry:3000`, `digital-twin:3000` |
 | Environment variable | `TELEMETRY_URL`, `DIGITAL_TWIN_URL` |
 | Docker image | `ambitwin-telemetry` |
-| Kubernetes manifest | `k8s/deployments/telemetry.yml` |
+| Kubernetes manifest | `infra/k8s/deployments/telemetry.yml` |
 | Doc page | `documentation/docs/services/telemetry.qd` |
 
 - Why: a suffix on some surfaces and not others is how a key in `.github/services.json` ends up disagreeing with a directory.
@@ -249,9 +249,14 @@ The folder says what kind of thing it holds.
 | `backend/<name>/` | A deployable service |
 | `backend/libs/` | Go modules built into services, never deployed |
 | `backend/acceptance/` | The cross-service acceptance suite. Each service keeps its own `tests/` |
-| `schemas/` | Every shape that crosses a service boundary: `json/` schemas, `fixtures/`, Rust crates `*-schema` |
-| `simulators/` | Fake sensors and routers for local runs |
-| `tooling/` | Shared tool config, like `eslint-config` |
+| `schemas/` | Every shape that crosses a service boundary: `json/` schemas, `fixtures/`, Rust crates `*-schema`, `openapi/` specs |
+| `devices/` | What sends building data: `ap-collector` (real routers), `simulators/` (fake sensors and routers for local runs) |
+| `infra/` | Deploy and ops config: `rust-base/`, `k8s/`, `keycloak/`, `observability/` (Prometheus, Grafana), `Caddyfile` |
+| `scripts/` | What `just` calls. CI-only scripts live in `.github/scripts/`, a script with one owner lives with its owner |
+| `just/` | The `just` recipes, one file per group |
+| `documentation/` | This guide |
+
+`docker-compose.yml` stays at the root: Compose reads `.env` from the folder of the first compose file. The project name is fixed to `ambitwin` in `compose.runtime.yml`, so it no longer depends on the folder name.
 
 ### Rust
 

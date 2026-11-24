@@ -11,7 +11,7 @@ on:
     branches: ["master"]
     paths:
       - "backend/**"
-      - "simulators/**"
+      - "devices/simulators/**"
       - "frontend/**"
       - ".github/services.json"
       - ".github/workflows/cd-registry.yml"
@@ -229,7 +229,7 @@ jobs:
           limit-severities-for-sarif: true
           exit-code: "1"
           ignore-unfixed: true
-          trivyignores: .trivyignore
+          trivyignores: .github/.trivyignore
           vuln-type: os # OS packages only — app deps gated by per-service CI
 
       - name: Upload Trivy scan results to GitHub Security

@@ -21,11 +21,8 @@ node_modules
 frontend
 landing-page
 documentation
-simulators
-k8s
-grafana
-keycloak
-graphify-out
+devices/simulators
+infra
 **/*.md
 
 .env

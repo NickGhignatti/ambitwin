@@ -1,25 +1,39 @@
 name: 'Setup Python and uv'
-description: 'Install Python, uv and sync dependencies'
+description: 'Install the Python pinned in .mise.toml; with a working_directory, also install uv and sync dependencies'
 inputs:
   working_directory:
-    required: true
-    description: 'Python service directory'
+    required: false
+    default: ''
+    description: 'Python service directory; empty installs Python only'
 
 runs:
   using: "composite"
   steps:
+    - name: Resolve the pinned Python version
+      id: toolchain
+      shell: bash
+      run: |
+        version=$(grep -oP '^python = "\K[^"]+' "$GITHUB_WORKSPACE/.mise.toml")
+        if [[ -z "$version" ]]; then
+          echo "no python pin found in .mise.toml" >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
     - name: Setup Python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       with:
-        python-version-file: .python-version
+        python-version: ${{ steps.toolchain.outputs.version }}
 
     - name: Setup uv
+      if: inputs.working_directory != ''
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
       with:
         enable-cache: true
         cache-dependency-glob: ${{ inputs.working_directory }}/uv.lock
 
     - name: Install Dependencies
+      if: inputs.working_directory != ''
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: uv sync --locked --all-extras --dev

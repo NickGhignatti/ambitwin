@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 nav='documentation/_nav.qd'
 navbar='documentation/config/site.qd'
 apiref='documentation/docs/reference/api-reference.qd'
-specdir='api'
+specdir='schemas/openapi'
 missing=''
 
 for spec in "$specdir"/*.yaml; do

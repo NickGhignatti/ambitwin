@@ -21,7 +21,7 @@ COPY backend/libs/auth-policy /app/backend/libs/auth-policy
 COPY backend/libs/auth-contracts /app/backend/libs/auth-contracts
 COPY schemas/fixtures /app/schemas/fixtures
 COPY schemas/json /app/schemas/json
-COPY scripts/test/rust-integration-tests.sh /app/scripts/test/rust-integration-tests.sh
+COPY scripts/rust-integration-tests.sh /app/scripts/rust-integration-tests.sh
 COPY backend/digital-twin .
 # Built here, with the flags `cargo run` uses, so a container starts ready instead of compiling.
 RUN cargo build

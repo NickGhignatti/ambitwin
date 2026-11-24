@@ -170,6 +170,6 @@ The full path is on [Kubernetes & Istio](../toolchain/kubernetes.qd).
 
 ## Gaps
 
-- **`keycloak/README-google.md` does not exist**, though `keycloak.sh` points to it. How to set up the "Continue with Google" client is written nowhere.
+- **`infra/keycloak/README-google.md` does not exist**, though `keycloak.sh` points to it. How to set up the "Continue with Google" client is written nowhere.
 - **`just k8s build` likely fails for the six Rust images.** Each Dockerfile starts `FROM rust-base`. Compose provides it as a build context, but the plain `docker build` in the recipe gives none, and the local image is named `ambitwin-rust-base`. Read from the files, not run.
 - **`openssl`, `k3d`, `kubectl` and Quarkdown have no pin** in `.mise.toml`: each machine has its own version.

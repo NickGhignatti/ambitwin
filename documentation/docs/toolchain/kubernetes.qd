@@ -8,8 +8,8 @@
     | k3d | Runs a small Kubernetes (k3s) inside Docker containers | One server node |
     | Namespace | A named box that groups a cluster's objects | `ambitwin` |
     | Pod | One or more containers that start and stop together | `telemetry-7f9c…` |
-    | Deployment | Keeps N copies of a stateless pod running | `k8s/deployments/telemetry.yml` |
-    | StatefulSet | Like a Deployment, but each pod keeps its own disk | `k8s/stateful/telemetry-db.yml` |
+    | Deployment | Keeps N copies of a stateless pod running | `infra/k8s/deployments/telemetry.yml` |
+    | StatefulSet | Like a Deployment, but each pod keeps its own disk | `infra/k8s/stateful/telemetry-db.yml` |
     | Init container | Runs to the end before the main container starts | `wait-for-db` |
     | Secret, ConfigMap | Values handed to pods as environment variables; a Secret for private ones | `telemetry-secret`, `common-config` |
     | Istio | A service mesh: it carries, encrypts and checks traffic between pods | Ambient mode |
@@ -23,7 +23,7 @@ The cluster setup mirrors Docker Compose: same images, same routes, same claims 
 
 ---
 
-## What is in `k8s/`
+## What is in `infra/k8s/`
 
 | Path | Holds |
 |---|---|
@@ -31,7 +31,8 @@ The cluster setup mirrors Docker Compose: same images, same routes, same claims 
 | `configmaps/common.yml` | `common-config`: `PORT`, `REDIS_URL`, `KAFKA_BROKERS`, service URLs, `PUBLIC_URL=http://ambitwin.local` |
 | `stateful/` | 10 StatefulSets: `twin-db`, `notification-db`, `dashboard-db`, `chat-db` (MongoDB), `telemetry-db` (TimescaleDB), `agent-db` (pgvector), `registry-db`, `tenancy-db` (Postgres), `redis`, `kafka` |
 | `deployments/` | 12 Deployments and their Services: the 11 backend services and `frontend` |
-| `monitoring/` | `prometheus` (with its ServiceAccount, ClusterRole and scrape config), `grafana` |
+| `monitoring/` | `prometheus` (with its ServiceAccount, ClusterRole and scrape config), `grafana`. The alert rules are not here: `just k8s apply` builds ConfigMap `prometheus-rules` from `infra/observability/prometheus.rules.yml`, the file compose mounts too |
+| `k8s-secrets.sh` | Writes the secrets from `.env`, see below |
 | `istio-peer-authentication.yml` | `STRICT` mTLS for the whole namespace |
 | `istio-gateway.yml` | The `Gateway` and one `HTTPRoute` per path |
 | `istio-request-authentication.yml` | JWT check at the edge, and the policy saying which paths need it |
@@ -41,7 +42,7 @@ Not in the cluster: Keycloak, the Langfuse stack, the simulators, `ap-collector`
 
 ### A Deployment, piece by piece
 
-`k8s/deployments/telemetry.yml`:
+`infra/k8s/deployments/telemetry.yml`:
 
 | Part | Value | Why |
 |---|---|---|
@@ -75,7 +76,7 @@ Services that need more than one dependency get one init container per dependenc
         J->>I: istioctl install profile ambient, k3d CNI paths
         I-->>C: istiod, ztunnel, istio-cni
         J->>C: apply namespace.yml
-        J->>J: scripts/k8s/k8s-secrets.sh reads the env file
+        J->>J: infra/k8s/k8s-secrets.sh reads the env file
         J->>C: one Secret per service
         J->>C: just k8s apply, in order
 
@@ -99,13 +100,14 @@ Services that need more than one dependency get one init container per dependenc
 | 6 | `istio-gateway.yml` | Creates the edge workload the next two select |
 | 7 | `istio-request-authentication.yml` | |
 | 8 | `istio-agent-authz.yml` | |
-| 9 | `monitoring/` | |
+| 9 | ConfigMap `prometheus-rules` | Built from `infra/observability/prometheus.rules.yml`, so both stacks alert on one file |
+| 10 | `monitoring/` | Prometheus mounts `prometheus-config` and `prometheus-rules` as one folder |
 
 Every step is `kubectl apply`: running it again changes only what differs.
 
 ### Secrets
 
-`scripts/k8s/k8s-secrets.sh` reads `.env`, checks every required key **before** writing anything, then writes each secret with `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`, so it can run again.
+`infra/k8s/k8s-secrets.sh` reads `.env`, checks every required key **before** writing anything, then writes each secret with `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`, so it can run again.
 
 | Secret | Holds |
 |---|---|
