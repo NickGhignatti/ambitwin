@@ -140,7 +140,7 @@ Two safety nets before signing. A missing session id gets a new random one. A `n
 		"iat":         time.Now().Unix(),
 		"exp":         time.Now().Add(ttl).Unix(),
 	})
-	tok.Header["kid"] = s.kid // Signer's key ID
+	tok.Header["kid"] = s.kid
 	return tok.SignedString(s.key)
 }
 ```

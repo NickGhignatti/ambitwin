@@ -40,7 +40,7 @@ func (s *Signer) Sign(claims authcontracts.StandardClaims, ttl time.Duration) (s
 		"iat":         time.Now().Unix(),
 		"exp":         time.Now().Add(ttl).Unix(),
 	})
-	tok.Header["kid"] = s.kid // Signer's key ID
+	tok.Header["kid"] = s.kid
 	return tok.SignedString(s.key)
 }
 
@@ -50,8 +50,7 @@ func (s *Signer) JWKS() []byte {
 		Metadata: jwkset.JWKMetadataOptions{KID: s.kid, ALG: jwkset.ALG("RS256")},
 	})
 	if err != nil {
-		// The key is always a valid RSA public key we generated ourselves; failure here
-		// means that invariant broke — a programmer error, not a runtime condition.
+		// our own RSA key always converts; an error here is a bug
 		panic("signer: building JWKS from our own key: " + err.Error())
 	}
 	raw, err := json.Marshal(jwkset.JWKSMarshal{Keys: []jwkset.JWKMarshal{jwk.Marshal()}})
