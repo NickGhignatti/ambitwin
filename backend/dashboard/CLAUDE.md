@@ -40,7 +40,7 @@ from.
 reads only `building_preferences`. `PUT .../cards` refuses a bad list (`api/cards.rs`) before
 storing anything.
 
-**Reading a building's columns needs Cedar `Read`, saving needs `Edit`** (`infra/authz.rs`).
+**Reading a building's columns or cards needs Cedar `Read`, saving needs `Edit`** (`infra/authz.rs`).
 Only digital-twin knows a building's domains, so `require_read` / `require_edit` ask
 `GET /domain/{id}` with the caller's raw claims on every call: `403` when denied or unknown, `503`
 when twin cannot answer — never allow on doubt. No cached copy: it would go stale when a building

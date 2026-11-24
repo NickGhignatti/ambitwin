@@ -439,12 +439,12 @@ The edge strips `/dashboard` (`handle_path` in the `Caddyfile`), so `/dashboard/
 
 ## Who may read and save
 
-A building's columns are part of that building, so the same rules guard them as the building itself:
+A building's columns and cards are part of that building, so the same rules guard them as the building itself:
 
 | Action | Needs | Which means |
 |---|---|---|
-| Read (`GET`) | Cedar `Read` on one of the building's domains | any role there, `standard_customer` included |
-| Save (`POST`) | Cedar `Edit` on one of the building's domains | `business_staff` or higher there. A save changes what **everyone** looking at the building sees |
+| Read (`GET` columns or cards) | Cedar `Read` on one of the building's domains | any role there, `standard_customer` included |
+| Save (`POST` columns, `PUT` cards) | Cedar `Edit` on one of the building's domains | `business_staff` or higher there. A save changes what **everyone** looking at the building sees |
 | Start (`POST /preferences/init`) | Cedar `Edit` on one of the building's domains | the creator, called by `digital-twin`. An entry turns on the building's live feed |
 
 `dashboard` knows who is asking (the claims), but not which domains a building belongs to. Only `digital-twin` knows that, so `dashboard` asks it on every read and save, with the caller's own claims header:
@@ -555,7 +555,10 @@ The strip of summary cards above the table: rooms, average temperature, occupanc
 
 ```rust
 // GET /preferences/{building_id}/cards
-pub async fn get_cards(_claims: GatewayClaims, Path(building_id): Path<String>, State(state): State<AppState>) -> Response {
+pub async fn get_cards(claims: GatewayClaims, Path(building_id): Path<String>, State(state): State<AppState>) -> Response {
+    if let Err(status) = require_read(&state.twin, &claims, &building_id).await {
+        return status.into_response();
+    }
     match state.building_cards.get(&building_id) {
         Some(cards) => Json(CardsBody { cards: cards.clone() }).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
@@ -567,6 +570,9 @@ pub async fn get_cards(_claims: GatewayClaims, Path(building_id): Path<String>, 
 
 ```rust
 // PUT /preferences/{building_id}/cards
+if let Err(status) = require_edit(&state.twin, &claims, &building_id).await {
+    return status.into_response();
+}
 if let Some(problem) = find_problem(&body.cards) {
     return (StatusCode::BAD_REQUEST, problem).into_response();
 }
@@ -575,7 +581,7 @@ tokio::spawn(async move { db::upsert_cards(&collection, &building_id, &body.card
 StatusCode::NO_CONTENT.into_response()
 ```
 
-Same shape as saving columns: memory first, MongoDB in the background, so `204` does not promise the write survived. One difference: the list **is** checked before anything is stored.
+Same shape as saving columns: `Read` to see them, `Edit` to change them (see *Who may read and save*), memory first, MongoDB in the background, so `204` does not promise the write survived. One difference: the list **is** checked before anything is stored.
 
 | Refused with `400` | Why |
 |---|---|
@@ -949,8 +955,8 @@ Every field and status code: [Dashboard API](../api/index.html?spec=dashboard.ya
 | `GET` | `/` | `client`, `metricCatalog.ts` | Catalog of every metric. `{"metrics": [MetricContract, …]}` |
 | `GET` | `/preferences/{building_id}` | `client` | `{building_id, allowed_columns}`, or `404` when unknown |
 | `POST` | `/preferences/{building_id}` | `client` | Replace the columns. Body `{allowed_columns}` |
-| `GET` | `/preferences/{building_id}/cards` | `client`, `useDashboardCards.ts` | `{cards}`, or `404` when nobody chose |
-| `PUT` | `/preferences/{building_id}/cards` | `client` | Replace the cards. Body `{cards}`. `204`, or `400` on a bad list |
+| `GET` | `/preferences/{building_id}/cards` | `client`, `useDashboardCards.ts` | `{cards}`, or `404` when nobody chose. Needs `Read` |
+| `PUT` | `/preferences/{building_id}/cards` | `client` | Replace the cards. Body `{cards}`. Needs `Edit`. `204`, or `400` on a bad list |
 | `POST` | `/preferences/init/{building_id}` | `digital-twin`, after a registration | Give a new building its starting columns. Needs `Edit`: `403`, or `503` when `digital-twin` cannot say |
 | `GET` | `/metrics` | Prometheus | Counters and latency |
 | `GET` | `/health` | Probes | `200`, empty body |
@@ -1003,7 +1009,7 @@ just test dashboard-integration   # tests/*.rs against throwaway MongoDB and Red
 |---|---|
 | `src/tunnel.rs` | `resolve_channel`: own building's channel. Any metric forwarded. Unknown building dropped. Never another building's channel. A non-tick does not parse |
 | `src/api/data.rs`, `init.rs` | Save stores, overwrites, accepts an empty list. Init gives exactly `room_name` and `room_max_occupancy`. A second init keeps the columns. Init by a non-editor: `403`; `digital-twin` down: `503`; nothing stored either way |
-| `src/api/cards.rs` | No saved cards: `404`. Saved cards keep their order. A card named twice, an empty id or too many cards: `400`, nothing stored |
+| `src/api/cards.rs` | No saved cards: `404`. Saved cards keep their order. A card named twice, an empty id or too many cards: `400`, nothing stored. An outsider cannot read them, a customer cannot change them: `403` |
 | `src/api/dashboard.rs` | `push_unique_metric` cases. Both catalog shapes fill `source`. An unparseable, unreachable or slow source is skipped while the others stay |
 | `src/infra/authz.rs` | Every golden `Read` and `Edit` case of the shared Cedar fixture decides the same here. Staff of any one domain may edit. No domains: nobody |
 | `src/infra/twin.rs` | Asks with the caller's claims and an encoded building id. An error answer is an error, not an empty list |

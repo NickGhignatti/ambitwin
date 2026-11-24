@@ -16,7 +16,7 @@ Two jobs:
 
 - **Route** every tick to its own building's feed.
 - **Remember** each building's columns and summary cards, and collect the metric catalog.
-- **Guard** each building's columns like the building itself: reading needs `Read` on one of its domains, saving needs `Edit`. `digital-twin` says which domains a building belongs to.
+- **Guard** each building's columns and cards like the building itself: reading needs `Read` on one of its domains, saving needs `Edit`. `digital-twin` says which domains a building belongs to.
 
 ---
 

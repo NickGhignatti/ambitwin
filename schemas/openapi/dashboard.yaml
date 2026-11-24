@@ -9,8 +9,8 @@ info:
       telemetry tick only to buildings with preferences.
     - Writes land in memory and return `200` at once; saving to the database happens after, and
       a failure there is only logged. So `200` does not promise the change survives a restart.
-    - Every route needs a session. Reading a building's columns needs Cedar `Read` on the building
-      (any role in one of its domains); saving them needs `Edit` (`business_staff` or higher).
+    - Every route needs a session. Reading a building's columns or cards needs Cedar `Read` on the
+      building (any role in one of its domains); saving them needs `Edit` (`business_staff` or higher).
       Dashboard asks digital-twin which domains the building belongs to.
   version: 1.0.0
 servers:
@@ -202,6 +202,7 @@ paths:
       - $ref: "#/components/parameters/BuildingId"
     get:
       summary: Get a building's cards
+      description: Needs Cedar `Read` on the building.
       tags: [Preferences]
       responses:
         "200":
@@ -212,10 +213,15 @@ paths:
                 $ref: "#/components/schemas/Cards"
         "404":
           description: Nobody saved cards for this building; the client shows its default. Empty body.
+        "403":
+          description: The caller may not see this building, or the building is unknown. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Empty body.
     put:
       summary: Replace a building's cards
       description: |
-        The same cards for everyone who views the building. Columns are left as they are.
+        The same cards for everyone who views the building. Columns are left as they are. Needs
+        Cedar `Edit` on the building.
       tags: [Preferences]
       requestBody:
         required: true
@@ -231,6 +237,10 @@ paths:
           content:
             text/plain:
               schema: { type: string, example: "card co2 appears twice" }
+        "403":
+          description: The caller may not edit this building, or the building is unknown. Nothing stored. Empty body.
+        "503":
+          description: digital-twin could not say who owns the building. Nothing stored. Empty body.
 
   /preferences/init/{building_id}:
     post:
