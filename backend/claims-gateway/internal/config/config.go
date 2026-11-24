@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -30,52 +31,34 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	issuer := os.Getenv("OIDC_ISSUER")
-	if issuer == "" {
-		return Config{}, fmt.Errorf("OIDC_ISSUER is required")
+	var missing []string
+	required := func(name string) string {
+		value := os.Getenv(name)
+		if value == "" {
+			missing = append(missing, name)
+		}
+		return value
 	}
-	discoveryURL := os.Getenv("OIDC_DISCOVERY_URL")
-	if discoveryURL == "" {
-		discoveryURL = issuer // single-hostname deployments: same URL for both
+	issuer := required("OIDC_ISSUER")
+	clientID := required("OIDC_CLIENT_ID")
+	tenancyURL := required("TENANCY_URL")
+	secret := required("INTERNAL_SIGNING_SECRET")
+	keycloakRealm := required("KEYCLOAK_REALM")
+	registrationClientID := required("REGISTRATION_CLIENT_ID")
+	registrationClientSecret := required("REGISTRATION_CLIENT_SECRET")
+	if len(missing) > 0 {
+		return Config{}, fmt.Errorf("missing required env: %s", strings.Join(missing, ", "))
 	}
-	clientID := os.Getenv("OIDC_CLIENT_ID")
-	if clientID == "" {
-		return Config{}, fmt.Errorf("OIDC_CLIENT_ID is required")
-	}
-	tenancyURL := os.Getenv("TENANCY_URL")
-	if tenancyURL == "" {
-		return Config{}, fmt.Errorf("TENANCY_URL is required")
-	}
-	secret := os.Getenv("INTERNAL_SIGNING_SECRET")
-	if secret == "" {
-		return Config{}, fmt.Errorf("INTERNAL_SIGNING_SECRET is required")
-	}
-	keycloakRealm := os.Getenv("KEYCLOAK_REALM")
-	if keycloakRealm == "" {
-		return Config{}, fmt.Errorf("KEYCLOAK_REALM is required")
-	}
-	registrationClientID := os.Getenv("REGISTRATION_CLIENT_ID")
-	if registrationClientID == "" {
-		return Config{}, fmt.Errorf("REGISTRATION_CLIENT_ID is required")
-	}
-	registrationClientSecret := os.Getenv("REGISTRATION_CLIENT_SECRET")
-	if registrationClientSecret == "" {
-		return Config{}, fmt.Errorf("REGISTRATION_CLIENT_SECRET is required")
-	}
+	// single-hostname deployments use one URL for both
+	discoveryURL := cmp.Or(os.Getenv("OIDC_DISCOVERY_URL"), issuer)
 
 	key, kid, err := loadOrGenerateKey()
 	if err != nil {
 		return Config{}, err
 	}
 
-	addr := os.Getenv("ADDR")
-	if addr == "" {
-		addr = ":3000"
-	}
-	gwIssuer := os.Getenv("GATEWAY_ISSUER")
-	if gwIssuer == "" {
-		gwIssuer = "cv-gateway"
-	}
+	addr := cmp.Or(os.Getenv("ADDR"), ":3000")
+	gwIssuer := cmp.Or(os.Getenv("GATEWAY_ISSUER"), "cv-gateway")
 
 	keycloakBaseURL := strings.TrimSuffix(discoveryURL, "/realms/"+keycloakRealm)
 

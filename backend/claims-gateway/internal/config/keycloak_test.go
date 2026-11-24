@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
@@ -44,5 +47,16 @@ func TestLoad_DerivesKeycloakBaseURLFromDiscoveryURL(t *testing.T) {
 	}
 	if cfg.KeycloakRealm != "test" {
 		t.Fatalf("got realm %q", cfg.KeycloakRealm)
+	}
+}
+
+func TestLoad_NamesEveryMissingVariable(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("KEYCLOAK_REALM", "")
+	t.Setenv("REGISTRATION_CLIENT_SECRET", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "KEYCLOAK_REALM") || !strings.Contains(err.Error(), "REGISTRATION_CLIENT_SECRET") {
+		t.Fatalf("got %v, want both missing names", err)
 	}
 }
