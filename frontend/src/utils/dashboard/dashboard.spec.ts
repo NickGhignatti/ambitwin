@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TableBody } from '@/types/dashboard/table.ts'
 import type { Room } from '@/types/digital-twin/building.ts'
-import { aqiBand, filterRows, roomsToRows, summarize } from './dashboard.ts'
+import { aggregate, aqiBand, filterRows, roomsToRows, summarize } from './dashboard.ts'
 
 const STATUS = 'dashboard.table.rooms.status'
 
@@ -26,18 +26,15 @@ describe('the building summary above the table', () => {
     expect(summary).toMatchObject({ rooms: 3, people: 24, capacity: 40, occupancy: 0.6 })
   })
 
-  it('averages temperature and air quality over the rooms that report them', () => {
-    const summary = summarize(rooms, {
-      temperature: [point('a', 20), point('b', 23)],
-      indoor_aqi: [point('c', 42)],
-    })
-    expect(summary.averageTemperature).toBe(21.5)
-    expect(summary.averageAqi).toBe(42)
+  it('averages a measure over the rooms that report it', () => {
+    const roomIds = new Set(rooms.map((row) => row.roomId))
+    expect(aggregate([point('a', 20), point('b', 23)], roomIds, 'average')).toBe(21.5)
+    expect(aggregate([point('c', 42)], roomIds, 'average')).toBe(42)
   })
 
-  it('has no average and no occupancy when nothing reports', () => {
-    const summary = summarize([], {})
-    expect(summary).toMatchObject({ averageTemperature: null, averageAqi: null, occupancy: null })
+  it('has no figure and no occupancy when nothing reports', () => {
+    expect(aggregate(undefined, new Set(), 'average')).toBeNull()
+    expect(summarize([], {}).occupancy).toBeNull()
   })
 
   it('counts full and overcrowded rooms as alerts', () => {

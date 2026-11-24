@@ -1,5 +1,6 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import { makeRequest } from '@/composables/commons/useApi.ts'
+import { fetchMetricCatalog } from '@/composables/dashboard/metricCatalog.ts'
 import type { TableHeader } from '@/types/dashboard/table.ts'
 import type { MetricContract } from '@/types/dashboard/table.ts'
 import {
@@ -39,11 +40,7 @@ export function useColumnManager(
     isFetchingMetrics.value = true
     metricsFailed.value = false
     try {
-      const res = await makeRequest('/dashboard')
-      if (!res.ok) throw new Error(`catalog request failed: ${res.status}`)
-      const body = await res.text()
-      if (body.trim() === '') throw new Error('catalog request returned an empty body')
-      availableMetrics.value = JSON.parse(body).metrics ?? []
+      availableMetrics.value = await fetchMetricCatalog()
     } catch (e) {
       metricsFailed.value = true
       console.error('[useColumnManager] Failed to fetch metrics catalog:', e)

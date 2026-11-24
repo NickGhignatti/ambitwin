@@ -1,5 +1,5 @@
 import type { ApiDataPoint } from '@/composables/commons/useSensorData.ts'
-import type { TableBody } from '@/types/dashboard/table.ts'
+import type { Aggregation, MetricContract, TableBody } from '@/types/dashboard/table.ts'
 import type { Room } from '@/types/digital-twin/building.ts'
 import { getStatusByOccupants, isAlertStatus } from '@/utils/dashboard/status.ts'
 
@@ -11,8 +11,6 @@ export interface BuildingSummary {
   people: number
   capacity: number
   occupancy: number | null
-  averageTemperature: number | null
-  averageAqi: number | null
   alerts: number
 }
 
@@ -44,11 +42,39 @@ export function summarize(
     people,
     capacity,
     occupancy: capacity > 0 ? people / capacity : null,
-    averageTemperature: average(valuesFor(readings.temperature, roomIds)),
-    averageAqi: average(valuesFor(readings.indoor_aqi, roomIds)),
     alerts: rows.filter((row) => isAlertStatus(row.status)).length,
   }
 }
+
+/** One building figure from its rooms' readings, added up the way the metric declares. */
+export function aggregate(
+  points: ApiDataPoint[] | undefined,
+  roomIds: Set<string>,
+  aggregation: Aggregation,
+): number | null {
+  const values = valuesFor(points, roomIds)
+  if (aggregation === 'average') return average(values)
+  return values.length ? round(values.reduce((sum, v) => sum + v, 0)) : null
+}
+
+/** Cards that are no single metric: they count the building's rooms. */
+export const ROOMS_CARD = 'rooms'
+export const ALERTS_CARD = 'alerts'
+
+export type CardMetric = MetricContract & { aggregation: Aggregation }
+
+/** The catalog metrics a card can show: those that declare how their rooms add up. */
+export const cardMetrics = (catalog: MetricContract[]): CardMetric[] =>
+  catalog.filter((metric): metric is CardMetric => metric.aggregation !== undefined)
+
+/** A building's cards before anyone chooses: rooms, each metric it reports, then alerts. */
+export const defaultCards = (catalog: MetricContract[], reportedKinds: Set<string>): string[] => [
+  ROOMS_CARD,
+  ...cardMetrics(catalog)
+    .filter((metric) => reportedKinds.has(metric.kind))
+    .map((metric) => metric.kind),
+  ALERTS_CARD,
+]
 
 export function filterRows(rows: TableBody[], query: string, filter: RowFilter): TableBody[] {
   const needle = query.trim().toLowerCase()
