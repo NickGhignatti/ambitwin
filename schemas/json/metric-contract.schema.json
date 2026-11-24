@@ -33,6 +33,10 @@
           "description": "Optional when parsing: a source may omit it and the crate defaults to empty."
         },
         "limit": { "$ref": "#/$defs/limit" },
+        "aggregation": {
+          "enum": ["average", "sum"],
+          "description": "How a building's figure is made from its rooms' readings: their mean or their total. Absent on a room attribute (a name, a capacity), which has no building figure."
+        },
         "source": {
           "type": "string",
           "minLength": 1,

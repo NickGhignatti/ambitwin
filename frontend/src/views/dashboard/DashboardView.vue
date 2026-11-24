@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { buildRows } from '@/utils/dashboard/tableRows.ts'
-import { summarize } from '@/utils/dashboard/dashboard.ts'
+import { ref } from 'vue'
 import { useDashboardBuildings } from '@/composables/dashboard/useDashboardBuildings.ts'
-import { useBuildingReadings } from '@/composables/dashboard/useBuildingSensor.ts'
-import { useConnectedDevices } from '@/composables/dashboard/useConnectedDevices.ts'
 import { useFullscreen } from '@/composables/commons/useFullscreen.ts'
 import AppLayout from '@/components/commons/layout/AppLayout.vue'
 import DashboardStatusBar from '@/components/dashboard/header/DashboardStatusBar.vue'
@@ -15,20 +11,7 @@ import KpiStrip from '@/components/dashboard/kpi/KpiStrip.vue'
 import TelemetryPanel from '@/components/dashboard/table/TelemetryPanel.vue'
 import ChartsPanel from '@/components/dashboard/charts/ChartsPanel.vue'
 
-const SUMMARY_METRICS = ['people_count', 'temperature', 'indoor_aqi']
-
 const { options, selectedId, rooms, isLoading } = useDashboardBuildings()
-const { readings, isLoading: readingsLoading } = useBuildingReadings(
-  selectedId,
-  computed(() => SUMMARY_METRICS),
-)
-
-const { devices, stale: devicesStale, isLoading: devicesLoading } = useConnectedDevices(selectedId)
-
-// Rows built with no columns still carry the occupancy status the alert count needs.
-const summary = computed(() =>
-  summarize(buildRows(rooms.value, [], readings.value), readings.value),
-)
 
 const view = ref<DashboardView>('table')
 const focusArea = ref<HTMLElement | null>(null)
@@ -49,13 +32,7 @@ const { isFullscreen, toggle: toggleFocus } = useFullscreen(focusArea)
         @toggle-focus="toggleFocus"
       />
 
-      <KpiStrip
-        :summary="summary"
-        :loading="isLoading || readingsLoading"
-        :devices="devices"
-        :devices-stale="devicesStale"
-        :devices-loading="isLoading || devicesLoading"
-      />
+      <KpiStrip :building-id="selectedId" :rooms="rooms" :loading="isLoading" />
 
       <Transition
         mode="out-in"

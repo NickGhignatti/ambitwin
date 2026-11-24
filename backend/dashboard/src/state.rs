@@ -7,6 +7,7 @@ use crate::models::PreferenceDocument;
 #[derive(Clone)]
 pub struct AppState {
     pub building_preferences: Arc<DashMap<String, Vec<String>>>,
+    pub building_cards: Arc<DashMap<String, Vec<String>>>,
     pub mongo_col: Collection<PreferenceDocument>,
 }
 
@@ -14,6 +15,7 @@ impl AppState {
     pub fn new(mongo_col: Collection<PreferenceDocument>) -> Self {
         Self {
             building_preferences: Arc::new(DashMap::new()),
+            building_cards: Arc::new(DashMap::new()),
             mongo_col,
         }
     }

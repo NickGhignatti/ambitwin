@@ -165,6 +165,7 @@ pub async fn contracts(State(state): State<Arc<AppState>>) -> Json<ServiceMetric
                     min: descriptor.limit.min,
                     max: descriptor.limit.max,
                 },
+                aggregation: Some(descriptor.aggregation),
                 source: None,
             }
         })

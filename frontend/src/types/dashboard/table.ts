@@ -7,6 +7,9 @@ export interface LimitContract {
   max?: number | null
 }
 
+/** How a building's figure is made from its rooms' readings: their mean or their total. */
+export type Aggregation = 'average' | 'sum'
+
 export interface MetricContract {
   kind: string
   label: string
@@ -14,6 +17,8 @@ export interface MetricContract {
   unit?: string
   source?: string
   limit?: LimitContract
+  /** Absent on a room attribute (a name, a capacity), which has no building figure. */
+  aggregation?: Aggregation
 }
 
 export interface TableHeader {

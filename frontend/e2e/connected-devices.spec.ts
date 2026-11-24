@@ -47,6 +47,9 @@ async function stubBackend(page: Page, connected: { status: number; body?: unkno
   await page.route(`**/telemetry/simulation/buildings/${BUILDING}`, (route) =>
     json(route, { running: false }),
   )
+  await page.route(`**/dashboard/preferences/${BUILDING}/cards`, (route) =>
+    json(route, { cards: ['total_device_count'] }),
+  )
   await page.route(`**/telemetry/connected-devices/buildings/${BUILDING}`, (route) =>
     route.fulfill({ status: connected.status, json: connected.body ?? { message: 'none' } }),
   )

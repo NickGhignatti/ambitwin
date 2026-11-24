@@ -2,8 +2,8 @@ openapi: 3.1.0
 info:
   title: Dashboard API
   description: |
-    `dashboard`: which metric columns each building shows, and the catalog of metrics there are
-    to choose from.
+    `dashboard`: which metric columns and summary cards each building shows, and the catalog of
+    metrics there are to choose from.
 
     - A building's columns also decide what its live feed carries: the tunnel republishes a
       telemetry tick only to buildings with preferences.
@@ -62,6 +62,20 @@ components:
         building_id: { type: string, example: "42bc920a-8c39-48ae-b033-376739c8ebf0" }
         active_columns: { type: integer, example: 3 }
 
+    Cards:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          description: >
+            The building's cards in display order: metric kinds from the catalog, or `rooms` and
+            `alerts`. At most 32, each 1 to 64 characters, none twice.
+          maxItems: 32
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+          example: ["rooms", "temperature", "people_count", "alerts"]
+
     MetricLimit:
       type: object
       description: >
@@ -101,6 +115,12 @@ components:
           type: array
           items: { $ref: '#/components/schemas/MetricAction' }
         limit: { $ref: '#/components/schemas/MetricLimit' }
+        aggregation:
+          enum: [average, sum]
+          description: >
+            How a building's card adds up its rooms' readings: their mean or their total. Absent on a
+            room attribute (a name, a capacity), which offers no card.
+          example: average
         source:
           type: string
           description: The service that declared the metric.
@@ -162,6 +182,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdatePreferencesResponse"
+
+  /preferences/{building_id}/cards:
+    parameters:
+      - $ref: "#/components/parameters/BuildingId"
+    get:
+      summary: Get a building's cards
+      tags: [Preferences]
+      responses:
+        "200":
+          description: The cards someone saved for the building.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cards"
+        "404":
+          description: Nobody saved cards for this building; the client shows its default. Empty body.
+    put:
+      summary: Replace a building's cards
+      description: |
+        The same cards for everyone who views the building. Columns are left as they are.
+      tags: [Preferences]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Cards"
+      responses:
+        "204":
+          description: Replaced in memory; saved to the database in the background.
+        "400":
+          description: Too many cards, an empty or overlong id, or a card named twice. Nothing is stored.
+          content:
+            text/plain:
+              schema: { type: string, example: "card co2 appears twice" }
 
   /preferences/init/{building_id}:
     post:

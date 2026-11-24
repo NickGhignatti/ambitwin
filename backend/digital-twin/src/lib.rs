@@ -20,6 +20,7 @@ async fn contracts() -> Json<ServiceMetricsContract> {
         unit: Some(unit.to_owned()),
         actions: vec![],
         limit: LimitContract::default(),
+        aggregation: None,
         source: None,
     };
     Json(ServiceMetricsContract {

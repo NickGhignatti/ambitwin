@@ -49,6 +49,15 @@ fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Option<f
     Option::<f64>::deserialize(deserializer).map(Some)
 }
 
+/// How a building's figure is made from its rooms' readings: their mean, or their total.
+/// Declared by the metric because a name cannot tell a count from a measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Aggregation {
+    Average,
+    Sum,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricContract {
@@ -60,6 +69,9 @@ pub struct MetricContract {
     pub actions: Vec<ActionContract>,
     #[serde(default)]
     pub limit: LimitContract,
+    // absent on a room attribute (a name, a capacity): it has no building figure
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aggregation: Option<Aggregation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 }
@@ -94,8 +106,26 @@ mod tests {
                 min: Some(Some(18.0)),
                 max: Some(Some(27.0)),
             },
+            aggregation: Some(Aggregation::Average),
             source: None,
         }
+    }
+
+    #[test]
+    fn an_aggregation_is_a_lowercase_word_and_absent_when_undeclared() {
+        let body = serde_json::to_value(metric()).unwrap();
+        assert_eq!(body["aggregation"], "average");
+
+        let room_attribute = MetricContract {
+            aggregation: None,
+            ..metric()
+        };
+        assert!(
+            serde_json::to_value(room_attribute)
+                .unwrap()
+                .get("aggregation")
+                .is_none()
+        );
     }
 
     #[test]

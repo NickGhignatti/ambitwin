@@ -9,7 +9,7 @@
 //!
 //! MONGO_URI selects the server (defaults to localhost:27017); CI sets it.
 
-use dashboard::infra::db::{load_all, upsert_preference};
+use dashboard::infra::db::{load_all, upsert_cards, upsert_preference};
 use dashboard::models::PreferenceDocument;
 use mongodb::{Client, Collection, options::ClientOptions};
 
@@ -90,4 +90,46 @@ async fn load_all_returns_every_building_separately() {
     assert_eq!(all[0].allowed_columns, vec!["temp"]);
     assert_eq!(all[1].building_id, "building-b");
     assert_eq!(all[1].allowed_columns, vec!["co2"]);
+}
+
+/// Columns and cards share one document but are saved apart, so neither save may drop the other.
+#[tokio::test]
+async fn saving_columns_keeps_the_cards_and_saving_cards_keeps_the_columns() {
+    let col = test_col("columns_and_cards").await;
+
+    upsert_cards(&col, "building-1", &["alerts".to_string()])
+        .await
+        .unwrap();
+    upsert_preference(&col, "building-1", &["room_name".to_string()])
+        .await
+        .unwrap();
+    upsert_cards(
+        &col,
+        "building-1",
+        &["rooms".to_string(), "co2".to_string()],
+    )
+    .await
+    .unwrap();
+
+    let all = load_all(&col).await.unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].allowed_columns, vec!["room_name"]);
+    assert_eq!(
+        all[0].cards,
+        Some(vec!["rooms".to_string(), "co2".to_string()])
+    );
+}
+
+/// A building whose cards were saved before any column still loads, with no columns.
+#[tokio::test]
+async fn a_document_with_only_cards_loads_with_no_columns() {
+    let col = test_col("only_cards").await;
+
+    upsert_cards(&col, "building-1", &["rooms".to_string()])
+        .await
+        .unwrap();
+
+    let all = load_all(&col).await.unwrap();
+    assert!(all[0].allowed_columns.is_empty());
+    assert_eq!(all[0].cards, Some(vec!["rooms".to_string()]));
 }

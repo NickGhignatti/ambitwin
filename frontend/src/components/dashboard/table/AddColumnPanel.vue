@@ -7,7 +7,13 @@ import IconButton from '@/components/commons/base/IconButton.vue'
 import FormMessage from '@/components/commons/forms/FormMessage.vue'
 import BaseIcon from '@/components/commons/base/BaseIcon.vue'
 
-defineProps<{ metrics: MetricContract[]; isFetching: boolean; failed?: boolean }>()
+defineProps<{
+  metrics: MetricContract[]
+  isFetching: boolean
+  failed?: boolean
+  title?: string
+  emptyMessage?: string
+}>()
 
 const emit = defineEmits<{ select: [metric: MetricContract]; close: []; retry: [] }>()
 
@@ -24,7 +30,7 @@ const labelOf = (metric: MetricContract) => {
     <header class="flex items-center justify-between">
       <h3 class="flex items-center gap-2 text-title-sm">
         <BaseIcon name="plus-circle" class="text-primary" />
-        {{ t('dashboard.table.addColumn') }}
+        {{ title ?? t('dashboard.table.addColumn') }}
       </h3>
       <IconButton icon="x" size="sm" :label="t('commons.close')" @click="emit('close')" />
     </header>
@@ -42,7 +48,7 @@ const labelOf = (metric: MetricContract) => {
     </FormMessage>
 
     <p v-else-if="metrics.length === 0" class="text-body-sm text-on-surface-variant">
-      {{ t('dashboard.table.allMetricsDisplayed') }}
+      {{ emptyMessage ?? t('dashboard.table.allMetricsDisplayed') }}
     </p>
 
     <div v-else class="flex flex-wrap gap-2">

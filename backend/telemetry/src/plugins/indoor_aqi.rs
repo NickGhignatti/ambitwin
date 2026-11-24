@@ -1,5 +1,5 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{Aggregation, FieldKind, LimitSpec, MetricDescriptor};
 
 /// Indoor air quality index, worked out by the air station from what it measures.
 pub fn metric() -> Metric {
@@ -14,6 +14,7 @@ pub fn metric() -> Metric {
                 min: None,
                 max: Some(Some(75.0)),
             },
+            aggregation: Aggregation::Average,
         },
         actions: &[],
     }

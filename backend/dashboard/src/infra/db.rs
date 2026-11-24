@@ -32,19 +32,36 @@ pub async fn load_all(
     Ok(cursor.try_collect().await?)
 }
 
-/// Upserts a single building's preference.
+/// Upserts a single building's columns, leaving its cards as they are.
 pub async fn upsert_preference(
     col: &Collection<PreferenceDocument>,
     building_id: &str,
     allowed_columns: &[String],
 ) -> anyhow::Result<()> {
-    let document = PreferenceDocument {
-        id: None,
-        building_id: building_id.to_string(),
-        allowed_columns: allowed_columns.to_vec(),
-    };
-    let filter = doc! { "building_id": building_id };
-    col.find_one_and_replace(filter, document)
+    set_field(
+        col,
+        building_id,
+        doc! { "allowed_columns": allowed_columns },
+    )
+    .await
+}
+
+/// Upserts a single building's cards, leaving its columns as they are.
+pub async fn upsert_cards(
+    col: &Collection<PreferenceDocument>,
+    building_id: &str,
+    cards: &[String],
+) -> anyhow::Result<()> {
+    set_field(col, building_id, doc! { "cards": cards }).await
+}
+
+// `$set`, not a replace: columns and cards are saved apart, and a replace would drop the other
+async fn set_field(
+    col: &Collection<PreferenceDocument>,
+    building_id: &str,
+    field: mongodb::bson::Document,
+) -> anyhow::Result<()> {
+    col.update_one(doc! { "building_id": building_id }, doc! { "$set": field })
         .upsert(true)
         .await?;
     Ok(())

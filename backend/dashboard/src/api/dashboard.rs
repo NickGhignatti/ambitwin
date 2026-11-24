@@ -154,6 +154,7 @@ mod tests {
             unit: None,
             actions: vec![],
             limit: LimitContract::default(),
+            aggregation: None,
             source: Some(source.to_string()),
         }
     }

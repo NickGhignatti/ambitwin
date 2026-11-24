@@ -1,5 +1,5 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{Aggregation, FieldKind, LimitSpec, MetricDescriptor};
 
 /// Relative humidity: below 30 % the air is dry, above 60 % mould can grow.
 pub fn metric() -> Metric {
@@ -14,6 +14,7 @@ pub fn metric() -> Metric {
                 min: Some(Some(30.0)),
                 max: Some(Some(60.0)),
             },
+            aggregation: Aggregation::Average,
         },
         actions: &[],
     }

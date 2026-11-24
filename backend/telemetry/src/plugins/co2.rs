@@ -1,5 +1,5 @@
 use crate::plugins::common::Metric;
-use crate::types::plugin::{FieldKind, LimitSpec, MetricDescriptor};
+use crate::types::plugin::{Aggregation, FieldKind, LimitSpec, MetricDescriptor};
 
 /// Carbon dioxide in the air of a room.
 pub fn metric() -> Metric {
@@ -14,6 +14,7 @@ pub fn metric() -> Metric {
                 min: None,
                 max: Some(Some(1000.0)),
             },
+            aggregation: Aggregation::Average,
         },
         actions: &[],
     }
