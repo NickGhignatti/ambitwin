@@ -148,9 +148,13 @@ export function useColumnManager(
     try {
       if (selectedBuildingId.value) {
         const allowedColumns = localHeaders.value.map((h) => h.metricKey ?? h.key)
-        await makeRequest(`/dashboard/preferences/${selectedBuildingId.value}`, 'POST', {
-          body: JSON.stringify({ allowed_columns: allowedColumns }),
-        })
+        const response = await makeRequest(
+          `/dashboard/preferences/${selectedBuildingId.value}`,
+          'POST',
+          { body: JSON.stringify({ allowed_columns: allowedColumns }) },
+        )
+        // a refused save must keep the editor open, not look saved
+        if (!response.ok) throw new Error(`saving columns failed: ${response.status}`)
       }
       onSaved([...localHeaders.value])
       isEditMode.value = false
