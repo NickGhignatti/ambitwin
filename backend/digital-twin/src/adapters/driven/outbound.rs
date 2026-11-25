@@ -98,6 +98,7 @@ impl DownstreamSync for OutboundConfig {
             .json(&payload)
             .send()
             .await
+            .and_then(reqwest::Response::error_for_status)
         {
             log::error!(
                 "[notification] failed to notify provisioning failure for {building_id}: {err}"

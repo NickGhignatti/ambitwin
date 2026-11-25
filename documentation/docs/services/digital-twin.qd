@@ -519,12 +519,12 @@ impl DownstreamSync for OutboundConfig {
     }
 
     async fn notify_provisioning_failed(&self, building_id: &str, error: &str) {
-        // POST {notification}/trigger with the system identity; an Err is only logged
+        // POST {notification}/trigger with the system identity; a transport error or non-2xx is only logged
     }
 }
 ```
 
-- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. `init_preferences` also logs a non-2xx answer; `notify_provisioning_failed` does not.
+- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. Both also log a non-2xx answer.
 - The `id` goes through `urlencoding::encode`, so it cannot break the path.
 - The failure alert has no end user to forward claims from, so it presents a made-up system header: base64 of `{"sub":"system:digital-twin","accountName":"system:digital-twin","memberships":[]}`.
 
