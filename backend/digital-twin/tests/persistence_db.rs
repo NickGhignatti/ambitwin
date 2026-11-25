@@ -1,11 +1,9 @@
-use mongodb::Collection;
 use mongodb::options::ClientOptions;
 use uuid::Uuid;
 
-use digital_twin::adapters::driven::persistence::db::{
-    counts_by_domain, find_by_domain, find_by_id, insert, replace,
-};
+use digital_twin::adapters::driven::persistence::db::MongoBuildings;
 use digital_twin::domain::{Building, Coordinates, Dimensions, Room};
+use digital_twin::service::ports::BuildingStore;
 
 fn dummy_room(id: &str) -> Room {
     Room {
@@ -35,63 +33,66 @@ fn dummy_building(domains: Vec<&str>) -> Building {
     }
 }
 
-async fn test_col() -> Collection<Building> {
+async fn test_store() -> MongoBuildings {
     let uri =
         std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
     let opts = ClientOptions::parse(&uri).await.unwrap();
     let client = mongodb::Client::with_options(opts).unwrap();
-    client
-        .database("digital_twin_test")
-        .collection::<Building>(&format!("buildings_{}", Uuid::new_v4()))
+    MongoBuildings::new(
+        client
+            .database("digital_twin_test")
+            .collection::<Building>(&format!("buildings_{}", Uuid::new_v4())),
+    )
 }
 
 #[tokio::test]
-async fn insert_and_find_by_id_round_trips() {
-    let col = test_col().await;
+async fn upsert_and_find_by_id_round_trips() {
+    let store = test_store().await;
     let building = dummy_building(vec!["eng"]);
-    insert(&col, &building).await.unwrap();
+    store.upsert(&building).await.unwrap();
 
-    let found = find_by_id(&col, &building.id).await.unwrap();
+    let found = store.find_by_id(&building.id).await.unwrap();
     assert_eq!(found.unwrap().id, building.id);
 }
 
 #[tokio::test]
 async fn find_by_id_returns_none_for_unknown_id() {
-    let col = test_col().await;
-    assert!(find_by_id(&col, "missing").await.unwrap().is_none());
+    let store = test_store().await;
+    assert!(store.find_by_id("missing").await.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn find_by_domain_returns_only_matching_buildings() {
-    let col = test_col().await;
-    insert(&col, &dummy_building(vec!["eng"])).await.unwrap();
-    insert(&col, &dummy_building(vec!["other"])).await.unwrap();
+    let store = test_store().await;
+    store.upsert(&dummy_building(vec!["eng"])).await.unwrap();
+    store.upsert(&dummy_building(vec!["other"])).await.unwrap();
 
-    let found = find_by_domain(&col, "eng").await.unwrap();
+    let found = store.find_by_domain("eng").await.unwrap();
     assert_eq!(found.len(), 1);
 }
 
 #[tokio::test]
-async fn replace_persists_mutations() {
-    let col = test_col().await;
+async fn upsert_replaces_an_existing_building() {
+    let store = test_store().await;
     let mut building = dummy_building(vec!["eng"]);
-    insert(&col, &building).await.unwrap();
+    store.upsert(&building).await.unwrap();
 
     building.name = "Renamed".to_string();
-    replace(&col, &building).await.unwrap();
+    store.upsert(&building).await.unwrap();
 
-    let found = find_by_id(&col, &building.id).await.unwrap().unwrap();
+    let found = store.find_by_id(&building.id).await.unwrap().unwrap();
     assert_eq!(found.name, "Renamed");
 }
 
 #[tokio::test]
 async fn counts_by_domain_only_counts_requested_domains() {
-    let col = test_col().await;
-    insert(&col, &dummy_building(vec!["eng"])).await.unwrap();
-    insert(&col, &dummy_building(vec!["eng"])).await.unwrap();
-    insert(&col, &dummy_building(vec!["other"])).await.unwrap();
+    let store = test_store().await;
+    store.upsert(&dummy_building(vec!["eng"])).await.unwrap();
+    store.upsert(&dummy_building(vec!["eng"])).await.unwrap();
+    store.upsert(&dummy_building(vec!["other"])).await.unwrap();
 
-    let counts = counts_by_domain(&col, &["eng".to_string(), "unknown".to_string()])
+    let counts = store
+        .counts_by_domain(&["eng".to_string(), "unknown".to_string()])
         .await
         .unwrap();
     assert_eq!(counts.get("eng"), Some(&2));
@@ -101,7 +102,7 @@ async fn counts_by_domain_only_counts_requested_domains() {
 
 #[tokio::test]
 async fn counts_by_domain_returns_empty_map_for_empty_request() {
-    let col = test_col().await;
-    let counts = counts_by_domain(&col, &[]).await.unwrap();
+    let store = test_store().await;
+    let counts = store.counts_by_domain(&[]).await.unwrap();
     assert!(counts.is_empty());
 }
