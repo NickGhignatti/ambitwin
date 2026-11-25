@@ -507,22 +507,24 @@ Example data: one room, editor in `eng`.
 ### What goes to the other services
 
 ```rust
-pub async fn sync_building_clone(config: &OutboundConfig, building: &Building, claims_header: Option<&str>) -> anyhow::Result<()> {
-    if !config.sync_enabled { return Ok(()); }
-    // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}] }
-    // non-2xx: bail! "Failed to sync sensor threshold clone: {status} {details}"
-}
+impl DownstreamSync for OutboundConfig {
+    async fn clone_thresholds(&self, building: &Building, claims: &str) -> anyhow::Result<()> {
+        if !self.sync_enabled { return Ok(()); }
+        // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}] }
+        // non-2xx: bail! "Failed to sync sensor threshold clone: {status} {details}"
+    }
 
-pub async fn init_building_preferences(config: &OutboundConfig, building_id: &str, claims_header: Option<&str>) {
-    // POST {dashboard}/preferences/init/{id}; an Err is only logged
-}
+    async fn init_preferences(&self, building_id: &str, claims: &str) {
+        // POST {dashboard}/preferences/init/{id}; a transport error or non-2xx is only logged
+    }
 
-pub async fn notify_provisioning_failed(config: &OutboundConfig, building_id: &str, error: &str) {
-    // POST {notification}/trigger with the system identity; an Err is only logged
+    async fn notify_provisioning_failed(&self, building_id: &str, error: &str) {
+        // POST {notification}/trigger with the system identity; an Err is only logged
+    }
 }
 ```
 
-- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. And `init_preferences` does not even check the status code.
+- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. `init_preferences` also logs a non-2xx answer; `notify_provisioning_failed` does not.
 - The `id` goes through `urlencoding::encode`, so it cannot break the path.
 - The failure alert has no end user to forward claims from, so it presents a made-up system header: base64 of `{"sub":"system:digital-twin","accountName":"system:digital-twin","memberships":[]}`.
 
@@ -1316,7 +1318,6 @@ just test twin-integration   # tests/*.rs against a throwaway MongoDB
 
 - **`PATCH` saves before `telemetry` answers.** When the limit sync fails, the caller gets `500` but the new name and domains are already stored.
 - **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever.
-- **`init_preferences` ignores the answer code.** A `4xx` or `5xx` from `dashboard` looks like success, and the building gets no live feed until someone saves its columns.
 - **Status and ownership lookup need only a signed-in caller.** Any user can learn a building's domains, or an upload's status, from its id or name.
 - **The rate limit lives in memory.** Two copies of the service each allow 300 per minute.
 - **Placements outlive their building.** A failed upload deletes the building, never its `placements` document.

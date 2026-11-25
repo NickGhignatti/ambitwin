@@ -28,91 +28,91 @@ pub struct OutboundConfig {
 #[async_trait]
 impl DownstreamSync for OutboundConfig {
     async fn clone_thresholds(&self, building: &Building, claims: &str) -> anyhow::Result<()> {
-        sync_building_clone(self, building, Some(claims)).await
+        if !self.sync_enabled {
+            return Ok(());
+        }
+        let payload = json!({
+            "name": building.name,
+            "rooms": building.rooms.iter().map(|r| json!({
+                "id": r.id,
+                "name": if r.name.trim().is_empty() { r.id.clone() } else { r.name.clone() },
+            })).collect::<Vec<_>>(),
+        });
+        let url = format!(
+            "{}/thresholds/buildings/{}",
+            self.telemetry_url,
+            urlencoding::encode(&building.id)
+        );
+        let response = self
+            .client
+            .put(&url)
+            .headers(auth_headers(claims))
+            .json(&payload)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let details = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to sync sensor threshold clone: {status} {details}");
+        }
+        Ok(())
     }
 
     async fn init_preferences(&self, building_id: &str, claims: &str) {
-        init_building_preferences(self, building_id, Some(claims)).await
+        if !self.sync_enabled {
+            return;
+        }
+        let url = format!(
+            "{}/preferences/init/{}",
+            self.dashboard_url,
+            urlencoding::encode(building_id)
+        );
+        // a refused init (403) is a response, not a transport error: without this it passes silently
+        if let Err(err) = self
+            .client
+            .post(&url)
+            .headers(auth_headers(claims))
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+        {
+            log::error!("[contracts] failed to init building preferences: {err}");
+        }
     }
 
     async fn notify_provisioning_failed(&self, building_id: &str, error: &str) {
-        notify_provisioning_failed(self, building_id, error).await
+        if !self.sync_enabled {
+            return;
+        }
+        let url = format!("{}/trigger", self.notification_url);
+        let payload = json!({
+            "buildingName": building_id,
+            "message": format!("Provisioning failed for building {building_id}: {error}"),
+            "type": "danger",
+        });
+        if let Err(err) = self
+            .client
+            .post(&url)
+            .headers(auth_headers(&system_claims_header()))
+            .json(&payload)
+            .send()
+            .await
+        {
+            log::error!(
+                "[notification] failed to notify provisioning failure for {building_id}: {err}"
+            );
+        }
     }
 }
 
-fn auth_headers(claims_header: Option<&str>) -> reqwest::header::HeaderMap {
+fn auth_headers(claims: &str) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("content-type", "application/json".parse().unwrap());
-    if let Some(token) = claims_header
-        && let Ok(value) = token.parse()
-    {
+    if let Ok(value) = claims.parse() {
         headers.insert("x-gateway-claims", value);
     }
     headers
-}
-
-pub async fn sync_building_clone(
-    config: &OutboundConfig,
-    building: &Building,
-    claims_header: Option<&str>,
-) -> anyhow::Result<()> {
-    if !config.sync_enabled {
-        return Ok(());
-    }
-
-    let payload = json!({
-        "name": building.name,
-        "rooms": building.rooms.iter().map(|r| json!({
-            "id": r.id,
-            "name": if r.name.trim().is_empty() { r.id.clone() } else { r.name.clone() },
-        })).collect::<Vec<_>>(),
-    });
-
-    let url = format!(
-        "{}/thresholds/buildings/{}",
-        config.telemetry_url,
-        urlencoding::encode(&building.id)
-    );
-    let response = config
-        .client
-        .put(&url)
-        .headers(auth_headers(claims_header))
-        .json(&payload)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let details = response.text().await.unwrap_or_default();
-        anyhow::bail!("Failed to sync sensor threshold clone: {status} {details}");
-    }
-    Ok(())
-}
-
-pub async fn init_building_preferences(
-    config: &OutboundConfig,
-    building_id: &str,
-    claims_header: Option<&str>,
-) {
-    if !config.sync_enabled {
-        return;
-    }
-    let url = format!(
-        "{}/preferences/init/{}",
-        config.dashboard_url,
-        urlencoding::encode(building_id)
-    );
-    // a refused init (403) is a response, not a transport error: without this it passes silently
-    if let Err(err) = config
-        .client
-        .post(&url)
-        .headers(auth_headers(claims_header))
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-    {
-        log::error!("[contracts] failed to init building preferences: {err}");
-    }
 }
 
 // The failure notification fires from the provisioning worker (telemetry's own
@@ -123,30 +123,6 @@ fn system_claims_header() -> String {
     STANDARD.encode(
         r#"{"sub":"system:digital-twin","accountName":"system:digital-twin","memberships":[]}"#,
     )
-}
-
-pub async fn notify_provisioning_failed(config: &OutboundConfig, building_id: &str, error: &str) {
-    if !config.sync_enabled {
-        return;
-    }
-    let url = format!("{}/trigger", config.notification_url);
-    let payload = json!({
-        "buildingName": building_id,
-        "message": format!("Provisioning failed for building {building_id}: {error}"),
-        "type": "danger",
-    });
-    if let Err(err) = config
-        .client
-        .post(&url)
-        .headers(auth_headers(Some(&system_claims_header())))
-        .json(&payload)
-        .send()
-        .await
-    {
-        log::error!(
-            "[notification] failed to notify provisioning failure for {building_id}: {err}"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -201,7 +177,7 @@ mod tests {
 
         let cfg = config(&server).await;
         let started = std::time::Instant::now();
-        let result = sync_building_clone(&cfg, &building(), None).await;
+        let result = cfg.clone_thresholds(&building(), "tok-123").await;
 
         assert!(result.is_err());
         assert!(started.elapsed() < TIMEOUT * 2);
@@ -218,22 +194,7 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        sync_building_clone(&cfg, &building(), Some("tok-123"))
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn omits_the_claims_header_when_no_token_is_provided() {
-        let server = MockServer::start().await;
-        Mock::given(method("PUT"))
-            .and(path("/thresholds/buildings/b1"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let cfg = config(&server).await;
-        sync_building_clone(&cfg, &building(), None).await.unwrap();
+        cfg.clone_thresholds(&building(), "tok-123").await.unwrap();
     }
 
     #[tokio::test]
@@ -245,13 +206,13 @@ mod tests {
             sync_enabled: false,
             client: reqwest::Client::new(),
         };
-        sync_building_clone(&cfg, &building(), None).await.unwrap();
-        init_building_preferences(&cfg, "b1", None).await;
-        notify_provisioning_failed(&cfg, "b1", "boom").await;
+        cfg.clone_thresholds(&building(), "tok-123").await.unwrap();
+        cfg.init_preferences("b1", "tok-123").await;
+        cfg.notify_provisioning_failed("b1", "boom").await;
     }
 
     #[tokio::test]
-    async fn init_building_preferences_forwards_the_callers_claims_header() {
+    async fn init_preferences_forwards_the_callers_claims_header() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/preferences/init/b1"))
@@ -261,7 +222,7 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        init_building_preferences(&cfg, "b1", Some("tok-123")).await;
+        cfg.init_preferences("b1", "tok-123").await;
     }
 
     #[tokio::test]
@@ -273,7 +234,7 @@ mod tests {
             sync_enabled: true,
             client: reqwest::Client::new(),
         };
-        notify_provisioning_failed(&cfg, "b1", "boom").await;
+        cfg.notify_provisioning_failed("b1", "boom").await;
     }
 
     #[tokio::test]
@@ -286,6 +247,7 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        notify_provisioning_failed(&cfg, "b1", "telemetry said no").await;
+        cfg.notify_provisioning_failed("b1", "telemetry said no")
+            .await;
     }
 }
