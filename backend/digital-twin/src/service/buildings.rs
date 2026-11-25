@@ -109,6 +109,11 @@ impl Buildings {
             building.name = name;
         }
         if let Some(domains) = patch.domains {
+            if !authz::can_edit_every(claims, &domains) {
+                return Err(DomainError::Forbidden(
+                    "Requires an editing role in every domain the building is moved to".to_string(),
+                ));
+            }
             building.domains = domains;
         }
         self.store.upsert(&building).await?;
@@ -371,6 +376,25 @@ mod tests {
             "Engineering Block",
             "a refused edit must not have been written"
         );
+    }
+
+    #[tokio::test]
+    async fn moving_a_building_needs_an_editing_role_in_every_new_domain() {
+        let (buildings, store, _) = buildings();
+        seeded(&store, vec!["eng"]);
+        let staff = claims_with(vec![("eng", "business_staff")]);
+        let move_to = |domains: Vec<&str>| BuildingPatch {
+            domains: Some(domains.into_iter().map(str::to_string).collect()),
+            ..BuildingPatch::default()
+        };
+
+        for refused in [move_to(vec!["acme"]), move_to(vec![])] {
+            assert!(matches!(
+                buildings.update("b1", refused, &staff).await,
+                Err(DomainError::Forbidden(_))
+            ));
+        }
+        assert_eq!(store.get("b1").unwrap().domains, ["eng"]);
     }
 
     #[tokio::test]

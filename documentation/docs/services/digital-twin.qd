@@ -715,7 +715,12 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
     let mut building = self.get_building_by_id_for_edit(id, claims).await?;
 
     if let Some(name) = patch.name { building.name = name; }
-    if let Some(domains) = patch.domains { building.domains = domains; }
+    if let Some(domains) = patch.domains {
+        if !authz::can_edit_every(claims, &domains) {
+            return Err(DomainError::Forbidden("Requires an editing role in every domain the building is moved to".to_string()));
+        }
+        building.domains = domains;
+    }
     self.store.upsert(&building).await?;
     self.downstream.clone_thresholds(&building, patch.max_temperature, &claims.raw).await?;
 
@@ -724,7 +729,7 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
 ```
 
 1. Load the building and check the caller edits one of its **current** domains.
-2. Apply `name` and `domains` if present.
+2. Apply `name` and `domains` if present. New `domains` must be non-empty, and the caller must edit **every** one of them, like `POST /register`.
 3. **Save.**
 4. Tell `telemetry` (`PUT /thresholds/buildings/{id}`) with the caller's own claims.
 
@@ -738,7 +743,7 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         B->>U: PATCH /building/b1 {name, domains, maxTemperature}
         U->>S: find, normalize
         U->>U: can_edit_domains(claims, current domains)
-        U->>U: apply name and domains when present
+        U->>U: apply name; domains only if can_edit_every(claims, new domains)
         U->>S: upsert(building)
         U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature?}
         T-->>U: 2xx
@@ -939,7 +944,7 @@ The edge strips `/twin`. Every route except the public ones needs `x-gateway-cla
 | `POST` | `/register` | Editor (`business_staff` or higher) in **every** listed domain | Check the building, queue it | `202 {buildingId}` |
 | `GET` | `/building/{id}/status` | Any signed-in caller | Upload status | `{status}` |
 | `GET` | `/building/{id}` | Member of one of its domains, or `system:ap-simulator` | One building | `Building` |
-| `PATCH` | `/building/{id}` | Editor in one of its **current** domains | Change `name`, `domains`. Send room limits to `telemetry` | `Building` |
+| `PATCH` | `/building/{id}` | Editor in one of its **current** domains, and in **every** new domain | Change `name`, `domains`. Send room limits to `telemetry` | `Building` |
 | `POST` | `/building/{id}/sync` | Editor in one of its domains | Announce it to `telemetry` again | `202` |
 | `GET` | `/buildings/{domain}` | Member of that domain | All its buildings | `[Building]` |
 | `POST` | `/buildings/counts` | Any signed-in caller | Count per domain, unreadable domains dropped | `{counts: {domain: n}}` |
@@ -1316,7 +1321,6 @@ just test twin-integration   # tests/*.rs against a throwaway MongoDB
 
 ## Gaps
 
-- **`PATCH` can move a building into any domain.** It checks the editing role only in the building's **current** domains. The new `domains` list is not checked, and may even be empty. `POST /register` checks every domain.
 - **`PATCH` saves before `telemetry` answers.** When the limit sync fails, the caller gets `500` but the new name and domains are already stored.
 - **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever. `attempts` is counted but never read.
 - **`init_preferences` ignores the answer code.** A `4xx` or `5xx` from `dashboard` looks like success, and the building gets no live feed until someone saves its columns.
