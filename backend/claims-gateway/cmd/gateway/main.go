@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
+	settings, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
@@ -29,32 +29,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// OIDC discovery against Keycloak, fail-fast if unreachable at boot.
-	verifier, err := oidcverifier.New(ctx, cfg.OIDCDiscoveryURL, cfg.OIDCIssuer, cfg.OIDCClientID)
+	// fails at boot when keycloak is unreachable
+	verifier, err := oidcverifier.New(ctx, settings.OIDCDiscoveryURL, settings.OIDCIssuer, settings.OIDCClientID)
 	if err != nil {
 		log.Fatalf("oidc discovery: %v", err)
 	}
-	tenancy := tenancyclient.New(cfg.TenancyURL, cfg.InternalSecret)
-	sign := signer.New(cfg.SigningKey, cfg.SigningKeyID, cfg.Issuer)
+	tenancy := tenancyclient.New(settings.TenancyURL, settings.InternalSecret)
+	tokenSigner := signer.New(settings.SigningKey, settings.SigningKeyID, settings.Issuer)
 
-	// keycloakadmin holds the confidential cv-gateway client secret and is
-	// the only thing that ever talks to Keycloak's token/admin endpoints.
-	kcAdmin := keycloakadmin.New(cfg.KeycloakBaseURL, cfg.KeycloakRealm, cfg.RegistrationClientID, cfg.RegistrationClientSecret)
-	gw := service.New(verifier, tenancy, sign, cfg.TokenTTL). // RSA signer for internal token
-									WithPasswordAuth(kcAdmin, kcAdmin).
-									WithProfileManagement(kcAdmin, kcAdmin, kcAdmin)
+	keycloakClient := keycloakadmin.New(settings.KeycloakBaseURL, settings.KeycloakRealm, settings.KeycloakClientID, settings.KeycloakClientSecret)
+	gateway := service.New(verifier, tenancy, tokenSigner, keycloakClient, settings.TokenTTL)
 
-	// /me verifies the gateway's OWN minted tokens.
-	verifyKeys, err := keyfunc.NewJWKSetJSON(sign.JWKS())
+	// signed-in routes accept only tokens this gateway signed
+	publicKeySet := tokenSigner.JWKS()
+	verifyKeys, err := keyfunc.NewJWKSetJSON(publicKeySet)
 	if err != nil {
 		log.Fatalf("building self-verification keyfunc: %v", err)
 	}
-	r := api.Mount(gw, sign, verifyKeys, cfg.Issuer)
+	router := api.Mount(gateway, publicKeySet, verifyKeys, settings.Issuer)
 
-	srv := &http.Server{Addr: cfg.Addr, Handler: r}
+	server := &http.Server{Addr: settings.Addr, Handler: router}
 	go func() {
-		log.Printf("claims-gateway listening on %s (issuer=%s)", cfg.Addr, cfg.OIDCIssuer)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("claims-gateway listening on %s (keycloak issuer=%s)", settings.Addr, settings.OIDCIssuer)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server: %v", err)
 		}
 	}()
@@ -62,5 +59,5 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

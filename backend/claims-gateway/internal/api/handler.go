@@ -9,22 +9,17 @@ import (
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/go-chi/chi/v5"
 
+	authcontracts "github.com/NickGhignatti/ambitwin/server/auth-contracts"
 	authmiddleware "github.com/NickGhignatti/ambitwin/server/auth-middleware"
 	"github.com/NickGhignatti/ambitwin/server/claims-gateway/internal/service"
 )
 
-const CookieName = "authentication_token"
-
-type jwksProvider interface {
-	JWKS() []byte
-}
-
-func Mount(gw *service.Gateway, jwks jwksProvider, verifyKeys keyfunc.Keyfunc, issuer string) chi.Router {
+func Mount(gw *service.Gateway, publicKeySet []byte, verifyKeys keyfunc.Keyfunc, issuer string) chi.Router {
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(jwks.JWKS())
+		_, _ = w.Write(publicKeySet)
 	})
 	r.Post("/exchange", exchangeHandler(gw))
 	r.Post("/login", loginHandler(gw))
@@ -33,24 +28,32 @@ func Mount(gw *service.Gateway, jwks jwksProvider, verifyKeys keyfunc.Keyfunc, i
 
 	r.Group(func(r chi.Router) {
 		r.Use(authmiddleware.RequireAuthentication(verifyKeys, issuer))
-		r.Get("/me", meHandler)
-		r.Get("/profile", profileHandler(gw))
-		r.Patch("/profile", updateProfileHandler(gw))
-		r.Post("/profile/password", changePasswordHandler(gw))
-		r.Post("/refresh", refreshHandler(gw))
+		r.Get("/me", withClaims(meHandler))
+		r.Get("/profile", withClaims(profileHandler(gw)))
+		r.Patch("/profile", withClaims(updateProfileHandler(gw)))
+		r.Post("/profile/password", withClaims(changePasswordHandler(gw)))
+		r.Post("/refresh", withClaims(refreshHandler(gw)))
 		// Mirrors Istio's RequestAuthentication+outputPayloadToHeader: Caddy's forward_auth
 		// calls this and on 200 copies X-Gateway-Claims onto the request as x-gateway-claims.
-		r.Get("/verify", verifyHandler)
+		r.Get("/verify", withClaims(verifyHandler))
 	})
 	return r
 }
 
-func verifyHandler(w http.ResponseWriter, r *http.Request) {
-	claims, ok := authmiddleware.FromContext(r.Context())
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+type claimsHandler func(http.ResponseWriter, *http.Request, authcontracts.StandardClaims)
+
+func withClaims(next claimsHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authmiddleware.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			return
+		}
+		next(w, r, claims)
 	}
+}
+
+func verifyHandler(w http.ResponseWriter, _ *http.Request, claims authcontracts.StandardClaims) {
 	body, err := json.Marshal(claims)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -61,19 +64,11 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutHandler(w http.ResponseWriter, _ *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func meHandler(w http.ResponseWriter, r *http.Request) {
-	claims, ok := authmiddleware.FromContext(r.Context())
-	if !ok {
-		http.Error(w, "unauthenticated", http.StatusUnauthorized)
-		return
-	}
+func meHandler(w http.ResponseWriter, _ *http.Request, claims authcontracts.StandardClaims) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(claims)
 }
@@ -139,13 +134,8 @@ func registerHandler(gw *service.Gateway) http.HandlerFunc {
 	}
 }
 
-func profileHandler(gw *service.Gateway) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := authmiddleware.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
+func profileHandler(gw *service.Gateway) claimsHandler {
+	return func(w http.ResponseWriter, r *http.Request, claims authcontracts.StandardClaims) {
 
 		email, name, picture, err := gw.Profile(r.Context(), claims.Sub)
 		if err != nil {
@@ -157,13 +147,8 @@ func profileHandler(gw *service.Gateway) http.HandlerFunc {
 	}
 }
 
-func updateProfileHandler(gw *service.Gateway) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := authmiddleware.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
+func updateProfileHandler(gw *service.Gateway) claimsHandler {
+	return func(w http.ResponseWriter, r *http.Request, claims authcontracts.StandardClaims) {
 
 		var body struct {
 			Email string `json:"email"`
@@ -179,18 +164,13 @@ func updateProfileHandler(gw *service.Gateway) http.HandlerFunc {
 			writeAuthError(w, err)
 			return
 		}
-		setSessionCookie(w, token)
+		setSessionCookie(w, token, 0)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-func changePasswordHandler(gw *service.Gateway) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := authmiddleware.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
+func changePasswordHandler(gw *service.Gateway) claimsHandler {
+	return func(w http.ResponseWriter, r *http.Request, claims authcontracts.StandardClaims) {
 
 		var body struct {
 			CurrentPassword string `json:"currentPassword"`
@@ -211,32 +191,28 @@ func changePasswordHandler(gw *service.Gateway) http.HandlerFunc {
 
 // refreshHandler re-mints the caller's session cookie with their current
 // tenancy memberships. The client calls this after any membership change.
-func refreshHandler(gw *service.Gateway) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := authmiddleware.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
+func refreshHandler(gw *service.Gateway) claimsHandler {
+	return func(w http.ResponseWriter, r *http.Request, claims authcontracts.StandardClaims) {
 		token, err := gw.RefreshSession(r.Context(), claims)
 		if err != nil {
 			writeAuthError(w, err)
 			return
 		}
-		setSessionCookie(w, token)
+		setSessionCookie(w, token, 0)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-func setSessionCookie(w http.ResponseWriter, token string) {
+// maxAgeSeconds -1 deletes the cookie, 0 keeps it for the browser session
+func setSessionCookie(w http.ResponseWriter, token string, maxAgeSeconds int) {
 	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: token, Path: "/",
+		Name: authmiddleware.CookieName, Value: token, Path: "/", MaxAge: maxAgeSeconds,
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func writeSessionCookieAndToken(w http.ResponseWriter, token string) {
-	setSessionCookie(w, token)
+	setSessionCookie(w, token, 0)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 }

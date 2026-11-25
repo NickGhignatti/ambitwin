@@ -43,17 +43,16 @@ func (f *fakePasswordChanger) ResetPassword(_ context.Context, userID, newPasswo
 
 func newGatewayWithProfileManagement(
 	t *testing.T,
-	reader service.ProfileReader,
-	updater service.ProfileUpdater,
-	changer service.PasswordChanger,
-	auth service.PasswordAuthenticator,
+	reader *fakeProfileReader,
+	updater *fakeProfileUpdater,
+	changer *fakePasswordChanger,
+	auth *fakeAuthenticator,
 ) (*service.Gateway, *fakeSigner) {
 	t.Helper()
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}}
 	signer := &fakeSigner{}
-	gw := service.New(&fakeVerifier{}, tenancy, signer, time.Hour)
-	gw.WithPasswordAuth(auth, &fakeRegistrar{})
-	return gw.WithProfileManagement(reader, updater, changer), signer
+	keycloak := fakeKeycloak{auth, &fakeRegistrar{}, reader, updater, changer}
+	return service.New(&fakeVerifier{}, tenancy, signer, keycloak, time.Hour), signer
 }
 
 func TestProfile_ReturnsEmailNameAndPicture(t *testing.T) {
@@ -190,5 +189,25 @@ func TestChangePassword_DoesNotResetWhenProfileLookupFails(t *testing.T) {
 	}
 	if changer.gotUserID != "" {
 		t.Fatal("must not reset the password when the profile lookup fails")
+	}
+}
+
+func TestProfile_WrapsKeycloakFailureAsUnavailable(t *testing.T) {
+	reader := &fakeProfileReader{err: errors.New("client-credentials grant returned 502")}
+	gw, _ := newGatewayWithProfileManagement(t, reader, &fakeProfileUpdater{}, &fakePasswordChanger{}, &fakeAuthenticator{})
+
+	_, _, _, err := gw.Profile(context.Background(), "acc-1")
+	if !errors.Is(err, service.ErrKeycloakUnavailable) {
+		t.Fatalf("got %v, want ErrKeycloakUnavailable", err)
+	}
+}
+
+func TestChangePassword_PassesThroughUserNotFoundOnReset(t *testing.T) {
+	changer := &fakePasswordChanger{err: service.ErrUserNotFound}
+	gw, _ := newGatewayWithProfileManagement(t, &fakeProfileReader{email: "mario@unibo.it"}, &fakeProfileUpdater{}, changer, &fakeAuthenticator{})
+
+	err := gw.ChangePassword(context.Background(), "acc-1", "current", "new-s3cret!")
+	if !errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrKeycloakUnavailable) {
+		t.Fatalf("got %v, want ErrUserNotFound", err)
 	}
 }

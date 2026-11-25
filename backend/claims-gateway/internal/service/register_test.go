@@ -31,10 +31,20 @@ func (f *fakeRegistrar) CreateUser(_ context.Context, email, password, name stri
 	return f.err
 }
 
-func newGatewayWithPasswordAuth(t *testing.T, verifier service.Verifier, auth service.PasswordAuthenticator, reg service.UserRegistrar) *service.Gateway {
+// fakeKeycloak joins the per-call fakes into the one Keycloak port.
+type fakeKeycloak struct {
+	*fakeAuthenticator
+	*fakeRegistrar
+	*fakeProfileReader
+	*fakeProfileUpdater
+	*fakePasswordChanger
+}
+
+func newGatewayWithPasswordAuth(t *testing.T, verifier service.Verifier, auth *fakeAuthenticator, reg *fakeRegistrar) *service.Gateway {
 	t.Helper()
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}}
-	return service.New(verifier, tenancy, &fakeSigner{}, time.Hour).WithPasswordAuth(auth, reg)
+	keycloak := fakeKeycloak{auth, reg, &fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{}}
+	return service.New(verifier, tenancy, &fakeSigner{}, keycloak, time.Hour)
 }
 
 func TestLogin_ExchangesPasswordGrantIDTokenLikeARedirectLogin(t *testing.T) {

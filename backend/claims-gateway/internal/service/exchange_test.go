@@ -56,7 +56,7 @@ func TestExchange_ExistingMember_SignsWithCurrentMemberships(t *testing.T) {
 	verifier := &fakeVerifier{claims: kcClaims("acc-1", "")}
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}}
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	tok, err := gw.Exchange(context.Background(), "raw-id-token")
 	if err != nil {
@@ -75,7 +75,7 @@ func TestRefreshSession_ReMintsWithCurrentTenancyMemberships(t *testing.T) {
 	// Refresh must re-sign with the fresh set while preserving identity fields.
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "kubeet.com", Role: "business_admin"}}}
 	signer := &fakeSigner{}
-	gw := service.New(&fakeVerifier{}, tenancy, signer, time.Hour)
+	gw := service.New(&fakeVerifier{}, tenancy, signer, nil, time.Hour)
 
 	stale := authcontracts.StandardClaims{Sub: "acc-1", AccountName: "Ada", SID: "sid-1"}
 	tok, err := gw.RefreshSession(context.Background(), stale)
@@ -95,7 +95,7 @@ func TestRefreshSession_ReMintsWithCurrentTenancyMemberships(t *testing.T) {
 
 func TestRefreshSession_FailsClosed_WhenTenancyLookupErrors(t *testing.T) {
 	tenancy := &fakeTenancy{lookupErr: errors.New("connection refused")}
-	gw := service.New(&fakeVerifier{}, tenancy, &fakeSigner{}, time.Hour)
+	gw := service.New(&fakeVerifier{}, tenancy, &fakeSigner{}, nil, time.Hour)
 
 	_, err := gw.RefreshSession(context.Background(), authcontracts.StandardClaims{Sub: "acc-1"})
 	if !errors.Is(err, service.ErrTenancyUnavailable) {
@@ -107,7 +107,7 @@ func TestExchange_PrefersNameOverPreferredUsernameForAccountName(t *testing.T) {
 	verifier := &fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1", PreferredUsername: "mario@unibo.it", Name: "Mario Rossi"}}
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}}
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	if _, err := gw.Exchange(context.Background(), "raw-id-token"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -121,7 +121,7 @@ func TestExchange_FallsBackToPreferredUsername_WhenNameIsAbsent(t *testing.T) {
 	verifier := &fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1", PreferredUsername: "mario@unibo.it"}}
 	tenancy := &fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}}
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	if _, err := gw.Exchange(context.Background(), "raw-id-token"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -134,7 +134,7 @@ func TestExchange_FallsBackToPreferredUsername_WhenNameIsAbsent(t *testing.T) {
 func TestExchange_FailsClosed_WhenTenancyLookupErrors(t *testing.T) {
 	verifier := &fakeVerifier{claims: kcClaims("acc-1", "")}
 	tenancy := &fakeTenancy{lookupErr: errors.New("connection refused")}
-	gw := service.New(verifier, tenancy, &fakeSigner{}, time.Hour)
+	gw := service.New(verifier, tenancy, &fakeSigner{}, nil, time.Hour)
 
 	_, err := gw.Exchange(context.Background(), "raw-id-token")
 	if !errors.Is(err, service.ErrTenancyUnavailable) {
@@ -144,7 +144,7 @@ func TestExchange_FailsClosed_WhenTenancyLookupErrors(t *testing.T) {
 
 func TestExchange_RejectsInvalidIDToken(t *testing.T) {
 	verifier := &fakeVerifier{err: errors.New("signature verification failed")}
-	gw := service.New(verifier, &fakeTenancy{}, &fakeSigner{}, time.Hour)
+	gw := service.New(verifier, &fakeTenancy{}, &fakeSigner{}, nil, time.Hour)
 
 	_, err := gw.Exchange(context.Background(), "garbage")
 	if !errors.Is(err, service.ErrInvalidIDToken) {
@@ -156,7 +156,7 @@ func TestExchange_FirstLogin_ProvisionsFromOrganizationClaim(t *testing.T) {
 	verifier := &fakeVerifier{claims: kcClaims("new-user", "unibo", "standard_customer")}
 	tenancy := &fakeTenancy{memberships: nil} // brand-new account: zero memberships
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	_, err := gw.Exchange(context.Background(), "raw-id-token")
 	if err != nil {
@@ -178,7 +178,7 @@ func TestExchange_FirstLogin_NoOrganizationClaim_StaysEmpty(t *testing.T) {
 	verifier := &fakeVerifier{claims: kcClaims("new-user", "")} // no org — e.g. pooled self-signup
 	tenancy := &fakeTenancy{memberships: nil}
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	_, err := gw.Exchange(context.Background(), "raw-id-token")
 	if err != nil {
@@ -196,7 +196,7 @@ func TestExchange_FirstLogin_InviteOnlyDomain_ContinuesWithoutMembership(t *test
 	verifier := &fakeVerifier{claims: kcClaims("new-user", "acme", "standard_customer")}
 	tenancy := &fakeTenancy{memberships: nil, provisionErr: service.ErrInviteOnly}
 	signer := &fakeSigner{}
-	gw := service.New(verifier, tenancy, signer, time.Hour)
+	gw := service.New(verifier, tenancy, signer, nil, time.Hour)
 
 	tok, err := gw.Exchange(context.Background(), "raw-id-token")
 	if err != nil {
@@ -213,7 +213,7 @@ func TestExchange_FirstLogin_InviteOnlyDomain_ContinuesWithoutMembership(t *test
 func TestExchange_ProvisionSystemFailure_FailsClosed(t *testing.T) {
 	verifier := &fakeVerifier{claims: kcClaims("new-user", "unibo", "standard_customer")}
 	tenancy := &fakeTenancy{memberships: nil, provisionErr: errors.New("connection reset")}
-	gw := service.New(verifier, tenancy, &fakeSigner{}, time.Hour)
+	gw := service.New(verifier, tenancy, &fakeSigner{}, nil, time.Hour)
 
 	_, err := gw.Exchange(context.Background(), "raw-id-token")
 	if !errors.Is(err, service.ErrTenancyUnavailable) {

@@ -33,17 +33,26 @@ func (f *fakeRegistrar) CreateUser(_ context.Context, _, _, name string) error {
 	return f.err
 }
 
-func gatewayWithPasswordAuth(auth service.PasswordAuthenticator, reg service.UserRegistrar) *service.Gateway {
+// fakeKeycloak joins the per-call fakes into the one Keycloak port.
+type fakeKeycloak struct {
+	*fakeAuthenticator
+	*fakeRegistrar
+	*fakeProfileReader
+	*fakeProfileUpdater
+	*fakePasswordChanger
+}
+
+func gatewayWithPasswordAuth(auth *fakeAuthenticator, reg *fakeRegistrar) *service.Gateway {
 	return service.New(
 		&fakeVerifier{claims: service.IDTokenClaims{Sub: "acc-1", PreferredUsername: "mario"}},
 		&fakeTenancy{memberships: []authcontracts.Membership{{Domain: "unibo", Role: "standard_customer"}}},
-		fakeSigner{}, time.Hour,
-	).WithPasswordAuth(auth, reg)
+		fakeSigner{}, fakeKeycloak{auth, reg, &fakeProfileReader{}, &fakeProfileUpdater{}, &fakePasswordChanger{}}, time.Hour,
+	)
 }
 
 func TestLoginHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{idToken: "raw-id-token"}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"mario","password":"correct"}`))
 	rec := httptest.NewRecorder()
@@ -60,7 +69,7 @@ func TestLoginHandler_ReturnsTokenAndSetsCookie(t *testing.T) {
 
 func TestLoginHandler_RejectsMissingBody(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"mario"}`))
 	rec := httptest.NewRecorder()
@@ -73,7 +82,7 @@ func TestLoginHandler_RejectsMissingBody(t *testing.T) {
 
 func TestLoginHandler_InvalidCredentialsIs401(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{err: service.ErrInvalidCredentials}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"mario","password":"wrong"}`))
 	rec := httptest.NewRecorder()
@@ -86,7 +95,7 @@ func TestLoginHandler_InvalidCredentialsIs401(t *testing.T) {
 
 func TestLoginHandler_KeycloakUnavailableIs503(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{err: service.ErrKeycloakUnavailable}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"mario","password":"x"}`))
 	rec := httptest.NewRecorder()
@@ -99,7 +108,7 @@ func TestLoginHandler_KeycloakUnavailableIs503(t *testing.T) {
 
 func TestRegisterHandler_CreatesUserLogsInAndSetsCookie(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{idToken: "raw-id-token"}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"new@unibo.it","password":"s3cret!"}`))
 	rec := httptest.NewRecorder()
@@ -121,7 +130,7 @@ func TestRegisterHandler_CreatesUserLogsInAndSetsCookie(t *testing.T) {
 
 func TestRegisterHandler_RejectsMissingBody(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"new@unibo.it"}`))
 	rec := httptest.NewRecorder()
@@ -135,7 +144,7 @@ func TestRegisterHandler_RejectsMissingBody(t *testing.T) {
 func TestRegisterHandler_ForwardsNameToTheRegistrar(t *testing.T) {
 	reg := &fakeRegistrar{}
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{idToken: "raw-id-token"}, reg)
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"new@unibo.it","password":"s3cret!","name":"Mario Rossi"}`))
 	rec := httptest.NewRecorder()
@@ -151,7 +160,7 @@ func TestRegisterHandler_ForwardsNameToTheRegistrar(t *testing.T) {
 
 func TestRegisterHandler_NameIsOptional(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{idToken: "raw-id-token"}, &fakeRegistrar{})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"new@unibo.it","password":"s3cret!"}`))
 	rec := httptest.NewRecorder()
@@ -164,7 +173,7 @@ func TestRegisterHandler_NameIsOptional(t *testing.T) {
 
 func TestRegisterHandler_EmailTakenIs409(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{}, &fakeRegistrar{err: service.ErrEmailTaken})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"taken@unibo.it","password":"s3cret!"}`))
 	rec := httptest.NewRecorder()
@@ -177,7 +186,7 @@ func TestRegisterHandler_EmailTakenIs409(t *testing.T) {
 
 func TestRegisterHandler_KeycloakUnavailableIs503(t *testing.T) {
 	gw := gatewayWithPasswordAuth(&fakeAuthenticator{}, &fakeRegistrar{err: service.ErrKeycloakUnavailable})
-	r := api.Mount(gw, fakeSigner{}, nil, issuer)
+	r := api.Mount(gw, testKeySet, nil, issuer)
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"new@unibo.it","password":"s3cret!"}`))
 	rec := httptest.NewRecorder()

@@ -8,8 +8,7 @@ services:
       - ADDR=:3000
       - OIDC_DISCOVERY_URL=http://keycloak:8080/realms/ambitwin
       - OIDC_ISSUER=${KEYCLOAK_PUBLIC_URL:-http://localhost:8090}/realms/ambitwin
-      # cv-web, not cv-gateway: the browser (public client, PKCE) presents ID tokens here,
-      # so the gateway validates audience against it; cv-gateway is service-level testing only.
+      # id tokens come from the browser's client (cv-web), so their audience is cv-web
       - OIDC_CLIENT_ID=cv-web
       - TENANCY_URL=http://tenancy:3000
       - INTERNAL_SIGNING_SECRET=${INTERNAL_SIGNING_SECRET}

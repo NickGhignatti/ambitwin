@@ -30,7 +30,6 @@ func writePKCS8Key(t *testing.T) (*rsa.PrivateKey, string) {
 
 func TestLoadOrGenerateKey_FromFileIsStable(t *testing.T) {
 	want, path := writePKCS8Key(t)
-	t.Setenv("GATEWAY_PRIVATE_KEY", "")
 	t.Setenv("GATEWAY_PRIVATE_KEY_FILE", path)
 
 	got, kid, err := loadOrGenerateKey()
@@ -49,7 +48,6 @@ func TestLoadOrGenerateKey_FromFileIsStable(t *testing.T) {
 
 func TestLoadOrGenerateKey_FileWinsOverEphemeralFallback(t *testing.T) {
 	_, path := writePKCS8Key(t)
-	t.Setenv("GATEWAY_PRIVATE_KEY", "")
 	t.Setenv("GATEWAY_PRIVATE_KEY_FILE", path)
 
 	_, kid, err := loadOrGenerateKey()
@@ -62,7 +60,6 @@ func TestLoadOrGenerateKey_FileWinsOverEphemeralFallback(t *testing.T) {
 }
 
 func TestLoadOrGenerateKey_MissingFileErrors(t *testing.T) {
-	t.Setenv("GATEWAY_PRIVATE_KEY", "")
 	t.Setenv("GATEWAY_PRIVATE_KEY_FILE", filepath.Join(t.TempDir(), "does-not-exist.pem"))
 
 	if _, _, err := loadOrGenerateKey(); err == nil {
