@@ -178,7 +178,7 @@ MongoDB, database `ambitwin`:
 | Collection | One document per | Shape | Indexes |
 |---|---|---|---|
 | `buildings` | building | `{id, name, rooms: [{id, name, capacity, position, dimensions, color?}], domains}` | `id` unique. `domains` |
-| `pending_uploads` | upload | the building, the caller's raw claims, `status`, `attempts`, `leased_until`, `accepted_at`, `error`, `finished_at` | `id` unique. `status` + `leased_until`. `finished_at` with expiry 1 h |
+| `pending_uploads` | upload | the building, the caller's raw claims, `status`, `leased_until`, `accepted_at`, `error`, `finished_at` | `id` unique. `status` + `leased_until`. `finished_at` with expiry 1 h |
 | `placements` | building | `{_id: buildingId, sensors: {"<sensorId>": {x, y, z}}}` | `_id` |
 
 - Tracks and dots live **in memory only**. A restart starts every building from no tracks.
@@ -363,16 +363,13 @@ let claimable = doc! {
     "status": "pending",
     "$or": [{ "leased_until": null }, { "leased_until": { "$lte": now } }],
 };
-let lease = doc! {
-    "$set": { "leased_until": expires_at },
-    "$inc": { "attempts": 1 },
-};
+let lease = doc! { "$set": { "leased_until": expires_at } };
 
 // resolve (mark_ready, mark_failed)
 doc! { "id": { "$eq": id }, "status": "pending" }
 ```
 
-- **Claim**: find *one* job that is `pending` and either never leased or whose lease has run out, and in the same atomic step set a new lease (`now + 30 s`) and add 1 to `attempts`. `find_one_and_update` makes this one operation, so two workers can never take the same job at the same time.
+- **Claim**: find *one* job that is `pending` and either never leased or whose lease has run out, and in the same atomic step set a new lease (`now + 30 s`). `find_one_and_update` makes this one operation, so two workers can never take the same job at the same time.
 - **Resolve** (`mark_ready` and `mark_failed`): find the job that is still `pending` and change its status. It returns the job **as it was before**, and from that the time since `accepted_at`. If the job was already resolved, nothing matches and the answer is `None`: a repeat does nothing.
 
 A **lease** is like borrowing a library book for 30 seconds. If the borrower (the worker) crashes, the book comes back by itself when the time runs out and someone else can take it. That is why a crash in the middle of provisioning loses nothing.
@@ -463,7 +460,7 @@ async fn provision(&self, upload: &AcceptedUpload) -> Result<(), DomainError> {
 
 **Example.** `telemetry` is down for 2 minutes. The job is claimed at 0 s, 30 s, 60 s, 90 s, 120 s: 5 attempts, 5 identical requests on Kafka. When `telemetry` comes back it registers the building 5 times (each an upsert) and answers 5 times. The first `ready` resolves the job. The other 4 match nothing.
 
-- `attempts` grows, but nothing reads it: there is no retry limit.
+- There is no retry limit.
 
 .mermaid
     sequenceDiagram
@@ -481,11 +478,11 @@ async fn provision(&self, upload: &AcceptedUpload) -> Result<(), DomainError> {
         H->>H: new UUID, normalize_building_name
         H->>P: accept(building, claims)
         P->>P: domains not empty, can_edit_every(claims, domains)
-        P->>Q: enqueue: status pending, attempts 0
+        P->>Q: enqueue: status pending
         H-->>B: 202 {buildingId}
         W->>P: provision_next(30 s)
         P->>Q: claim: a pending job, lease free or run out
-        Q-->>P: AcceptedUpload, lease until now + 30 s, attempts + 1
+        Q-->>P: AcceptedUpload, lease until now + 30 s
         P->>S: upsert(building)
         P->>K: publish_building_registration_request
         P->>D: init_preferences: POST dashboard /preferences/init/{id}
@@ -499,9 +496,9 @@ Example data: one room, editor in `eng`.
 | 1 | `{"name":" HQ ","domains":["eng"],"rooms":[{"id":"r1","name":"","capacity":20,"position":{"x":5,"y":1.5,"z":4},"dimensions":{"width":10,"height":3,"depth":8}}]}` |
 | 2 | `Room {id: r1, name: r1, capacity: 20.0, …}`. The blank name becomes the id |
 | 3 | `Building {id: 5c1e…, name: HQ, domains: [eng]}`. The name is trimmed |
-| 6 | `pending_uploads`: `{id: 5c1e…, building, claims: "<raw header>", status: pending, attempts: 0}` |
+| 6 | `pending_uploads`: `{id: 5c1e…, building, claims: "<raw header>", status: pending}` |
 | 7 | `202 {"buildingId":"5c1e…"}` |
-| 10 | The same job, `leased_until` now + 30 s, `attempts` 1 |
+| 10 | The same job, `leased_until` now + 30 s |
 | 12 | `{"buildingId":"5c1e…","name":"HQ","rooms":[{"id":"r1","name":"r1"}]}` on Kafka, key `5c1e…` |
 | 13 | `POST …/preferences/init/5c1e…` with the uploader's claims |
 
@@ -1318,7 +1315,7 @@ just test twin-integration   # tests/*.rs against a throwaway MongoDB
 ## Gaps
 
 - **`PATCH` saves before `telemetry` answers.** When the limit sync fails, the caller gets `500` but the new name and domains are already stored.
-- **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever. `attempts` is counted but never read.
+- **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever.
 - **`init_preferences` ignores the answer code.** A `4xx` or `5xx` from `dashboard` looks like success, and the building gets no live feed until someone saves its columns.
 - **Status and ownership lookup need only a signed-in caller.** Any user can learn a building's domains, or an upload's status, from its id or name.
 - **The rate limit lives in memory.** Two copies of the service each allow 300 per minute.

@@ -176,32 +176,6 @@ async fn an_upload_whose_lease_expired_is_redelivered() {
 }
 
 #[tokio::test]
-async fn every_delivery_is_counted() {
-    let (queue, collection_name) = test_queue().await;
-    let id = enqueued(&queue).await;
-
-    queue.claim(Duration::ZERO).await.unwrap().unwrap();
-    queue.claim(Duration::ZERO).await.unwrap().unwrap();
-
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let client = mongodb::Client::with_uri_str(&uri).await.unwrap();
-    let raw = client
-        .database("digital_twin_test")
-        .collection::<mongodb::bson::Document>(&collection_name);
-    let doc = raw
-        .find_one(doc! { "id": { "$eq": &id } })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        doc.get_i32("attempts").unwrap(),
-        2,
-        "the retry budget depends on this count"
-    );
-}
-
-#[tokio::test]
 async fn a_provisioned_upload_is_ready_and_no_longer_claimable() {
     let (queue, _) = test_queue().await;
     let id = enqueued(&queue).await;

@@ -21,7 +21,6 @@ struct PendingUpload {
     building: Building,
     claims: String,
     status: UploadStatus,
-    attempts: i32,
     leased_until: Option<DateTime>,
     error: Option<String>,
     accepted_at: DateTime,
@@ -35,7 +34,6 @@ impl PendingUpload {
             building: upload.building.clone(),
             claims: upload.claims.clone(),
             status: UploadStatus::Pending,
-            attempts: 0,
             leased_until: None,
             error: None,
             accepted_at: DateTime::now(),
@@ -141,10 +139,7 @@ impl UploadQueue for MongoUploadQueue {
             "status": "pending",
             "$or": [{ "leased_until": null }, { "leased_until": { "$lte": now } }],
         };
-        let lease = doc! {
-            "$set": { "leased_until": expires_at },
-            "$inc": { "attempts": 1 },
-        };
+        let lease = doc! { "$set": { "leased_until": expires_at } };
 
         Ok(self
             .col
@@ -209,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn a_freshly_accepted_upload_starts_pending_with_no_attempts_or_lease() {
+    fn a_freshly_accepted_upload_starts_pending_with_no_lease() {
         let upload = AcceptedUpload {
             id: "u1".to_string(),
             building: dummy_building("b1"),
@@ -220,7 +215,6 @@ mod tests {
 
         assert_eq!(job.id, "u1");
         assert_eq!(job.status, UploadStatus::Pending);
-        assert_eq!(job.attempts, 0);
         assert_eq!(job.leased_until, None);
         assert_eq!(job.error, None);
     }
