@@ -103,7 +103,12 @@ impl Buildings {
         patch: BuildingPatch,
         claims: &GatewayClaims,
     ) -> Result<Building, DomainError> {
-        let mut building = self.get_building_by_id_for_edit(id, claims).await?;
+        let mut building = self.find(id).await?;
+        if !authz::can_edit_domains(claims, &building.domains) {
+            return Err(DomainError::Forbidden(
+                "Requires an editing role in one of this building's domains".to_string(),
+            ));
+        }
 
         if let Some(name) = patch.name {
             building.name = name;
@@ -116,6 +121,7 @@ impl Buildings {
             }
             building.domains = domains;
         }
+        heal_names(&mut building);
         self.store.upsert(&building).await?;
         self.downstream
             .clone_thresholds(&building, patch.max_temperature, &claims.raw)
@@ -131,46 +137,31 @@ impl Buildings {
             .ok_or_else(|| DomainError::NotFound(format!("Building with id: \"{id}\" not found")))
     }
 
-    async fn get_building_by_id(&self, id: &str) -> Result<Building, DomainError> {
-        let building = self.find(id).await?;
-        self.normalize(building).await
-    }
-
-    async fn get_building_by_id_for_edit(
-        &self,
-        id: &str,
-        claims: &GatewayClaims,
-    ) -> Result<Building, DomainError> {
-        let building = self.get_building_by_id(id).await?;
-        if !authz::can_edit_domains(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires an editing role in one of this building's domains".to_string(),
-            ));
-        }
-        Ok(building)
-    }
-
     async fn normalize(&self, mut building: Building) -> Result<Building, DomainError> {
-        let mut changed = false;
-
-        let normalized = normalize_building_name(Some(&building.name), Some(&building.id));
-        if normalized != building.name {
-            building.name = normalized;
-            changed = true;
-        }
-        for room in &mut building.rooms {
-            let normalized = normalize_room_name(Some(&room.name), &room.id);
-            if normalized != room.name {
-                room.name = normalized;
-                changed = true;
-            }
-        }
-
-        if changed {
+        if heal_names(&mut building) {
             self.store.upsert(&building).await?;
         }
         Ok(building)
     }
+}
+
+/// Replaces blank building and room names with their ids; true when anything changed.
+fn heal_names(building: &mut Building) -> bool {
+    let mut changed = false;
+
+    let normalized = normalize_building_name(Some(&building.name), Some(&building.id));
+    if normalized != building.name {
+        building.name = normalized;
+        changed = true;
+    }
+    for room in &mut building.rooms {
+        let normalized = normalize_room_name(Some(&room.name), &room.id);
+        if normalized != room.name {
+            room.name = normalized;
+            changed = true;
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -395,6 +386,42 @@ mod tests {
             ));
         }
         assert_eq!(store.get("b1").unwrap().domains, ["eng"]);
+    }
+
+    #[tokio::test]
+    async fn a_refused_edit_does_not_heal_the_building() {
+        let (buildings, store, _) = buildings();
+        store.seed(Building {
+            id: "b1".to_string(),
+            name: "   ".to_string(),
+            rooms: vec![room("r1")],
+            domains: vec!["eng".to_string()],
+        });
+        let customer = claims_with(vec![("eng", "standard_customer")]);
+        let patch = BuildingPatch {
+            name: Some("Renamed".to_string()),
+            ..BuildingPatch::default()
+        };
+
+        assert!(buildings.update("b1", patch, &customer).await.is_err());
+        assert_eq!(store.get("b1").unwrap().name, "   ");
+    }
+
+    #[tokio::test]
+    async fn a_blank_name_in_a_patch_falls_back_to_the_id() {
+        let (buildings, store, _) = buildings();
+        seeded(&store, vec!["eng"]);
+        let staff = claims_with(vec![("eng", "business_staff")]);
+        let patch = BuildingPatch {
+            name: Some("  ".to_string()),
+            ..BuildingPatch::default()
+        };
+
+        assert_eq!(
+            buildings.update("b1", patch, &staff).await.unwrap().name,
+            "b1"
+        );
+        assert_eq!(store.get("b1").unwrap().name, "b1");
     }
 
     #[tokio::test]

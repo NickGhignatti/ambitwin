@@ -694,6 +694,11 @@ vec![
 
 ```rust
 async fn normalize(&self, mut building: Building) -> Result<Building, DomainError> {
+    if heal_names(&mut building) { self.store.upsert(&building).await?; }
+    Ok(building)
+}
+
+fn heal_names(building: &mut Building) -> bool {
     let mut changed = false;
     let normalized = normalize_building_name(Some(&building.name), Some(&building.id));
     if normalized != building.name { building.name = normalized; changed = true; }
@@ -701,8 +706,7 @@ async fn normalize(&self, mut building: Building) -> Result<Building, DomainErro
         let normalized = normalize_room_name(Some(&room.name), &room.id);
         if normalized != room.name { room.name = normalized; changed = true; }
     }
-    if changed { self.store.upsert(&building).await?; }
-    Ok(building)
+    changed
 }
 ```
 
@@ -712,7 +716,10 @@ A stored blank name is replaced by the id. If anything changed, the building is 
 
 ```rust
 pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaims) -> Result<Building, DomainError> {
-    let mut building = self.get_building_by_id_for_edit(id, claims).await?;
+    let mut building = self.find(id).await?;
+    if !authz::can_edit_domains(claims, &building.domains) {
+        return Err(DomainError::Forbidden("Requires an editing role in one of this building's domains".to_string()));
+    }
 
     if let Some(name) = patch.name { building.name = name; }
     if let Some(domains) = patch.domains {
@@ -721,6 +728,7 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         }
         building.domains = domains;
     }
+    heal_names(&mut building);
     self.store.upsert(&building).await?;
     self.downstream.clone_thresholds(&building, patch.max_temperature, &claims.raw).await?;
 
@@ -730,8 +738,9 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
 
 1. Load the building and check the caller edits one of its **current** domains.
 2. Apply `name` and `domains` if present. New `domains` must be non-empty, and the caller must edit **every** one of them, like `POST /register`.
-3. **Save.**
-4. Tell `telemetry` (`PUT /thresholds/buildings/{id}`) with the caller's own claims.
+3. Heal blank names, so `PATCH {"name":"  "}` stores the id, not a blank.
+4. **Save**, once. A refused edit writes nothing.
+5. Tell `telemetry` (`PUT /thresholds/buildings/{id}`) with the caller's own claims.
 
 .mermaid
     sequenceDiagram
@@ -741,16 +750,17 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         participant S as MongoBuildings
         participant T as telemetry
         B->>U: PATCH /building/b1 {name, domains, maxTemperature}
-        U->>S: find, normalize
+        U->>S: find
         U->>U: can_edit_domains(claims, current domains)
         U->>U: apply name; domains only if can_edit_every(claims, new domains)
+        U->>U: heal_names
         U->>S: upsert(building)
         U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature?}
         T-->>U: 2xx
         U-->>B: Building
 
 - Rooms cannot change: the patch has no room field. The room set is write-once.
-- A non-2xx answer from `telemetry` fails the request with `500`, **after** step 3 already saved.
+- A non-2xx answer from `telemetry` fails the request with `500`, **after** step 4 already saved.
 
 ---
 
