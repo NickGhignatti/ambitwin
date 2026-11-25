@@ -8,11 +8,10 @@ use crate::service::ports::{BuildingStore, DownstreamSync};
 
 const MAX_DOMAIN_NAMES: usize = 500;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct BuildingPatch {
     pub name: Option<String>,
     pub domains: Option<Vec<String>>,
-    pub max_temperature: Option<f64>,
 }
 
 pub struct Buildings {
@@ -116,7 +115,7 @@ impl Buildings {
         heal_names(&mut building);
         self.store.upsert(&building).await?;
         self.downstream
-            .clone_thresholds(&building, patch.max_temperature, &claims.raw)
+            .clone_thresholds(&building, &claims.raw)
             .await?;
 
         Ok(building)
@@ -452,7 +451,6 @@ mod tests {
                 "b1",
                 BuildingPatch {
                     name: Some("Renamed".to_string()),
-                    max_temperature: Some(24.0),
                     ..BuildingPatch::default()
                 },
                 &admin,
@@ -462,10 +460,7 @@ mod tests {
 
         assert_eq!(updated.name, "Renamed");
         assert_eq!(store.get("b1").unwrap().name, "Renamed");
-        assert_eq!(
-            *sync.cloned.lock().unwrap(),
-            [("b1".to_string(), Some(24.0))]
-        );
+        assert_eq!(*sync.cloned.lock().unwrap(), ["b1"]);
     }
 
     #[tokio::test]

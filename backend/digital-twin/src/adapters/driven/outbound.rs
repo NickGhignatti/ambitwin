@@ -27,13 +27,8 @@ pub struct OutboundConfig {
 
 #[async_trait]
 impl DownstreamSync for OutboundConfig {
-    async fn clone_thresholds(
-        &self,
-        building: &Building,
-        max_temperature: Option<f64>,
-        claims: &str,
-    ) -> anyhow::Result<()> {
-        sync_building_clone(self, building, max_temperature, Some(claims)).await
+    async fn clone_thresholds(&self, building: &Building, claims: &str) -> anyhow::Result<()> {
+        sync_building_clone(self, building, Some(claims)).await
     }
 
     async fn init_preferences(&self, building_id: &str, claims: &str) {
@@ -59,23 +54,19 @@ fn auth_headers(claims_header: Option<&str>) -> reqwest::header::HeaderMap {
 pub async fn sync_building_clone(
     config: &OutboundConfig,
     building: &Building,
-    max_temperature: Option<f64>,
     claims_header: Option<&str>,
 ) -> anyhow::Result<()> {
     if !config.sync_enabled {
         return Ok(());
     }
 
-    let mut payload = json!({
+    let payload = json!({
         "name": building.name,
         "rooms": building.rooms.iter().map(|r| json!({
             "id": r.id,
             "name": if r.name.trim().is_empty() { r.id.clone() } else { r.name.clone() },
         })).collect::<Vec<_>>(),
     });
-    if let Some(max_temp) = max_temperature {
-        payload["maxTemperature"] = json!(max_temp);
-    }
 
     let url = format!(
         "{}/thresholds/buildings/{}",
@@ -210,7 +201,7 @@ mod tests {
 
         let cfg = config(&server).await;
         let started = std::time::Instant::now();
-        let result = sync_building_clone(&cfg, &building(), None, None).await;
+        let result = sync_building_clone(&cfg, &building(), None).await;
 
         assert!(result.is_err());
         assert!(started.elapsed() < TIMEOUT * 2);
@@ -227,7 +218,7 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        sync_building_clone(&cfg, &building(), None, Some("tok-123"))
+        sync_building_clone(&cfg, &building(), Some("tok-123"))
             .await
             .unwrap();
     }
@@ -242,9 +233,7 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        sync_building_clone(&cfg, &building(), None, None)
-            .await
-            .unwrap();
+        sync_building_clone(&cfg, &building(), None).await.unwrap();
     }
 
     #[tokio::test]
@@ -256,9 +245,7 @@ mod tests {
             sync_enabled: false,
             client: reqwest::Client::new(),
         };
-        sync_building_clone(&cfg, &building(), None, None)
-            .await
-            .unwrap();
+        sync_building_clone(&cfg, &building(), None).await.unwrap();
         init_building_preferences(&cfg, "b1", None).await;
         notify_provisioning_failed(&cfg, "b1", "boom").await;
     }

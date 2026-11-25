@@ -44,12 +44,7 @@ pub trait RegistrationEvents: Send + Sync {
 
 #[async_trait]
 pub trait DownstreamSync: Send + Sync {
-    async fn clone_thresholds(
-        &self,
-        building: &Building,
-        max_temperature: Option<f64>,
-        claims: &str,
-    ) -> anyhow::Result<()>;
+    async fn clone_thresholds(&self, building: &Building, claims: &str) -> anyhow::Result<()>;
 
     async fn init_preferences(&self, building_id: &str, claims: &str);
 

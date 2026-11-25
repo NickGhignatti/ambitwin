@@ -136,16 +136,6 @@ pub async fn get_domains_by_building(
     ))
 }
 
-#[derive(Deserialize)]
-pub struct UpdateBuildingRequest {
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub domains: Option<Vec<String>>,
-    #[serde(default, rename = "maxTemperature")]
-    pub max_temperature: Option<f64>,
-}
-
 pub async fn resync_building(
     State(state): State<AppState>,
     Path(building_id): Path<String>,
@@ -159,13 +149,8 @@ pub async fn update_building(
     State(state): State<AppState>,
     Path(building_id): Path<String>,
     claims: GatewayClaims,
-    Json(body): Json<UpdateBuildingRequest>,
+    Json(patch): Json<BuildingPatch>,
 ) -> Result<Json<Building>, DomainError> {
-    let patch = BuildingPatch {
-        name: body.name,
-        domains: body.domains,
-        max_temperature: body.max_temperature,
-    };
     Ok(Json(
         state.buildings.update(&building_id, patch, &claims).await?,
     ))

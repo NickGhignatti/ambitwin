@@ -217,7 +217,7 @@ impl UploadQueue for FakeQueue {
 
 #[derive(Default)]
 pub struct FakeSync {
-    pub cloned: Mutex<Vec<(String, Option<f64>)>>,
+    pub cloned: Mutex<Vec<String>>,
     pub seeded_preferences: Mutex<Vec<String>>,
     pub failure_notifications: Mutex<Vec<(String, String)>>,
     pub refuse: bool,
@@ -225,19 +225,11 @@ pub struct FakeSync {
 
 #[async_trait]
 impl DownstreamSync for FakeSync {
-    async fn clone_thresholds(
-        &self,
-        building: &Building,
-        max_temperature: Option<f64>,
-        _claims: &str,
-    ) -> anyhow::Result<()> {
+    async fn clone_thresholds(&self, building: &Building, _claims: &str) -> anyhow::Result<()> {
         if self.refuse {
             anyhow::bail!("telemetry said no");
         }
-        self.cloned
-            .lock()
-            .unwrap()
-            .push((building.id.clone(), max_temperature));
+        self.cloned.lock().unwrap().push(building.id.clone());
         Ok(())
     }
 

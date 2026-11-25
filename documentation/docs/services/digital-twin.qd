@@ -518,9 +518,9 @@ Example data: one room, editor in `eng`.
 ### What goes to the other services
 
 ```rust
-pub async fn sync_building_clone(config: &OutboundConfig, building: &Building, max_temperature: Option<f64>, claims_header: Option<&str>) -> anyhow::Result<()> {
+pub async fn sync_building_clone(config: &OutboundConfig, building: &Building, claims_header: Option<&str>) -> anyhow::Result<()> {
     if !config.sync_enabled { return Ok(()); }
-    // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}], maxTemperature? }
+    // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}] }
     // non-2xx: bail! "Failed to sync sensor threshold clone: {status} {details}"
 }
 
@@ -726,7 +726,7 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
     }
     heal_names(&mut building);
     self.store.upsert(&building).await?;
-    self.downstream.clone_thresholds(&building, patch.max_temperature, &claims.raw).await?;
+    self.downstream.clone_thresholds(&building, &claims.raw).await?;
 
     Ok(building)
 }
@@ -745,13 +745,13 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         participant U as Buildings::update
         participant S as MongoBuildings
         participant T as telemetry
-        B->>U: PATCH /building/b1 {name, domains, maxTemperature}
+        B->>U: PATCH /building/b1 {name, domains}
         U->>S: find
         U->>U: require_edit(claims, building)
         U->>U: apply name; domains only if can_edit_every(claims, new domains)
         U->>U: heal_names
         U->>S: upsert(building)
-        U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature?}
+        U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms}
         T-->>U: 2xx
         U-->>B: Building
 
