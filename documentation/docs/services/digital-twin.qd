@@ -355,29 +355,21 @@ Then the upload is saved **together with the caller's raw claims header** (`clai
 
 ### The queue: `UploadQueue` on MongoDB
 
-A job is a document in `pending_uploads`. Three queries do all the work:
+A job is a document in `pending_uploads`. Its `status` is the domain's own `UploadStatus`, stored lowercase. Three queries do all the work:
 
 ```rust
-fn claimable_filter(now: DateTime) -> Document {
-    doc! {
-        "status": "pending",
-        "$or": [
-            { "leased_until": null },
-            { "leased_until": { "$lte": now } },
-        ],
-    }
-}
+// claim
+let claimable = doc! {
+    "status": "pending",
+    "$or": [{ "leased_until": null }, { "leased_until": { "$lte": now } }],
+};
+let lease = doc! {
+    "$set": { "leased_until": expires_at },
+    "$inc": { "attempts": 1 },
+};
 
-fn claim_update(expires_at: DateTime) -> Document {
-    doc! {
-        "$set": { "leased_until": expires_at },
-        "$inc": { "attempts": 1 },
-    }
-}
-
-fn resolve_filter(id: &str) -> Document {
-    doc! { "id": { "$eq": id }, "status": "pending" }
-}
+// resolve (mark_ready, mark_failed)
+doc! { "id": { "$eq": id }, "status": "pending" }
 ```
 
 - **Claim**: find *one* job that is `pending` and either never leased or whose lease has run out, and in the same atomic step set a new lease (`now + 30 s`) and add 1 to `attempts`. `find_one_and_update` makes this one operation, so two workers can never take the same job at the same time.

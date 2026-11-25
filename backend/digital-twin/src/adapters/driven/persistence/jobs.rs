@@ -15,30 +15,12 @@ use mongodb::options::IndexOptions;
 // record must outlive that wait before the TTL index removes it.
 const FINISHED_RETENTION: Duration = Duration::from_secs(3600);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum JobStatus {
-    Pending,
-    Ready,
-    Failed,
-}
-
-impl From<JobStatus> for UploadStatus {
-    fn from(s: JobStatus) -> Self {
-        match s {
-            JobStatus::Pending => UploadStatus::Pending,
-            JobStatus::Ready => UploadStatus::Ready,
-            JobStatus::Failed => UploadStatus::Failed,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PendingUpload {
     id: String,
     building: Building,
     claims: String,
-    status: JobStatus,
+    status: UploadStatus,
     attempts: i32,
     leased_until: Option<DateTime>,
     error: Option<String>,
@@ -52,7 +34,7 @@ impl PendingUpload {
             id: upload.id.clone(),
             building: upload.building.clone(),
             claims: upload.claims.clone(),
-            status: JobStatus::Pending,
+            status: UploadStatus::Pending,
             attempts: 0,
             leased_until: None,
             error: None,
@@ -129,12 +111,12 @@ impl MongoUploadQueue {
     }
 
     async fn resolve(&self, id: &str, set: Document) -> anyhow::Result<Option<Duration>> {
-        let filter = resolve_filter(id);
-        let update = resolve_update(set);
-
         Ok(self
             .col
-            .find_one_and_update(filter, update)
+            .find_one_and_update(
+                doc! { "id": { "$eq": id }, "status": "pending" },
+                doc! { "$set": set },
+            )
             .return_document(ReturnDocument::Before)
             .await?
             .map(|job| {
@@ -155,12 +137,18 @@ impl UploadQueue for MongoUploadQueue {
     async fn claim(&self, lease: Duration) -> anyhow::Result<Option<AcceptedUpload>> {
         let now = DateTime::now();
         let expires_at = DateTime::from_millis(now.timestamp_millis() + lease.as_millis() as i64);
-        let filter = claimable_filter(now);
-        let update = claim_update(expires_at);
+        let claimable = doc! {
+            "status": "pending",
+            "$or": [{ "leased_until": null }, { "leased_until": { "$lte": now } }],
+        };
+        let lease = doc! {
+            "$set": { "leased_until": expires_at },
+            "$inc": { "attempts": 1 },
+        };
 
         Ok(self
             .col
-            .find_one_and_update(filter, update)
+            .find_one_and_update(claimable, lease)
             .return_document(ReturnDocument::After)
             .await?
             .map(AcceptedUpload::from))
@@ -187,33 +175,8 @@ impl UploadQueue for MongoUploadQueue {
             .col
             .find_one(doc! { "id": { "$eq": id } })
             .await?
-            .map(|job| job.status.into()))
+            .map(|job| job.status))
     }
-}
-
-fn claimable_filter(now: DateTime) -> Document {
-    doc! {
-        "status": "pending",
-        "$or": [
-            { "leased_until": null },
-            { "leased_until": { "$lte": now } },
-        ],
-    }
-}
-
-fn claim_update(expires_at: DateTime) -> Document {
-    doc! {
-        "$set": { "leased_until": expires_at },
-        "$inc": { "attempts": 1 },
-    }
-}
-
-fn resolve_filter(id: &str) -> Document {
-    doc! { "id": { "$eq": id }, "status": "pending" }
-}
-
-fn resolve_update(set: Document) -> Document {
-    doc! { "$set": set }
 }
 
 #[cfg(test)]
@@ -246,16 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn job_status_maps_onto_upload_status_one_to_one() {
-        assert_eq!(
-            UploadStatus::from(JobStatus::Pending),
-            UploadStatus::Pending
-        );
-        assert_eq!(UploadStatus::from(JobStatus::Ready), UploadStatus::Ready);
-        assert_eq!(UploadStatus::from(JobStatus::Failed), UploadStatus::Failed);
-    }
-
-    #[test]
     fn a_freshly_accepted_upload_starts_pending_with_no_attempts_or_lease() {
         let upload = AcceptedUpload {
             id: "u1".to_string(),
@@ -266,7 +219,7 @@ mod tests {
         let job = PendingUpload::accepted(&upload);
 
         assert_eq!(job.id, "u1");
-        assert_eq!(job.status, JobStatus::Pending);
+        assert_eq!(job.status, UploadStatus::Pending);
         assert_eq!(job.attempts, 0);
         assert_eq!(job.leased_until, None);
         assert_eq!(job.error, None);
@@ -286,50 +239,5 @@ mod tests {
         assert_eq!(round_tripped.id, "u1");
         assert_eq!(round_tripped.claims, "tok");
         assert_eq!(round_tripped.building.id, "b1");
-    }
-
-    #[test]
-    fn claimable_filter_only_matches_pending_jobs_with_no_or_expired_lease() {
-        let now = DateTime::now();
-        let filter = claimable_filter(now);
-
-        assert_eq!(
-            filter,
-            doc! {
-                "status": "pending",
-                "$or": [
-                    { "leased_until": null },
-                    { "leased_until": { "$lte": now } },
-                ],
-            }
-        );
-    }
-
-    #[test]
-    fn claim_update_sets_the_lease_and_increments_attempts() {
-        let expires_at = DateTime::now();
-        let update = claim_update(expires_at);
-
-        assert_eq!(
-            update,
-            doc! {
-                "$set": { "leased_until": expires_at },
-                "$inc": { "attempts": 1 },
-            }
-        );
-    }
-
-    #[test]
-    fn resolve_filter_only_matches_the_given_id_while_still_pending() {
-        assert_eq!(
-            resolve_filter("u1"),
-            doc! { "id": { "$eq": "u1" }, "status": "pending" }
-        );
-    }
-
-    #[test]
-    fn resolve_update_wraps_the_given_fields_in_a_set() {
-        let set = doc! { "status": "ready" };
-        assert_eq!(resolve_update(set.clone()), doc! { "$set": set });
     }
 }
