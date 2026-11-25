@@ -5,7 +5,7 @@ use crate::adapters::topics::{
     BUILDING_REGISTRATION_COMPLETED_TOPIC, BUILDING_REGISTRATION_REQUESTED_TOPIC,
     ESTIMATED_OCCUPANCY_TOPIC,
 };
-use crate::domain::Building;
+use crate::domain::{Building, normalize_room_name};
 use crate::service::ports::{OccupancyEvents, RegistrationEvents};
 use async_trait::async_trait;
 use rdkafka::ClientConfig;
@@ -86,11 +86,7 @@ impl RegistrationEvents for KafkaEventProducer {
                 .iter()
                 .map(|room| RegistrationRoom {
                     id: room.id.clone(),
-                    name: if room.name.trim().is_empty() {
-                        room.id.clone()
-                    } else {
-                        room.name.clone()
-                    },
+                    name: normalize_room_name(Some(&room.name), &room.id),
                 })
                 .collect(),
         })

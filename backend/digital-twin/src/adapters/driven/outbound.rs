@@ -4,7 +4,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::json;
 use std::time::Duration;
 
-use crate::domain::Building;
+use crate::domain::{Building, normalize_room_name};
 use crate::service::ports::DownstreamSync;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -35,7 +35,7 @@ impl DownstreamSync for OutboundConfig {
             "name": building.name,
             "rooms": building.rooms.iter().map(|r| json!({
                 "id": r.id,
-                "name": if r.name.trim().is_empty() { r.id.clone() } else { r.name.clone() },
+                "name": normalize_room_name(Some(&r.name), &r.id),
             })).collect::<Vec<_>>(),
         });
         let url = format!(
