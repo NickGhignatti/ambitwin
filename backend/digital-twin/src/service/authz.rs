@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use crate::domain::identity::GatewayClaims;
+use crate::domain::{Building, DomainError};
 
 static ROLE_WEIGHTS: LazyLock<HashMap<String, i64>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../libs/auth-contracts/roles.json"))
@@ -177,17 +178,29 @@ pub fn is_member_of(claims: &GatewayClaims, domain: &str) -> bool {
     authorize(claims, "Read", domain, None)
 }
 
-pub fn can_read_building(claims: &GatewayClaims, building_domains: &[String]) -> bool {
-    reads_any_geometry(claims)
-        || building_domains
+/// Forbidden unless the caller is a member of one of the building's domains, or reads all geometry.
+pub fn require_read(claims: &GatewayClaims, building: &Building) -> Result<(), DomainError> {
+    let allowed = reads_any_geometry(claims)
+        || building
+            .domains
             .iter()
-            .any(|domain| is_member_of(claims, domain))
+            .any(|domain| is_member_of(claims, domain));
+    allowed.then_some(()).ok_or_else(|| {
+        DomainError::Forbidden("Requires membership in one of this building's domains".to_string())
+    })
 }
 
-pub fn can_edit_domains(claims: &GatewayClaims, building_domains: &[String]) -> bool {
-    building_domains
+/// Forbidden unless the caller has an editing role in one of the building's domains.
+pub fn require_edit(claims: &GatewayClaims, building: &Building) -> Result<(), DomainError> {
+    let allowed = building
+        .domains
         .iter()
-        .any(|domain| authorize(claims, "Edit", domain, None))
+        .any(|domain| authorize(claims, "Edit", domain, None));
+    allowed.then_some(()).ok_or_else(|| {
+        DomainError::Forbidden(
+            "Requires an editing role in one of this building's domains".to_string(),
+        )
+    })
 }
 
 /// A new building may only be filed under domains the caller edits, all of them.
@@ -248,42 +261,46 @@ mod tests {
         assert!(!is_member_of(&claims, "other"));
     }
 
-    #[test]
-    fn can_edit_domains_requires_business_staff_or_higher() {
-        let staff = claims_with(vec![("eng", "business_staff")]);
-        assert!(can_edit_domains(&staff, &["eng".to_string()]));
-
-        let customer = claims_with(vec![("eng", "standard_customer")]);
-        assert!(!can_edit_domains(&customer, &["eng".to_string()]));
+    fn owned_by(domains: &[&str]) -> Building {
+        Building {
+            id: "b1".to_string(),
+            name: "b1".to_string(),
+            rooms: vec![],
+            domains: domains.iter().map(|domain| domain.to_string()).collect(),
+        }
     }
 
     #[test]
-    fn can_edit_domains_checks_any_of_the_buildings_domains() {
-        let claims = claims_with(vec![("eng", "business_admin")]);
-        assert!(can_edit_domains(
-            &claims,
-            &["other".to_string(), "eng".to_string()]
+    fn require_edit_needs_business_staff_or_higher_in_any_of_the_buildings_domains() {
+        let building = owned_by(&["other", "eng"]);
+        let staff = claims_with(vec![("eng", "business_staff")]);
+        assert!(require_edit(&staff, &building).is_ok());
+
+        let customer = claims_with(vec![("eng", "standard_customer")]);
+        assert!(matches!(
+            require_edit(&customer, &building),
+            Err(DomainError::Forbidden(_))
         ));
     }
 
     #[test]
-    fn can_read_building_needs_one_shared_domain_or_the_simulator() {
-        let domains = ["eng".to_string(), "ops".to_string()];
+    fn require_read_needs_one_shared_domain_or_the_simulator() {
+        let building = owned_by(&["eng", "ops"]);
         let member = claims_with(vec![("ops", "standard_customer")]);
-        assert!(can_read_building(&member, &domains));
+        assert!(require_read(&member, &building).is_ok());
 
         let outsider = claims_with(vec![("other", "business_admin")]);
-        assert!(!can_read_building(&outsider, &domains));
+        assert!(require_read(&outsider, &building).is_err());
 
         let platform_admin = claims_with(vec![("other", "admin")]);
         assert!(
-            !can_read_building(&platform_admin, &domains),
+            require_read(&platform_admin, &building).is_err(),
             "a platform admin is not a member of every domain"
         );
 
         let mut simulator = claims_with(vec![]);
         simulator.payload.sub = Some("system:ap-simulator".to_string());
-        assert!(can_read_building(&simulator, &domains));
+        assert!(require_read(&simulator, &building).is_ok());
     }
 
     #[test]

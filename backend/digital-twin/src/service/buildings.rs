@@ -26,12 +26,8 @@ impl Buildings {
     }
 
     pub async fn get(&self, id: &str, claims: &GatewayClaims) -> Result<Building, DomainError> {
-        let building = self.find(id).await?;
-        if !authz::can_read_building(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires membership in one of this building's domains".to_string(),
-            ));
-        }
+        let building = find_building(&*self.store, id).await?;
+        authz::require_read(claims, &building)?;
         self.normalize(building).await
     }
 
@@ -103,12 +99,8 @@ impl Buildings {
         patch: BuildingPatch,
         claims: &GatewayClaims,
     ) -> Result<Building, DomainError> {
-        let mut building = self.find(id).await?;
-        if !authz::can_edit_domains(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires an editing role in one of this building's domains".to_string(),
-            ));
-        }
+        let mut building = find_building(&*self.store, id).await?;
+        authz::require_edit(claims, &building)?;
 
         if let Some(name) = patch.name {
             building.name = name;
@@ -130,19 +122,23 @@ impl Buildings {
         Ok(building)
     }
 
-    async fn find(&self, id: &str) -> Result<Building, DomainError> {
-        self.store
-            .find_by_id(id)
-            .await?
-            .ok_or_else(|| DomainError::NotFound(format!("Building with id: \"{id}\" not found")))
-    }
-
     async fn normalize(&self, mut building: Building) -> Result<Building, DomainError> {
         if heal_names(&mut building) {
             self.store.upsert(&building).await?;
         }
         Ok(building)
     }
+}
+
+/// The building with this id, or NotFound.
+pub(crate) async fn find_building(
+    store: &dyn BuildingStore,
+    id: &str,
+) -> Result<Building, DomainError> {
+    store
+        .find_by_id(id)
+        .await?
+        .ok_or_else(|| DomainError::NotFound(format!("Building with id: \"{id}\" not found")))
 }
 
 /// Replaces blank building and room names with their ids; true when anything changed.

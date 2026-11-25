@@ -654,15 +654,13 @@ async fn fail(&self, id: &str, error: &str) -> Result<Option<Duration>, DomainEr
 
 ```rust
 pub async fn get(&self, id: &str, claims: &GatewayClaims) -> Result<Building, DomainError> {
-    let building = self.find(id).await?;
-    if !authz::can_read_building(claims, &building.domains) {
-        return Err(DomainError::Forbidden("Requires membership in one of this building's domains".to_string()));
-    }
+    let building = find_building(&*self.store, id).await?;
+    authz::require_read(claims, &building)?;
     self.normalize(building).await
 }
 ```
 
-Find (or `404`), check the caller may read it (or `403`), then repair names. `list_for_domain` checks the caller is a member of the asked domain, then lists and repairs each building.
+Find (or `404`), check the caller may read it (or `403`), then repair names. `find_building` and `authz::require_read` / `require_edit` are the one place for that `404` and `403`: `Placements` and `Provisioning::resync` use them too. `list_for_domain` checks the caller is a member of the asked domain, then lists and repairs each building.
 
 ```rust
 pub async fn counts_per_domain(&self, requested: &[String], claims: &GatewayClaims) -> Result<HashMap<String, i64>, DomainError> {
@@ -716,10 +714,8 @@ A stored blank name is replaced by the id. If anything changed, the building is 
 
 ```rust
 pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaims) -> Result<Building, DomainError> {
-    let mut building = self.find(id).await?;
-    if !authz::can_edit_domains(claims, &building.domains) {
-        return Err(DomainError::Forbidden("Requires an editing role in one of this building's domains".to_string()));
-    }
+    let mut building = find_building(&*self.store, id).await?;
+    authz::require_edit(claims, &building)?;
 
     if let Some(name) = patch.name { building.name = name; }
     if let Some(domains) = patch.domains {
@@ -751,7 +747,7 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         participant T as telemetry
         B->>U: PATCH /building/b1 {name, domains, maxTemperature}
         U->>S: find
-        U->>U: can_edit_domains(claims, current domains)
+        U->>U: require_edit(claims, building)
         U->>U: apply name; domains only if can_edit_every(claims, new domains)
         U->>U: heal_names
         U->>S: upsert(building)
@@ -817,15 +813,13 @@ An outsider gets `[]`, the same answer as for a building that does not exist, so
 
 ```rust
 pub async fn apply(&self, building_id: &str, changes: PlacementChanges, claims: &GatewayClaims) -> Result<(), DomainError> {
-    let building = self.building(building_id).await?;
-    if !authz::can_edit_domains(claims, &building.domains) {
-        return Err(DomainError::Forbidden("Requires an editing role in one of this building's domains".to_string()));
-    }
+    let building = find_building(&*self.buildings, building_id).await?;
+    authz::require_edit(claims, &building)?;
     Ok(self.store.apply(building_id, &changes).await?)
 }
 ```
 
-`list` checks `can_read_building` and sorts by sensor id. `apply` checks `can_edit_domains`. The store does the write:
+`list` checks `require_read` and sorts by sensor id. `apply` checks `require_edit`. The store does the write:
 
 ```rust
 let mut update = Document::new();
@@ -866,7 +860,7 @@ Only the **position** lives here. The sensor itself (type, room, name) belongs t
         H->>C: checked(upsert, delete)
         C-->>H: PlacementChanges or 400
         H->>P: apply(b1, changes, claims)
-        P->>P: building exists, can_edit_domains
+        P->>P: find_building, require_edit
         P->>S: one update_one with $set and $unset, upsert
         H-->>B: 204
 
@@ -902,17 +896,17 @@ For each membership, the domain is put in **every set the role's weight reaches*
 
 The resource is the domain being asked about. Cedar then decides `Allow` or not:
 
-| Helper | Cedar action | True when |
+| Helper | Cedar action | Allowed when |
 |---|---|---|
 | `is_member_of(d)` | `Read` | Any known role in `d` |
-| `can_read_building(ds)` | `Read` | Member of one of `ds`, or the caller is `system:ap-simulator` |
-| `can_edit_domains(ds)` | `Edit` | `business_staff` or higher in **one** of `ds` |
+| `require_read(building)` | `Read` | Member of one of its domains, or the caller is `system:ap-simulator`. Else `403` |
+| `require_edit(building)` | `Edit` | `business_staff` or higher in **one** of its domains. Else `403` |
 | `can_edit_every(ds)` | `Edit` | `ds` not empty and editor in **all** |
 | `filter_readable_domains_from_memberships` | `Read` | Keeps the readable ones |
 
 Any failure while building the Cedar request is logged and answers **false**: deny by default.
 
-**Example.** Ada is `admin` in `other`. A building in `eng` and `ops`. `can_read_building` is false: a platform admin is not a member of every domain.
+**Example.** Ada is `admin` in `other`. A building in `eng` and `ops`. `require_read` answers `403`: a platform admin is not a member of every domain.
 
 ---
 

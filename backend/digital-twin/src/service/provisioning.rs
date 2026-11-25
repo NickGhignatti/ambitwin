@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::domain::identity::GatewayClaims;
 use crate::domain::{AcceptedUpload, Building, DomainError, UploadStatus};
 use crate::service::authz;
+use crate::service::buildings::find_building;
 use crate::service::ports::{BuildingStore, DownstreamSync, RegistrationEvents, UploadQueue};
 
 pub struct Provisioning {
@@ -84,18 +85,8 @@ impl Provisioning {
     }
 
     pub async fn resync(&self, id: &str, claims: &GatewayClaims) -> Result<(), DomainError> {
-        let building = self
-            .buildings
-            .find_by_id(id)
-            .await?
-            .ok_or_else(|| DomainError::NotFound(format!("No building with id: \"{id}\"")))?;
-
-        if !authz::can_edit_domains(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires an editing role in one of this building's domains".to_string(),
-            ));
-        }
-
+        let building = find_building(&*self.buildings, id).await?;
+        authz::require_edit(claims, &building)?;
         self.events
             .publish_building_registration_request(&building)
             .await?;

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::domain::identity::GatewayClaims;
-use crate::domain::{Building, DomainError, Placement, PlacementChanges};
+use crate::domain::{DomainError, Placement, PlacementChanges};
 use crate::service::authz;
+use crate::service::buildings::find_building;
 use crate::service::ports::{BuildingStore, PlacementStore};
 
 pub struct Placements {
@@ -20,12 +21,8 @@ impl Placements {
         building_id: &str,
         claims: &GatewayClaims,
     ) -> Result<Vec<Placement>, DomainError> {
-        let building = self.building(building_id).await?;
-        if !authz::can_read_building(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires membership in one of this building's domains".to_string(),
-            ));
-        }
+        let building = find_building(&*self.buildings, building_id).await?;
+        authz::require_read(claims, &building)?;
         let mut placements = self.store.load(building_id).await?;
         placements.sort_by(|a, b| a.sensor_id.cmp(&b.sensor_id));
         Ok(placements)
@@ -37,29 +34,16 @@ impl Placements {
         changes: PlacementChanges,
         claims: &GatewayClaims,
     ) -> Result<(), DomainError> {
-        let building = self.building(building_id).await?;
-        if !authz::can_edit_domains(claims, &building.domains) {
-            return Err(DomainError::Forbidden(
-                "Requires an editing role in one of this building's domains".to_string(),
-            ));
-        }
+        let building = find_building(&*self.buildings, building_id).await?;
+        authz::require_edit(claims, &building)?;
         Ok(self.store.apply(building_id, &changes).await?)
-    }
-
-    async fn building(&self, building_id: &str) -> Result<Building, DomainError> {
-        self.buildings
-            .find_by_id(building_id)
-            .await?
-            .ok_or_else(|| {
-                DomainError::NotFound(format!("Building with id: \"{building_id}\" not found"))
-            })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Coordinates;
+    use crate::domain::{Building, Coordinates};
     use crate::service::fakes::{FakePlacements, FakeStore, claims_with, room};
 
     fn placements() -> (Placements, Arc<FakeStore>, Arc<FakePlacements>) {

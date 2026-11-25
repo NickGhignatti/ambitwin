@@ -33,7 +33,7 @@ The role ladder comes from `../auth-contracts/roles.json` (see [Auth Contracts](
 | Service | Language, engine | How it gets the files | Entry points used |
 |---|---|---|---|
 | `tenancy` | Go, `cedar-go` | Go module, `//go:embed` | `CanManageDomain` |
-| `digital-twin` | Rust, `cedar-policy` | `include_str!` at build, `service/authz.rs` | `is_member_of`, `can_read_building`, `can_edit_domains`, `can_edit_every`, `filter_readable_domains_from_memberships` |
+| `digital-twin` | Rust, `cedar-policy` | `include_str!` at build, `service/authz.rs` | `is_member_of`, `require_read`, `require_edit`, `can_edit_every`, `filter_readable_domains_from_memberships` |
 | `telemetry` | Rust, `cedar-policy` | `include_str!` at build, `kernel/authz.rs` | `is_member_of`, `can_edit_domains`, `filter_readable_domains_from_memberships` |
 | `agent` | Python, `cedarpy` | `read_text()` at import, `app/cedar_authz.py` | `can_access_domain`, `accessible_domains`, `can_override_model`, `can_ingest_documents` |
 
