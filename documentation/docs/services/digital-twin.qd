@@ -136,12 +136,12 @@ let events = Arc::new(
 3. The Kafka producer. Creating it first makes sure the topics `building-registration-requested`, `building-registration-completed` and `estimated-occupancy` exist.
 
 ```rust
-let placements = Arc::new(MongoPlacements::new(placements::connect(&mongo_uri, "ambitwin").await …));
+let placements = Arc::new(MongoPlacements::from_building_collection(&buildings));
 let store = Arc::new(MongoBuildings::new(buildings.clone()));
 let queue = Arc::new(MongoUploadQueue::from_building_collection(&buildings).await.expect("create upload queue indexes"));
 ```
 
-4. Open the `placements` and `pending_uploads` collections and create their indexes.
+4. Open the `placements` and `pending_uploads` collections on the buildings client, and create the queue indexes.
 
 ```rust
 let provisioning = Arc::new(Provisioning::new(store.clone(), queue, downstream.clone(), events.clone()));

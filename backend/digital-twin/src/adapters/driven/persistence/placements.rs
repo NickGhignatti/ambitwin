@@ -1,11 +1,10 @@
 use async_trait::async_trait;
 use mongodb::{
-    Client, Collection,
+    Collection,
     bson::{Document, doc},
-    options::ClientOptions,
 };
 
-use crate::domain::{Coordinates, Placement, PlacementChanges};
+use crate::domain::{Building, Coordinates, Placement, PlacementChanges};
 use crate::service::ports::PlacementStore;
 
 const SENSORS: &str = "sensors";
@@ -20,14 +19,16 @@ impl MongoPlacements {
     pub fn new(col: Collection<Document>) -> Self {
         Self { col }
     }
-}
 
-pub async fn connect(uri: &str, db_name: &str) -> anyhow::Result<Collection<Document>> {
-    let opts = ClientOptions::parse(uri).await?;
-    let client = Client::with_options(opts)?;
-    Ok(client
-        .database(db_name)
-        .collection::<Document>("placements"))
+    /// Opens `placements` beside the buildings, on the same client and database.
+    pub fn from_building_collection(buildings: &Collection<Building>) -> Self {
+        Self::new(
+            buildings
+                .client()
+                .database(&buildings.namespace().db)
+                .collection("placements"),
+        )
+    }
 }
 
 #[async_trait]

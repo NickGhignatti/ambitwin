@@ -9,7 +9,7 @@ use std::sync::Arc;
 use digital_twin::adapters::driven::kafka_producer::KafkaEventProducer;
 use digital_twin::adapters::driven::persistence::db::{self, MongoBuildings};
 use digital_twin::adapters::driven::persistence::jobs::MongoUploadQueue;
-use digital_twin::adapters::driven::persistence::placements::{self, MongoPlacements};
+use digital_twin::adapters::driven::persistence::placements::MongoPlacements;
 use digital_twin::adapters::driven::redis_devices::RedisDevicesFeed;
 use digital_twin::adapters::driving::{kafka_consumer, wifi_consumer, worker};
 use digital_twin::adapters::{
@@ -75,11 +75,7 @@ async fn main() {
             .expect("Failed to configure Kafka producer"),
     );
 
-    let placements = Arc::new(MongoPlacements::new(
-        placements::connect(&mongo_uri, "ambitwin")
-            .await
-            .expect("Failed to connect to MongoDB"),
-    ));
+    let placements = Arc::new(MongoPlacements::from_building_collection(&buildings));
 
     let store = Arc::new(MongoBuildings::new(buildings.clone()));
     let queue = Arc::new(
