@@ -2,7 +2,6 @@ services:
   digital-twin:
     build:
       target: dev
-    command: cargo watch -x run
     develop:
       watch:
         - action: sync
