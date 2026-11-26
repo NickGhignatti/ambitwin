@@ -9,9 +9,8 @@ pub mod state;
 use state::AppState;
 use telemetry_schema::{LimitContract, MetricContract, ServiceMetricsContract};
 
-/// The dashboard's column catalog. Built from `telemetry_schema`, the same types
-/// telemetry's `/contracts` serves and the dashboard parses - a hand-rolled `json!`
-/// here is how `key`/`metricKey` once drifted and emptied the catalog at runtime.
+/// The dashboard's room columns, built from `telemetry_schema` types so the wire names
+/// match what the dashboard parses.
 async fn contracts() -> Json<ServiceMetricsContract> {
     let room_column = |kind: &str, label: &str, interface: &str, unit: &str| MetricContract {
         kind: kind.to_owned(),
@@ -82,8 +81,6 @@ pub fn build_router(state: AppState) -> Router {
 mod contracts_tests {
     use super::contracts;
 
-    /// The dashboard parses this with `telemetry_schema::MetricsDiscoveryResponse`, so the
-    /// wire names here are the shared contract's, not this service's own spelling.
     #[tokio::test]
     async fn the_catalog_is_served_under_the_services_real_name() {
         let body = serde_json::to_value(contracts().await.0).unwrap();

@@ -13,7 +13,7 @@ use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use twin_schema::{EstimatedOccupancy, RegistrationRequest, RegistrationRoom};
 
-/// How long call wait in producer's local queue before giving up (not broker ack timeout or delivery timeout).
+// max wait in the local send queue, not the broker ack
 const PRODUCE_TIMEOUT: Duration = Duration::from_secs(5);
 // Bounds the delivery wait too: the Wi-Fi consumer awaits it, and the next tick replaces this one.
 const OCCUPANCY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -24,7 +24,6 @@ pub struct KafkaEventProducer {
     producer: FutureProducer,
 }
 
-/// Topic initialization: creates the required topics if they do not exist.
 async fn ensure_topics(brokers: &str) -> anyhow::Result<()> {
     let admin: AdminClient<_> = ClientConfig::new()
         .set("bootstrap.servers", brokers)

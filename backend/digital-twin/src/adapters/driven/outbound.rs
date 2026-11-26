@@ -77,7 +77,7 @@ impl DownstreamSync for OutboundConfig {
             .await
             .and_then(reqwest::Response::error_for_status)
         {
-            log::error!("[contracts] failed to init building preferences: {err}");
+            log::error!("failed to init building preferences: {err}");
         }
     }
 
@@ -116,10 +116,7 @@ fn auth_headers(claims: &str) -> reqwest::header::HeaderMap {
     headers
 }
 
-// The failure notification fires from the provisioning worker (telemetry's own
-// callback, or a refused Kafka publish) -- there is no end-user request to forward
-// claims from, so it authenticates as a system caller (mirrors notification's
-// own SYSTEM_CLAIMS_HEADER for its Redis-triggered alerts).
+// the failure alert is sent by the worker, with no end user to forward claims from
 fn system_claims_header() -> String {
     STANDARD.encode(
         r#"{"sub":"system:digital-twin","accountName":"system:digital-twin","memberships":[]}"#,

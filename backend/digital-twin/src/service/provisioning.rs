@@ -104,10 +104,8 @@ impl Provisioning {
         }
     }
 
-    // A failed upload must not leave an orphaned twin behind -- whether provisioning
-    // failed before telemetry ever heard about it, or telemetry rejected it later.
-    // Notify before deleting: notification resolves the building's domains by
-    // calling back into digital-twin, so the twin must still exist when it does.
+    // a failed upload leaves no twin behind; notify first, since notification
+    // reads the building's domains back from here
     async fn fail(&self, id: &str, error: &str) -> Result<Option<Duration>, DomainError> {
         let Some(elapsed) = self.queue.mark_failed(id, error).await? else {
             // Already failed means a retry: notify went out, only the delete may be outstanding.
