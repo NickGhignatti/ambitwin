@@ -1,4 +1,6 @@
-use mongodb::options::ClientOptions;
+mod support;
+
+use support::test_app::test_database;
 use uuid::Uuid;
 
 use digital_twin::adapters::driven::persistence::db::MongoBuildings;
@@ -34,15 +36,7 @@ fn dummy_building(domains: Vec<&str>) -> Building {
 }
 
 async fn test_store() -> MongoBuildings {
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let opts = ClientOptions::parse(&uri).await.unwrap();
-    let client = mongodb::Client::with_options(opts).unwrap();
-    MongoBuildings::new(
-        client
-            .database("digital_twin_test")
-            .collection::<Building>(&format!("buildings_{}", Uuid::new_v4())),
-    )
+    MongoBuildings::new(test_database("db").await.collection("buildings"))
 }
 
 #[tokio::test]

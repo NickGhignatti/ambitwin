@@ -1,21 +1,13 @@
-use mongodb::Collection;
-use mongodb::bson::Document;
-use mongodb::options::ClientOptions;
-use uuid::Uuid;
+mod support;
+
+use support::test_app::test_database;
 
 use digital_twin::adapters::driven::persistence::placements::MongoPlacements;
 use digital_twin::domain::{Coordinates, Placement, PlacementChanges};
 use digital_twin::service::ports::PlacementStore;
 
 async fn test_store() -> MongoPlacements {
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let opts = ClientOptions::parse(&uri).await.unwrap();
-    let client = mongodb::Client::with_options(opts).unwrap();
-    let col: Collection<Document> = client
-        .database("digital_twin_test")
-        .collection(&format!("placements_{}", Uuid::new_v4()));
-    MongoPlacements::new(col)
+    MongoPlacements::new(test_database("placements").await.collection("placements"))
 }
 
 fn placement(sensor_id: &str, x: f64) -> Placement {

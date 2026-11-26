@@ -57,21 +57,14 @@ pub struct MongoUploadQueue {
 }
 
 impl MongoUploadQueue {
+    /// Opens `pending_uploads` beside `buildings` and ensures the indexes its lookups need.
     pub async fn from_building_collection(
         buildings: &Collection<Building>,
-    ) -> anyhow::Result<Self> {
-        Self::with_collection_name(buildings, "pending_uploads").await
-    }
-
-    /// Opens the queue collection and ensures the indexes its lookups need.
-    pub async fn with_collection_name(
-        buildings: &Collection<Building>,
-        name: &str,
     ) -> anyhow::Result<Self> {
         let col = buildings
             .client()
             .database(&buildings.namespace().db)
-            .collection(name);
+            .collection("pending_uploads");
         // Status polls and claims run constantly: without these, each one reads every queued upload,
         // and every upload carries its whole building.
         col.create_index(
