@@ -129,33 +129,9 @@ fn system_claims_header() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Coordinates, Dimensions, Room};
+    use crate::service::fakes::building;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn building() -> Building {
-        Building {
-            id: "b1".to_string(),
-            name: "B1".to_string(),
-            rooms: vec![Room {
-                id: "r1".to_string(),
-                name: "R1".to_string(),
-                capacity: 10.0,
-                position: Coordinates {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                dimensions: Dimensions {
-                    width: 1.0,
-                    height: 1.0,
-                    depth: 1.0,
-                },
-                color: None,
-            }],
-            domains: vec!["eng".to_string()],
-        }
-    }
 
     async fn config(server: &MockServer) -> OutboundConfig {
         OutboundConfig {
@@ -178,7 +154,7 @@ mod tests {
 
         let cfg = config(&server).await;
         let started = std::time::Instant::now();
-        let result = cfg.clone_thresholds(&building(), "tok-123").await;
+        let result = cfg.clone_thresholds(&building("b1"), "tok-123").await;
 
         assert!(result.is_err());
         assert!(started.elapsed() < TIMEOUT * 2);
@@ -195,7 +171,9 @@ mod tests {
             .await;
 
         let cfg = config(&server).await;
-        cfg.clone_thresholds(&building(), "tok-123").await.unwrap();
+        cfg.clone_thresholds(&building("b1"), "tok-123")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -207,7 +185,9 @@ mod tests {
             sync_enabled: false,
             client: reqwest::Client::new(),
         };
-        cfg.clone_thresholds(&building(), "tok-123").await.unwrap();
+        cfg.clone_thresholds(&building("b1"), "tok-123")
+            .await
+            .unwrap();
         cfg.init_preferences("b1", "tok-123").await;
         cfg.notify_provisioning_failed("b1", "boom").await;
     }

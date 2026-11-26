@@ -212,25 +212,7 @@ pub fn filter_readable_domains_from_memberships(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::identity::{ClaimsPayload, Membership};
-
-    fn claims_with(memberships: Vec<(&str, &str)>) -> GatewayClaims {
-        GatewayClaims {
-            payload: ClaimsPayload {
-                sub: Some("u1".to_string()),
-                memberships: memberships
-                    .into_iter()
-                    .map(|(domain, role)| Membership {
-                        domain: domain.to_string(),
-                        role: Some(role.to_string()),
-                        external_id: None,
-                    })
-                    .collect(),
-                ..ClaimsPayload::default()
-            },
-            raw: "raw".to_string(),
-        }
-    }
+    use crate::service::fakes::claims_with;
 
     #[test]
     fn is_member_of_allows_any_role_in_the_domain() {

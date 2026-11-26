@@ -177,37 +177,13 @@ impl UploadQueue for MongoUploadQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Coordinates, Dimensions, Room};
-
-    fn dummy_building(id: &str) -> Building {
-        Building {
-            id: id.to_string(),
-            name: "Test Building".to_string(),
-            rooms: vec![Room {
-                id: "r1".to_string(),
-                name: "r1".to_string(),
-                capacity: 10.0,
-                position: Coordinates {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                dimensions: Dimensions {
-                    width: 1.0,
-                    height: 1.0,
-                    depth: 1.0,
-                },
-                color: None,
-            }],
-            domains: vec!["eng".to_string()],
-        }
-    }
+    use crate::service::fakes::building;
 
     #[test]
     fn a_freshly_accepted_upload_starts_pending_with_no_lease() {
         let upload = AcceptedUpload {
             id: "u1".to_string(),
-            building: dummy_building("b1"),
+            building: building("b1"),
             claims: "tok".to_string(),
         };
 
@@ -223,7 +199,7 @@ mod tests {
     fn converting_a_job_back_to_an_accepted_upload_drops_queue_only_fields() {
         let upload = AcceptedUpload {
             id: "u1".to_string(),
-            building: dummy_building("b1"),
+            building: building("b1"),
             claims: "tok".to_string(),
         };
         let job = PendingUpload::accepted(&upload);
