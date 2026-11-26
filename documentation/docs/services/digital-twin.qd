@@ -1053,8 +1053,7 @@ let devices = {
         site.tracks = Tracks::default();
     }
     site.tick = tick.tick;
-    site.dots = geometry.as_ref().map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry));
-    site.dots.clone()
+    geometry.as_ref().map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry))
 };
 if let Some(geometry) = geometry.filter(|_| !tick.answered.is_empty()) {
     self.occupancy.publish_occupancy(&EstimatedOccupancy {
