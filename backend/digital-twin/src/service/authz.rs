@@ -69,39 +69,41 @@ fn account_entity(uid: EntityUid, claims: &GatewayClaims) -> Entity {
         }
     }
 
-    let mut attrs = HashMap::new();
-    attrs.insert(
-        "domainsAsStandardCustomer".to_string(),
-        set_expr(standard_customer),
-    );
-    attrs.insert(
-        "domainsAsBusinessStaff".to_string(),
-        set_expr(business_staff),
-    );
-    attrs.insert(
-        "domainsAsBusinessAdmin".to_string(),
-        set_expr(business_admin),
-    );
-    attrs.insert("domainsAsAdmin".to_string(), set_expr(admin));
-    attrs.insert(
-        "maxRoleWeight".to_string(),
-        RestrictedExpression::new_long(max_weight),
-    );
+    let attrs = HashMap::from([
+        (
+            "domainsAsStandardCustomer".to_string(),
+            set_expr(standard_customer),
+        ),
+        (
+            "domainsAsBusinessStaff".to_string(),
+            set_expr(business_staff),
+        ),
+        (
+            "domainsAsBusinessAdmin".to_string(),
+            set_expr(business_admin),
+        ),
+        ("domainsAsAdmin".to_string(), set_expr(admin)),
+        (
+            "maxRoleWeight".to_string(),
+            RestrictedExpression::new_long(max_weight),
+        ),
+    ]);
 
     Entity::new(uid, attrs, HashSet::new()).expect("account entity attrs match schema")
 }
 
 /// Returns a new [`Entity`] representing a resource with the given [`EntityUid`] and domain.
 fn resource_entity(uid: EntityUid, domain: &str) -> Entity {
-    let mut attrs = HashMap::new();
-    attrs.insert(
+    let attrs = HashMap::from([(
         "domain".to_string(),
         RestrictedExpression::new_string(domain.to_string()),
-    );
+    )]);
     Entity::new(uid, attrs, HashSet::new()).expect("resource entity attrs match schema")
 }
 
-fn authorize(
+/// Whether Cedar allows `action` on `domain` for the caller; `required_weight` goes in as context.
+/// A request Cedar cannot build is logged and denied.
+pub fn authorize(
     claims: &GatewayClaims,
     action: &str,
     domain: &str,
@@ -112,66 +114,51 @@ fn authorize(
     let principal = account_entity(principal_uid.clone(), claims);
     let resource = resource_entity(resource_uid.clone(), domain);
 
-    let context = match required_weight {
-        Some(w) => Context::from_pairs([(
-            "requiredWeight".to_string(),
-            RestrictedExpression::new_long(w),
-        )]),
-        None => Ok(Context::empty()),
+    let decision = || -> anyhow::Result<bool> {
+        let context = match required_weight {
+            Some(weight) => Context::from_pairs([(
+                "requiredWeight".to_string(),
+                RestrictedExpression::new_long(weight),
+            )])?,
+            None => Context::empty(),
+        };
+        let entities = Entities::from_entities([principal, resource], Some(&SCHEMA))?;
+        let request = Request::new(
+            principal_uid,
+            euid("Action", action),
+            resource_uid,
+            context,
+            Some(&SCHEMA),
+        )?;
+        let response = Authorizer::new().is_authorized(&request, &POLICIES, &entities);
+        Ok(response.decision() == Decision::Allow)
     };
-    let context = match context {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("cedar context build failed: {e}");
-            return false;
-        }
-    };
+    decision().unwrap_or_else(|error| {
+        log::error!("cedar request not built: {error}");
+        false
+    })
+}
 
-    let entities = match Entities::from_entities([principal, resource], Some(&SCHEMA)) {
-        Ok(e) => e,
-        Err(e) => {
-            log::error!("cedar entities build failed: {e}");
-            return false;
-        }
-    };
-    let request = match Request::new(
-        principal_uid,
-        euid("Action", action),
-        resource_uid,
-        context,
-        Some(&SCHEMA),
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            log::error!("cedar request build failed: {e}");
-            return false;
-        }
-    };
-
-    let response = Authorizer::new().is_authorized(&request, &POLICIES, &entities);
-    response.decision() == Decision::Allow
+fn is_subject_in(claims: &GatewayClaims, subjects: &[&str]) -> bool {
+    claims
+        .payload
+        .sub
+        .as_deref()
+        .is_some_and(|sub| subjects.contains(&sub))
 }
 
 /// Internal callers that look up any building's owners: notification routes an alert to every one.
 const OWNER_RESOLVERS: &[&str] = &["system:notification-service"];
 
 pub fn resolves_any_owner(claims: &GatewayClaims) -> bool {
-    claims
-        .payload
-        .sub
-        .as_deref()
-        .is_some_and(|sub| OWNER_RESOLVERS.contains(&sub))
+    is_subject_in(claims, OWNER_RESOLVERS)
 }
 
 /// Internal callers that read any building's geometry; the edge never mints a `system:` subject.
 const GEOMETRY_READERS: &[&str] = &["system:ap-simulator"];
 
 pub fn reads_any_geometry(claims: &GatewayClaims) -> bool {
-    claims
-        .payload
-        .sub
-        .as_deref()
-        .is_some_and(|sub| GEOMETRY_READERS.contains(&sub))
+    is_subject_in(claims, GEOMETRY_READERS)
 }
 
 pub fn is_member_of(claims: &GatewayClaims, domain: &str) -> bool {
@@ -220,15 +207,6 @@ pub fn filter_readable_domains_from_memberships(
         .filter(|domain| authorize(claims, "Read", domain, None))
         .cloned()
         .collect()
-}
-
-pub fn authorize_any(
-    claims: &GatewayClaims,
-    action: &str,
-    domain: &str,
-    required_weight: Option<i64>,
-) -> bool {
-    authorize(claims, action, domain, required_weight)
 }
 
 #[cfg(test)]

@@ -180,7 +180,7 @@ Removing **oneself** never reaches Cedar: it is a comparison of two ids, not a r
 | Runner | Calls |
 |---|---|
 | `conformance_test.go` | The real `CanRead`, `CanEdit`, … |
-| `digital-twin/tests/cedar_conformance.rs` | The real `authorize_any` |
+| `digital-twin/tests/cedar_conformance.rs` | The real `authorize` |
 | `telemetry/tests/cedar_conformance.rs` | The real Rust entry point |
 | `agent/tests/unit/test_cedar_conformance.py` | Its **own** copy of the expansion, not `app/cedar_authz.py` |
 

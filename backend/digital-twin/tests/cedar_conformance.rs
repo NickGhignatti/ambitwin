@@ -1,5 +1,5 @@
 use digital_twin::domain::identity::{ClaimsPayload, GatewayClaims, Membership};
-use digital_twin::service::authz::authorize_any;
+use digital_twin::service::authz::authorize;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -56,7 +56,7 @@ fn cedar_conformance_fixture_matches_every_golden_case() {
             raw: String::new(),
         };
 
-        let allowed = authorize_any(
+        let allowed = authorize(
             &claims,
             &case.action,
             &case.domain,
