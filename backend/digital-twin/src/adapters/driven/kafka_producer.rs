@@ -21,7 +21,7 @@ const OCCUPANCY_TIMEOUT: Duration = Duration::from_secs(2);
 const OCCUPANCY_RETENTION_MS: &str = "3600000";
 
 pub struct KafkaEventProducer {
-    producer: Option<FutureProducer>,
+    producer: FutureProducer,
 }
 
 /// Topic initialization: creates the required topics if they do not exist.
@@ -57,13 +57,7 @@ impl KafkaEventProducer {
         let producer = ClientConfig::new()
             .set("bootstrap.servers", brokers)
             .create()?;
-        Ok(Self {
-            producer: Some(producer),
-        })
-    }
-
-    pub fn disabled() -> Self {
-        Self { producer: None }
+        Ok(Self { producer })
     }
 }
 
@@ -73,10 +67,6 @@ impl RegistrationEvents for KafkaEventProducer {
         &self,
         building: &Building,
     ) -> anyhow::Result<()> {
-        let Some(producer) = &self.producer else {
-            return Ok(());
-        };
-
         let payload = serde_json::to_string(&RegistrationRequest {
             building_id: Some(building.id.clone()),
             name: building.name.clone(),
@@ -92,7 +82,7 @@ impl RegistrationEvents for KafkaEventProducer {
         })
         .expect("a registration request always serialises");
 
-        producer
+        self.producer
             .send(
                 FutureRecord::to(BUILDING_REGISTRATION_REQUESTED_TOPIC)
                     .key(&building.id)
@@ -108,31 +98,30 @@ impl RegistrationEvents for KafkaEventProducer {
 #[async_trait]
 impl OccupancyEvents for KafkaEventProducer {
     async fn publish_occupancy(&self, occupancy: &EstimatedOccupancy) {
-        let Some(producer) = &self.producer else {
-            return;
-        };
         let payload = serde_json::to_string(occupancy).expect("room counts always serialise");
         let record = FutureRecord::to(ESTIMATED_OCCUPANCY_TOPIC)
             .key(&occupancy.building_id)
             .payload(&payload);
 
-        let outcome =
-            match tokio::time::timeout(OCCUPANCY_TIMEOUT, producer.send(record, OCCUPANCY_TIMEOUT))
-                .await
-            {
-                Ok(Ok(_)) => "ok",
-                Ok(Err((e, _))) => {
-                    log::warn!("room counts of {} not produced: {e}", occupancy.building_id);
-                    "error"
-                }
-                Err(_) => {
-                    log::warn!(
-                        "room counts of {} not produced: timed out",
-                        occupancy.building_id
-                    );
-                    "timeout"
-                }
-            };
+        let outcome = match tokio::time::timeout(
+            OCCUPANCY_TIMEOUT,
+            self.producer.send(record, OCCUPANCY_TIMEOUT),
+        )
+        .await
+        {
+            Ok(Ok(_)) => "ok",
+            Ok(Err((e, _))) => {
+                log::warn!("room counts of {} not produced: {e}", occupancy.building_id);
+                "error"
+            }
+            Err(_) => {
+                log::warn!(
+                    "room counts of {} not produced: timed out",
+                    occupancy.building_id
+                );
+                "timeout"
+            }
+        };
         record_occupancy_published(outcome);
     }
 }
