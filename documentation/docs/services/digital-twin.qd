@@ -115,17 +115,16 @@ let buildings = db::connect(&mongo_uri, "ambitwin")
 1. Connect to MongoDB: database `ambitwin`, collection `buildings`. This also creates the indexes (`id` unique, `domains`).
 
 ```rust
-let sync_enabled = env::var("NODE_ENV").map(|v| v != "test").unwrap_or(true);
 let outbound = OutboundConfig {
-    telemetry_url: env::var("TELEMETRY_URL").unwrap_or_else(|_| "http://localhost:3000".to_string()),
-    dashboard_url: env::var("DASHBOARD_URL").unwrap_or_else(|_| "http://localhost:3001".to_string()),
-    notification_url: env::var("NOTIFICATION_URL").unwrap_or_else(|_| "http://localhost:3004".to_string()),
-    sync_enabled,
+    telemetry_url: env_or("TELEMETRY_URL", "http://localhost:3000"),
+    dashboard_url: env_or("DASHBOARD_URL", "http://localhost:3001"),
+    notification_url: env_or("NOTIFICATION_URL", "http://localhost:3004"),
+    sync_enabled: true,
     client: client(),
 };
 ```
 
-2. The addresses of the three services it calls. `NODE_ENV=test` turns the three HTTP calls off (`sync_enabled = false`). One HTTP client for all of them, with a 5 s timeout.
+2. The addresses of the three services it calls (`env_or` reads a variable, or falls back to its default). The calls are always on here; only the integration tests build an `OutboundConfig` with `sync_enabled: false`. One HTTP client for all of them, with a 5 s timeout.
 
 ```rust
 let events = Arc::new(
@@ -156,7 +155,7 @@ wifi_consumer::spawn(&kafka_brokers, Arc::new(Tracking::new(store.clone(), place
 7. Build the Redis feed (it connects only on its first publish) and start the **Wi-Fi consumer**.
 8. Build the router with the rate limiter on, and serve on `PORT` until `SIGTERM` or `Ctrl+C`.
 
-A failure in steps 1 to 4 stops the process (`expect`): the service never runs half wired. The three background loops are started with `spawn` and are never waited on.
+A failure in steps 1 to 4, or a port it cannot bind, stops the process with a non-zero exit (`expect`): the service never runs half wired, and the orchestrator sees a crash, not a clean stop. The three background loops are started with `spawn` and are never waited on.
 
 | Variable | Default | What it is |
 |---|---|---|
@@ -166,7 +165,6 @@ A failure in steps 1 to 4 stops the process (`expect`): the service never runs h
 | `TELEMETRY_URL` | `http://localhost:3000` | Room limits after an edit |
 | `DASHBOARD_URL` | `http://localhost:3001` | Starting columns |
 | `NOTIFICATION_URL` | `http://localhost:3004` | The "provisioning failed" alert |
-| `NODE_ENV` | | `test` turns off the three HTTP calls above |
 | `PORT` | `3000` | HTTP |
 
 ---
