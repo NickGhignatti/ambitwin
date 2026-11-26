@@ -385,9 +385,11 @@ mod tests {
             signal: -50,
         };
 
-        assert!(tracks
-            .step(&tick(NOW, vec![unplaced], vec![]), &geometry)
-            .is_empty());
+        assert!(
+            tracks
+                .step(&tick(NOW, vec![unplaced], vec![]), &geometry)
+                .is_empty()
+        );
     }
 
     mod recorded {
