@@ -18,9 +18,8 @@ fn the_shared_fixture_is_a_building_this_service_could_have_served() {
     assert!(building.rooms[1].color.is_none());
 }
 
-// The consumers that read this payload are agent (Python) and the frontend
-// (TypeScript), neither of which can share a Rust type. Round-tripping the fixture is
-// what makes a renamed or dropped field fail here rather than in their parsers.
+// agent (Python) and the frontend (TypeScript) cannot share a Rust type:
+// a renamed or dropped field must fail here, not in their parsers
 #[test]
 fn no_field_the_other_languages_read_is_dropped_on_the_way_through() {
     let parsed: Building = serde_json::from_str(FIXTURE).expect("fixture parses");

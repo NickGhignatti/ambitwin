@@ -37,11 +37,8 @@ pub struct TestApp {
     pub provisioning: Arc<Provisioning>,
 }
 
-/// The one place that wires a full digital-twin app for tests: a fresh,
-/// randomly-named Mongo db (so tests never see each other's data) plus an
-/// events port that resolves registrations instantly instead of round-tripping
-/// a real broker. `label` only affects the db name, so a stuck test run is
-/// easy to trace back to whichever suite left it behind.
+/// A full app on its own throwaway database; registrations resolve at once, no broker.
+/// `label` names the suite in the database name.
 pub async fn build(label: &str) -> TestApp {
     let uri = test_mongo_uri().await;
     let buildings = db::connect(&uri, &fresh_database_name(label))
@@ -94,8 +91,7 @@ pub async fn build(label: &str) -> TestApp {
     }
 }
 
-/// Convenience for the common case: a test that only ever talks to the app
-/// over HTTP and has no need for the `Provisioning` handle directly.
+/// The router alone, for tests that only speak HTTP.
 pub async fn app() -> Router {
     build("api").await.router
 }
@@ -126,11 +122,8 @@ async fn test_mongo_uri() -> String {
     uri
 }
 
-/// Drops the randomly-named databases left behind by previous runs, once per
-/// test binary and before this run creates its own. Each test needs an isolated
-/// database and cannot drop it on the way out — the `Router` outlives the
-/// handle that made it — so the cleanup is deferred to the next run instead of
-/// growing without bound.
+/// Drops the test databases earlier runs left. A test cannot drop its own on the way
+/// out (the `Router` outlives it), so each run cleans up after the last one.
 async fn sweep_stale_test_databases(uri: &str) {
     let Ok(client) = mongodb::Client::with_uri_str(uri).await else {
         return;

@@ -10,9 +10,8 @@ use crate::support::http_client::send;
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Polls `/building/{handle}/status` until it reports `expected`, panicking after
-/// `READY_TIMEOUT`. Uploads are provisioned in the background, so a test cannot
-/// read the building straight after posting it.
+/// Polls the upload's status until it reports `expected`, panicking after `READY_TIMEOUT`:
+/// the worker provisions uploads in the background.
 pub async fn wait_for_status(router: &Router, handle: &str, expected: &str) {
     let deadline = Instant::now() + READY_TIMEOUT;
     loop {
