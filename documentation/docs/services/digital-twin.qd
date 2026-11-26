@@ -203,15 +203,9 @@ pub struct Building {
     pub rooms: Vec<Room>,
     pub domains: Vec<String>,
 }
-
-impl PartialEq for Building {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
 ```
 
-A room is a box: `position` is its **centre**, `dimensions` its width, height and depth. A building is its rooms plus the list of domains that own it. Two buildings are "equal" when their **ids** match, whatever else differs.
+A room is a box: `position` is its **centre**, `dimensions` its width, height and depth. A building is its rooms plus the list of domains that own it.
 
 `Building` and `Room` are not shared shapes: no other Rust service parses them. The cross-language readers (agent, frontend) are kept in line by `schemas/fixtures/building.json`, checked in `tests/building_conformance.rs`.
 

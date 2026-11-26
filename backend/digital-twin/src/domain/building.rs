@@ -35,12 +35,6 @@ pub struct Building {
     pub domains: Vec<String>,
 }
 
-impl PartialEq for Building {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct PositionInput {
     pub x: Option<f64>,
