@@ -10,9 +10,6 @@ use digital_twin::service::provisioning::Provisioning;
 
 use super::{fixtures, http_client, test_app};
 
-pub const READY_TIMEOUT: Duration = Duration::from_secs(10);
-pub const POLL_INTERVAL: Duration = Duration::from_millis(50);
-
 pub struct LoadRun {
     pub accept_latencies: Vec<Duration>,
     pub available_latencies: Vec<Duration>,
