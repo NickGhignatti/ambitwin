@@ -115,12 +115,10 @@ pub async fn get_building_counts(
     claims: GatewayClaims,
     Json(body): Json<GetCountsRequest>,
 ) -> Result<Json<serde_json::Value>, DomainError> {
-    let bad_shape = || DomainError::Validation("'domains' must be an array of strings".to_string());
-    let items = body.domains.as_array().ok_or_else(bad_shape)?;
-    let mut domains = Vec::with_capacity(items.len());
-    for item in items {
-        domains.push(item.as_str().ok_or_else(bad_shape)?.to_string());
-    }
+    // a raw Value keeps the 400; axum's own Json rejection would be 422
+    let domains: Vec<String> = serde_json::from_value(body.domains).map_err(|_| {
+        DomainError::Validation("'domains' must be an array of strings".to_string())
+    })?;
 
     let counts = state.buildings.counts_per_domain(&domains, &claims).await?;
     Ok(Json(serde_json::json!({ "counts": counts })))
