@@ -34,12 +34,12 @@ pub struct Posterior {
     best: usize,
 }
 
-pub const SIGNAL_AT_1M_DBM: f64 = -40.0;
-pub const PATH_LOSS_EXPONENT: f64 = 2.2;
-pub const WALL_LOSS_DB: f64 = 5.0;
-const CELL_M: f64 = 0.5;
+const SIGNAL_AT_1M_DBM: f64 = -40.0;
+const PATH_LOSS_EXPONENT: f64 = 2.2;
+const WALL_LOSS_DB: f64 = 5.0;
+const CELL_SIZE_METRES: f64 = 0.5;
 // The simulator's 4 dB shadowing and 2 dB fading, combined.
-const SIGNAL_SD_DB: f64 = 4.5;
+const SIGNAL_NOISE_DB: f64 = 4.5;
 // Two circles cross at two points: a third router is what picks one.
 const MIN_ROUTERS: usize = 3;
 const FLOOR_TOLERANCE_M: f64 = 0.5;
@@ -86,10 +86,10 @@ impl Geometry {
 
         let mut plans: Vec<Vec<(usize, Bounds)>> = vec![Vec::new(); bottoms.len()];
         for (index, room) in building.rooms.iter().enumerate() {
-            let (half_w, half_d) = (room.dimensions.width / 2.0, room.dimensions.depth / 2.0);
+            let (half_width, half_depth) = (room.dimensions.width / 2.0, room.dimensions.depth / 2.0);
             let (x, z) = (room.position.x, room.position.z);
             plans[floor_of(bottom(room))]
-                .push((index, (x - half_w, z - half_d, x + half_w, z + half_d)));
+                .push((index, (x - half_width, z - half_depth, x + half_width, z + half_depth)));
         }
 
         let mut router_floor = HashMap::new();
@@ -117,12 +117,12 @@ impl Geometry {
                 ),
                 |a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)),
             );
-            let across = ((max_x - min_x) / CELL_M).ceil() as usize;
-            let along = ((max_z - min_z) / CELL_M).ceil() as usize;
+            let across = ((max_x - min_x) / CELL_SIZE_METRES).ceil() as usize;
+            let along = ((max_z - min_z) / CELL_SIZE_METRES).ceil() as usize;
             for i in 0..across {
                 for j in 0..along {
-                    let x = min_x + (i as f64 + 0.5) * CELL_M;
-                    let z = min_z + (j as f64 + 0.5) * CELL_M;
+                    let x = min_x + (i as f64 + 0.5) * CELL_SIZE_METRES;
+                    let z = min_z + (j as f64 + 0.5) * CELL_SIZE_METRES;
                     let Some((room, _)) = plan
                         .iter()
                         .find(|(_, b)| b.0 <= x && x <= b.2 && b.1 <= z && z <= b.3)
@@ -209,7 +209,7 @@ impl Geometry {
                     .iter()
                     .map(|&(c, s)| (s - row[c]).powi(2))
                     .sum::<f64>();
-                let mut cost = misfit / (2.0 * SIGNAL_SD_DB.powi(2));
+                let mut cost = misfit / (2.0 * SIGNAL_NOISE_DB.powi(2));
                 if let Some(prior) = prior {
                     let walked = (cell.x - prior.x).powi(2) + (cell.z - prior.z).powi(2);
                     if walked > prior.reach.powi(2) {
@@ -237,7 +237,7 @@ impl Geometry {
             floor,
             x,
             z,
-            variance: (spread / (2.0 * total)).max(CELL_M * CELL_M),
+            variance: (spread / (2.0 * total)).max(CELL_SIZE_METRES * CELL_SIZE_METRES),
             best,
         })
     }

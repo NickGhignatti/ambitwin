@@ -1118,7 +1118,7 @@ For each room outline, find where the straight line from the cell to the router 
 
 ```rust
 let misfit = heard.iter().map(|&(c, s)| (s - row[c]).powi(2)).sum::<f64>();
-let mut cost = misfit / (2.0 * SIGNAL_SD_DB.powi(2));        // SIGNAL_SD_DB = 4.5
+let mut cost = misfit / (2.0 * SIGNAL_NOISE_DB.powi(2));        // SIGNAL_NOISE_DB = 4.5
 if let Some(prior) = prior {
     let walked = (cell.x - prior.x).powi(2) + (cell.z - prior.z).powi(2);
     if walked > prior.reach.powi(2) { return None; }
@@ -1163,9 +1163,9 @@ For a burst with no prior, pick the floor of the **loudest** router (a floor sla
 ### Following phones: `Tracks::step`
 
 ```rust
-pub const MAX_SPEED_M_S: f64 = 2.0;
-const DRIFT_M_S: f64 = 0.5;
-pub const FORGET_AFTER_TICKS: u64 = 3;
+const WALKING_SPEED_LIMIT_METRES_PER_SECOND: f64 = 2.0;
+const DRIFT_METRES_PER_SECOND: f64 = 0.5;
+const FORGET_AFTER_TICKS: u64 = 3;
 const RING_TOLERANCE_DB: f64 = 9.0;
 ```
 
@@ -1184,12 +1184,12 @@ A tick has two kinds of rows: `connected` (phones joined to a router, each with 
 
 ```rust
 fn prior(&self, now_ms: u64) -> Prior {
-    let seconds = now_ms.saturating_sub(self.at_ms) as f64 / 1000.0;
+    let seconds = now_ms.saturating_sub(self.updated_at_ms) as f64 / 1000.0;
     Prior {
         x: self.x,
         z: self.z,
-        variance: self.variance + (DRIFT_M_S * seconds).powi(2),
-        reach: MAX_SPEED_M_S * seconds + 2.0 * self.variance.sqrt(),
+        variance: self.variance + (DRIFT_METRES_PER_SECOND * seconds).powi(2),
+        reach: WALKING_SPEED_LIMIT_METRES_PER_SECOND * seconds + 2.0 * self.variance.sqrt(),
     }
 }
 ```
