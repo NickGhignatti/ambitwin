@@ -1,16 +1,12 @@
 use std::time::{Duration, Instant};
 
-use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
+use axum::http::StatusCode;
 use cucumber::{then, when};
-use serde_json::Value;
-use tower::ServiceExt;
 
 use crate::support::fixtures::{admin_of, building_with_n_rooms};
+use crate::support::http_client::send;
+use crate::support::registration::wait_for_status;
 use crate::support::world::{LoadRun, TwinWorld};
-
-const AVAILABILITY_TIMEOUT: Duration = Duration::from_secs(15);
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 const MIN_SAMPLES_FOR_P99: usize = 100;
 
@@ -32,48 +28,22 @@ async fn upload_and_wait_ready(
     rooms: usize,
 ) -> (Duration, Duration) {
     let payload = building_with_n_rooms(&name, &domain, rooms);
-    let request = Request::builder()
-        .method("POST")
-        .uri("/register")
-        .header("x-gateway-claims", admin_of(&domain))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(payload.to_string()))
-        .unwrap();
-
     let start = Instant::now();
-    let response = router.clone().oneshot(request).await.unwrap();
+    let response = send(
+        router.clone(),
+        "POST",
+        "/register",
+        Some(&admin_of(&domain)),
+        Some(payload),
+    )
+    .await;
     let accept_latency = start.elapsed();
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap();
-    let id = body["buildingId"].as_str().unwrap().to_string();
+    assert_eq!(response.status, StatusCode::ACCEPTED);
+    let id = response.body["buildingId"].as_str().unwrap().to_owned();
 
-    let ack_at = Instant::now();
-    loop {
-        let status_request = Request::builder()
-            .method("GET")
-            .uri(format!("/building/{id}/status"))
-            .header("x-gateway-claims", admin_of(&domain))
-            .body(Body::empty())
-            .unwrap();
-        let response = router.clone().oneshot(status_request).await.unwrap();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        if body.get("status").and_then(Value::as_str) == Some("ready") {
-            break;
-        }
-        assert!(
-            ack_at.elapsed() < AVAILABILITY_TIMEOUT,
-            "building {id} never became ready within {AVAILABILITY_TIMEOUT:?}"
-        );
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-
-    (accept_latency, ack_at.elapsed())
+    let acknowledged_at = Instant::now();
+    wait_for_status(&router, &id, "ready").await;
+    (accept_latency, acknowledged_at.elapsed())
 }
 
 #[when(

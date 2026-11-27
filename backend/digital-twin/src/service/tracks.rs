@@ -5,11 +5,11 @@ use twin_schema::{Device, WifiObservations};
 use super::estimator::{Fix, Geometry, Prior};
 
 /// Faster than a person walks: a track never reaches a cell it would have to beat this to get to.
-pub const MAX_SPEED_M_S: f64 = 2.0;
+const WALKING_SPEED_LIMIT_METRES_PER_SECOND: f64 = 2.0;
 // Most people stand or stroll, so a track's spread grows this much per second unheard.
-const DRIFT_M_S: f64 = 0.5;
+const DRIFT_METRES_PER_SECOND: f64 = 0.5;
 /// A token unseen this many ticks is gone; one failed poll must not end a track.
-pub const FORGET_AFTER_TICKS: u64 = 3;
+const FORGET_AFTER_TICKS: u64 = 3;
 // Two spreads of signal noise: a fix further off a phone's own signal than this is someone else.
 const RING_TOLERANCE_DB: f64 = 9.0;
 
@@ -19,18 +19,18 @@ struct Track {
     x: f64,
     z: f64,
     variance: f64,
-    at_ms: u64,
-    seen: u64,
+    updated_at_ms: u64,
+    last_heard_step: u64,
 }
 
 impl Track {
     fn prior(&self, now_ms: u64) -> Prior {
-        let seconds = now_ms.saturating_sub(self.at_ms) as f64 / 1000.0;
+        let seconds = now_ms.saturating_sub(self.updated_at_ms) as f64 / 1000.0;
         Prior {
             x: self.x,
             z: self.z,
-            variance: self.variance + (DRIFT_M_S * seconds).powi(2),
-            reach: MAX_SPEED_M_S * seconds + 2.0 * self.variance.sqrt(),
+            variance: self.variance + (DRIFT_METRES_PER_SECOND * seconds).powi(2),
+            reach: WALKING_SPEED_LIMIT_METRES_PER_SECOND * seconds + 2.0 * self.variance.sqrt(),
         }
     }
 }
@@ -46,44 +46,44 @@ impl Tracks {
     /// Moves each connected phone's track by this tick's signals and returns the building's dots.
     pub fn step(&mut self, tick: &WifiObservations, geometry: &Geometry) -> Vec<Device> {
         self.ticks += 1;
-        let mut rings: BTreeMap<&str, Vec<(&str, i32)>> = BTreeMap::new();
+        let mut connected_signals: BTreeMap<&str, Vec<(&str, i32)>> = BTreeMap::new();
         for row in &tick.connected {
-            rings
+            connected_signals
                 .entry(&row.token)
                 .or_default()
                 .push((&row.router, row.signal));
         }
 
-        let mut heard = rings.clone();
+        let mut all_signals = connected_signals.clone();
         let mut passing = Vec::new();
         for burst in &tick.bursts {
             let signals = burst.heard.iter().map(|(r, s)| (r.as_str(), *s));
-            if let Some(own) = heard.get_mut(burst.token.as_str()) {
+            if let Some(own) = all_signals.get_mut(burst.token.as_str()) {
                 own.extend(signals);
                 continue;
             }
             let Some(fix) = geometry.fix(&burst.heard) else {
                 continue;
             };
-            let fitting: Vec<&str> = rings
+            let fitting: Vec<&str> = connected_signals
                 .iter()
                 .filter(|(token, rows)| self.fits(token, rows, &fix, geometry, tick.tick))
                 .map(|(token, _)| *token)
                 .collect();
             match fitting[..] {
-                [token] => heard.entry(token).or_default().extend(signals),
+                [token] => all_signals.entry(token).or_default().extend(signals),
                 [] => passing.push(fix),
                 // It is one of them, and guessing which would hand one phone the other's path.
                 _ => {}
             }
         }
 
-        for (token, signals) in &heard {
+        for (token, signals) in &all_signals {
             self.update(token, signals, geometry, tick.tick);
         }
         let ticks = self.ticks;
         self.tracks
-            .retain(|_, track| ticks - track.seen < FORGET_AFTER_TICKS);
+            .retain(|_, track| ticks - track.last_heard_step < FORGET_AFTER_TICKS);
 
         let tracked = self.tracks.values().filter_map(|track| {
             Some(Device {
@@ -154,8 +154,8 @@ impl Tracks {
                 x: posterior.x,
                 z: posterior.z,
                 variance: posterior.variance,
-                at_ms: now_ms,
-                seen: self.ticks,
+                updated_at_ms: now_ms,
+                last_heard_step: self.ticks,
             },
         );
     }

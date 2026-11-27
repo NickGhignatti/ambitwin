@@ -2,26 +2,23 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 
-pub fn admin_of(domain: &str) -> String {
+fn claims_of(domain: &str, role: &str) -> String {
     BASE64.encode(
         json!({
             "sub": "u1",
             "accountName": "tester",
-            "memberships": [{ "domain": domain, "role": "business_admin" }]
+            "memberships": [{ "domain": domain, "role": role }]
         })
         .to_string(),
     )
 }
 
+pub fn admin_of(domain: &str) -> String {
+    claims_of(domain, "business_admin")
+}
+
 pub fn member_of(domain: &str) -> String {
-    BASE64.encode(
-        json!({
-            "sub": "u1",
-            "accountName": "tester",
-            "memberships": [{ "domain": domain, "role": "standard_customer" }]
-        })
-        .to_string(),
-    )
+    claims_of(domain, "standard_customer")
 }
 
 /// An internal caller: a `system:` subject with no memberships.

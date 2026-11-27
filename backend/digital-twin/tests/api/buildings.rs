@@ -1,6 +1,3 @@
-// GET /buildings/:domain and POST /buildings/counts — the building-collection
-// level (listing/counting), as opposed to a single building or its rooms.
-
 use axum::http::StatusCode;
 use serde_json::json;
 

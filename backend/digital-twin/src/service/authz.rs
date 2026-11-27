@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use crate::domain::identity::GatewayClaims;
+use crate::domain::{Building, DomainError};
 
 static ROLE_WEIGHTS: LazyLock<HashMap<String, i64>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../libs/auth-contracts/roles.json"))
@@ -68,39 +69,41 @@ fn account_entity(uid: EntityUid, claims: &GatewayClaims) -> Entity {
         }
     }
 
-    let mut attrs = HashMap::new();
-    attrs.insert(
-        "domainsAsStandardCustomer".to_string(),
-        set_expr(standard_customer),
-    );
-    attrs.insert(
-        "domainsAsBusinessStaff".to_string(),
-        set_expr(business_staff),
-    );
-    attrs.insert(
-        "domainsAsBusinessAdmin".to_string(),
-        set_expr(business_admin),
-    );
-    attrs.insert("domainsAsAdmin".to_string(), set_expr(admin));
-    attrs.insert(
-        "maxRoleWeight".to_string(),
-        RestrictedExpression::new_long(max_weight),
-    );
+    let attrs = HashMap::from([
+        (
+            "domainsAsStandardCustomer".to_string(),
+            set_expr(standard_customer),
+        ),
+        (
+            "domainsAsBusinessStaff".to_string(),
+            set_expr(business_staff),
+        ),
+        (
+            "domainsAsBusinessAdmin".to_string(),
+            set_expr(business_admin),
+        ),
+        ("domainsAsAdmin".to_string(), set_expr(admin)),
+        (
+            "maxRoleWeight".to_string(),
+            RestrictedExpression::new_long(max_weight),
+        ),
+    ]);
 
     Entity::new(uid, attrs, HashSet::new()).expect("account entity attrs match schema")
 }
 
 /// Returns a new [`Entity`] representing a resource with the given [`EntityUid`] and domain.
 fn resource_entity(uid: EntityUid, domain: &str) -> Entity {
-    let mut attrs = HashMap::new();
-    attrs.insert(
+    let attrs = HashMap::from([(
         "domain".to_string(),
         RestrictedExpression::new_string(domain.to_string()),
-    );
+    )]);
     Entity::new(uid, attrs, HashSet::new()).expect("resource entity attrs match schema")
 }
 
-fn authorize(
+/// Whether Cedar allows `action` on `domain` for the caller; `required_weight` goes in as context.
+/// A request Cedar cannot build is logged and denied.
+pub fn authorize(
     claims: &GatewayClaims,
     action: &str,
     domain: &str,
@@ -111,83 +114,80 @@ fn authorize(
     let principal = account_entity(principal_uid.clone(), claims);
     let resource = resource_entity(resource_uid.clone(), domain);
 
-    let context = match required_weight {
-        Some(w) => Context::from_pairs([(
-            "requiredWeight".to_string(),
-            RestrictedExpression::new_long(w),
-        )]),
-        None => Ok(Context::empty()),
+    let decision = || -> anyhow::Result<bool> {
+        let context = match required_weight {
+            Some(weight) => Context::from_pairs([(
+                "requiredWeight".to_string(),
+                RestrictedExpression::new_long(weight),
+            )])?,
+            None => Context::empty(),
+        };
+        let entities = Entities::from_entities([principal, resource], Some(&SCHEMA))?;
+        let request = Request::new(
+            principal_uid,
+            euid("Action", action),
+            resource_uid,
+            context,
+            Some(&SCHEMA),
+        )?;
+        let response = Authorizer::new().is_authorized(&request, &POLICIES, &entities);
+        Ok(response.decision() == Decision::Allow)
     };
-    let context = match context {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("cedar context build failed: {e}");
-            return false;
-        }
-    };
+    decision().unwrap_or_else(|error| {
+        log::error!("cedar request not built: {error}");
+        false
+    })
+}
 
-    let entities = match Entities::from_entities([principal, resource], Some(&SCHEMA)) {
-        Ok(e) => e,
-        Err(e) => {
-            log::error!("cedar entities build failed: {e}");
-            return false;
-        }
-    };
-    let request = match Request::new(
-        principal_uid,
-        euid("Action", action),
-        resource_uid,
-        context,
-        Some(&SCHEMA),
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            log::error!("cedar request build failed: {e}");
-            return false;
-        }
-    };
-
-    let response = Authorizer::new().is_authorized(&request, &POLICIES, &entities);
-    response.decision() == Decision::Allow
+fn is_subject_in(claims: &GatewayClaims, subjects: &[&str]) -> bool {
+    claims
+        .payload
+        .sub
+        .as_deref()
+        .is_some_and(|sub| subjects.contains(&sub))
 }
 
 /// Internal callers that look up any building's owners: notification routes an alert to every one.
 const OWNER_RESOLVERS: &[&str] = &["system:notification-service"];
 
 pub fn resolves_any_owner(claims: &GatewayClaims) -> bool {
-    claims
-        .payload
-        .sub
-        .as_deref()
-        .is_some_and(|sub| OWNER_RESOLVERS.contains(&sub))
+    is_subject_in(claims, OWNER_RESOLVERS)
 }
 
 /// Internal callers that read any building's geometry; the edge never mints a `system:` subject.
 const GEOMETRY_READERS: &[&str] = &["system:ap-simulator"];
 
 pub fn reads_any_geometry(claims: &GatewayClaims) -> bool {
-    claims
-        .payload
-        .sub
-        .as_deref()
-        .is_some_and(|sub| GEOMETRY_READERS.contains(&sub))
+    is_subject_in(claims, GEOMETRY_READERS)
 }
 
 pub fn is_member_of(claims: &GatewayClaims, domain: &str) -> bool {
     authorize(claims, "Read", domain, None)
 }
 
-pub fn can_read_building(claims: &GatewayClaims, building_domains: &[String]) -> bool {
-    reads_any_geometry(claims)
-        || building_domains
+/// Forbidden unless the caller is a member of one of the building's domains, or reads all geometry.
+pub fn require_read(claims: &GatewayClaims, building: &Building) -> Result<(), DomainError> {
+    let allowed = reads_any_geometry(claims)
+        || building
+            .domains
             .iter()
-            .any(|domain| is_member_of(claims, domain))
+            .any(|domain| is_member_of(claims, domain));
+    allowed.then_some(()).ok_or_else(|| {
+        DomainError::Forbidden("Requires membership in one of this building's domains".to_string())
+    })
 }
 
-pub fn can_edit_domains(claims: &GatewayClaims, building_domains: &[String]) -> bool {
-    building_domains
+/// Forbidden unless the caller has an editing role in one of the building's domains.
+pub fn require_edit(claims: &GatewayClaims, building: &Building) -> Result<(), DomainError> {
+    let allowed = building
+        .domains
         .iter()
-        .any(|domain| authorize(claims, "Edit", domain, None))
+        .any(|domain| authorize(claims, "Edit", domain, None));
+    allowed.then_some(()).ok_or_else(|| {
+        DomainError::Forbidden(
+            "Requires an editing role in one of this building's domains".to_string(),
+        )
+    })
 }
 
 /// A new building may only be filed under domains the caller edits, all of them.
@@ -209,37 +209,10 @@ pub fn filter_readable_domains_from_memberships(
         .collect()
 }
 
-pub fn authorize_any(
-    claims: &GatewayClaims,
-    action: &str,
-    domain: &str,
-    required_weight: Option<i64>,
-) -> bool {
-    authorize(claims, action, domain, required_weight)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::identity::{ClaimsPayload, Membership};
-
-    fn claims_with(memberships: Vec<(&str, &str)>) -> GatewayClaims {
-        GatewayClaims {
-            payload: ClaimsPayload {
-                sub: Some("u1".to_string()),
-                memberships: memberships
-                    .into_iter()
-                    .map(|(domain, role)| Membership {
-                        domain: domain.to_string(),
-                        role: Some(role.to_string()),
-                        external_id: None,
-                    })
-                    .collect(),
-                ..ClaimsPayload::default()
-            },
-            raw: "raw".to_string(),
-        }
-    }
+    use crate::service::fakes::claims_with;
 
     #[test]
     fn is_member_of_allows_any_role_in_the_domain() {
@@ -248,42 +221,46 @@ mod tests {
         assert!(!is_member_of(&claims, "other"));
     }
 
-    #[test]
-    fn can_edit_domains_requires_business_staff_or_higher() {
-        let staff = claims_with(vec![("eng", "business_staff")]);
-        assert!(can_edit_domains(&staff, &["eng".to_string()]));
-
-        let customer = claims_with(vec![("eng", "standard_customer")]);
-        assert!(!can_edit_domains(&customer, &["eng".to_string()]));
+    fn owned_by(domains: &[&str]) -> Building {
+        Building {
+            id: "b1".to_string(),
+            name: "b1".to_string(),
+            rooms: vec![],
+            domains: domains.iter().map(|domain| domain.to_string()).collect(),
+        }
     }
 
     #[test]
-    fn can_edit_domains_checks_any_of_the_buildings_domains() {
-        let claims = claims_with(vec![("eng", "business_admin")]);
-        assert!(can_edit_domains(
-            &claims,
-            &["other".to_string(), "eng".to_string()]
+    fn require_edit_needs_business_staff_or_higher_in_any_of_the_buildings_domains() {
+        let building = owned_by(&["other", "eng"]);
+        let staff = claims_with(vec![("eng", "business_staff")]);
+        assert!(require_edit(&staff, &building).is_ok());
+
+        let customer = claims_with(vec![("eng", "standard_customer")]);
+        assert!(matches!(
+            require_edit(&customer, &building),
+            Err(DomainError::Forbidden(_))
         ));
     }
 
     #[test]
-    fn can_read_building_needs_one_shared_domain_or_the_simulator() {
-        let domains = ["eng".to_string(), "ops".to_string()];
+    fn require_read_needs_one_shared_domain_or_the_simulator() {
+        let building = owned_by(&["eng", "ops"]);
         let member = claims_with(vec![("ops", "standard_customer")]);
-        assert!(can_read_building(&member, &domains));
+        assert!(require_read(&member, &building).is_ok());
 
         let outsider = claims_with(vec![("other", "business_admin")]);
-        assert!(!can_read_building(&outsider, &domains));
+        assert!(require_read(&outsider, &building).is_err());
 
         let platform_admin = claims_with(vec![("other", "admin")]);
         assert!(
-            !can_read_building(&platform_admin, &domains),
+            require_read(&platform_admin, &building).is_err(),
             "a platform admin is not a member of every domain"
         );
 
         let mut simulator = claims_with(vec![]);
         simulator.payload.sub = Some("system:ap-simulator".to_string());
-        assert!(can_read_building(&simulator, &domains));
+        assert!(require_read(&simulator, &building).is_ok());
     }
 
     #[test]

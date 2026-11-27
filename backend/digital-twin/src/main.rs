@@ -1,5 +1,5 @@
 use env_logger::Env;
-use log::{error, info};
+use log::info;
 use std::env;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use digital_twin::adapters::driven::kafka_producer::KafkaEventProducer;
 use digital_twin::adapters::driven::persistence::db::{self, MongoBuildings};
 use digital_twin::adapters::driven::persistence::jobs::MongoUploadQueue;
-use digital_twin::adapters::driven::persistence::placements::{self, MongoPlacements};
+use digital_twin::adapters::driven::persistence::placements::MongoPlacements;
 use digital_twin::adapters::driven::redis_devices::RedisDevicesFeed;
 use digital_twin::adapters::driving::{kafka_consumer, wifi_consumer, worker};
 use digital_twin::adapters::{
@@ -50,36 +50,27 @@ async fn shutdown_signal() {
 async fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let mongo_uri =
-        env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+    let mongo_uri = env_or("MONGO_URI", "mongodb://localhost:27017");
     let buildings = db::connect(&mongo_uri, "ambitwin")
         .await
         .expect("Failed to connect to MongoDB");
 
-    let sync_enabled = env::var("NODE_ENV").map(|v| v != "test").unwrap_or(true);
     let outbound = OutboundConfig {
-        telemetry_url: env::var("TELEMETRY_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string()),
-        dashboard_url: env::var("DASHBOARD_URL")
-            .unwrap_or_else(|_| "http://localhost:3001".to_string()),
-        notification_url: env::var("NOTIFICATION_URL")
-            .unwrap_or_else(|_| "http://localhost:3004".to_string()),
-        sync_enabled,
+        telemetry_url: env_or("TELEMETRY_URL", "http://localhost:3000"),
+        dashboard_url: env_or("DASHBOARD_URL", "http://localhost:3001"),
+        notification_url: env_or("NOTIFICATION_URL", "http://localhost:3004"),
+        sync_enabled: true,
         client: client(),
     };
 
-    let kafka_brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
+    let kafka_brokers = env_or("KAFKA_BROKERS", "localhost:9092");
     let events = Arc::new(
         KafkaEventProducer::new(&kafka_brokers)
             .await
             .expect("Failed to configure Kafka producer"),
     );
 
-    let placements = Arc::new(MongoPlacements::new(
-        placements::connect(&mongo_uri, "ambitwin")
-            .await
-            .expect("Failed to connect to MongoDB"),
-    ));
+    let placements = Arc::new(MongoPlacements::from_building_collection(&buildings));
 
     let store = Arc::new(MongoBuildings::new(buildings.clone()));
     let queue = Arc::new(
@@ -97,7 +88,7 @@ async fn main() {
     ));
     worker::spawn(provisioning.clone());
     kafka_consumer::spawn(&kafka_brokers, provisioning.clone());
-    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let redis_url = env_or("REDIS_URL", "redis://localhost:6379");
     let feed = Arc::new(RedisDevicesFeed::new(&redis_url).expect("REDIS_URL is a Redis URL"));
     wifi_consumer::spawn(
         &kafka_brokers,
@@ -117,19 +108,20 @@ async fn main() {
     };
 
     let app = build_router(state);
-    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    if let Ok(listener) = TcpListener::bind(format!("0.0.0.0:{port}")).await {
-        info!("Twin Service started on port {port}");
-        if let Err(e) = axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown_signal())
+    let port = env_or("PORT", "3000");
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
-        {
-            error!("Failed to serve: {e}");
-        }
-    } else {
-        error!("Failed to bind to port {port}");
-    }
+        .expect("port is free");
+    info!("Twin Service started on port {port}");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("server runs");
+}
+
+fn env_or(name: &str, default: &str) -> String {
+    env::var(name).unwrap_or_else(|_| default.to_owned())
 }

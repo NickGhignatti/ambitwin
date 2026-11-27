@@ -26,7 +26,6 @@ pub struct Prior {
 /// A floor's cells weighed by how well each explains the signals, and the prior if one is given.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Posterior {
-    pub floor: usize,
     pub x: f64,
     pub z: f64,
     /// Per axis, in square metres.
@@ -34,12 +33,12 @@ pub struct Posterior {
     best: usize,
 }
 
-pub const SIGNAL_AT_1M_DBM: f64 = -40.0;
-pub const PATH_LOSS_EXPONENT: f64 = 2.2;
-pub const WALL_LOSS_DB: f64 = 5.0;
-const CELL_M: f64 = 0.5;
+const SIGNAL_AT_1M_DBM: f64 = -40.0;
+const PATH_LOSS_EXPONENT: f64 = 2.2;
+const WALL_LOSS_DB: f64 = 5.0;
+const CELL_SIZE_METRES: f64 = 0.5;
 // The simulator's 4 dB shadowing and 2 dB fading, combined.
-const SIGNAL_SD_DB: f64 = 4.5;
+const SIGNAL_NOISE_DB: f64 = 4.5;
 // Two circles cross at two points: a third router is what picks one.
 const MIN_ROUTERS: usize = 3;
 const FLOOR_TOLERANCE_M: f64 = 0.5;
@@ -86,10 +85,18 @@ impl Geometry {
 
         let mut plans: Vec<Vec<(usize, Bounds)>> = vec![Vec::new(); bottoms.len()];
         for (index, room) in building.rooms.iter().enumerate() {
-            let (half_w, half_d) = (room.dimensions.width / 2.0, room.dimensions.depth / 2.0);
+            let (half_width, half_depth) =
+                (room.dimensions.width / 2.0, room.dimensions.depth / 2.0);
             let (x, z) = (room.position.x, room.position.z);
-            plans[floor_of(bottom(room))]
-                .push((index, (x - half_w, z - half_d, x + half_w, z + half_d)));
+            plans[floor_of(bottom(room))].push((
+                index,
+                (
+                    x - half_width,
+                    z - half_depth,
+                    x + half_width,
+                    z + half_depth,
+                ),
+            ));
         }
 
         let mut router_floor = HashMap::new();
@@ -117,12 +124,12 @@ impl Geometry {
                 ),
                 |a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)),
             );
-            let across = ((max_x - min_x) / CELL_M).ceil() as usize;
-            let along = ((max_z - min_z) / CELL_M).ceil() as usize;
+            let across = ((max_x - min_x) / CELL_SIZE_METRES).ceil() as usize;
+            let along = ((max_z - min_z) / CELL_SIZE_METRES).ceil() as usize;
             for i in 0..across {
                 for j in 0..along {
-                    let x = min_x + (i as f64 + 0.5) * CELL_M;
-                    let z = min_z + (j as f64 + 0.5) * CELL_M;
+                    let x = min_x + (i as f64 + 0.5) * CELL_SIZE_METRES;
+                    let z = min_z + (j as f64 + 0.5) * CELL_SIZE_METRES;
                     let Some((room, _)) = plan
                         .iter()
                         .find(|(_, b)| b.0 <= x && x <= b.2 && b.1 <= z && z <= b.3)
@@ -209,7 +216,7 @@ impl Geometry {
                     .iter()
                     .map(|&(c, s)| (s - row[c]).powi(2))
                     .sum::<f64>();
-                let mut cost = misfit / (2.0 * SIGNAL_SD_DB.powi(2));
+                let mut cost = misfit / (2.0 * SIGNAL_NOISE_DB.powi(2));
                 if let Some(prior) = prior {
                     let walked = (cell.x - prior.x).powi(2) + (cell.z - prior.z).powi(2);
                     if walked > prior.reach.powi(2) {
@@ -234,10 +241,9 @@ impl Geometry {
             .map(|(c, w)| w * ((c.x - x).powi(2) + (c.z - z).powi(2)))
             .sum::<f64>();
         Some(Posterior {
-            floor,
             x,
             z,
-            variance: (spread / (2.0 * total)).max(CELL_M * CELL_M),
+            variance: (spread / (2.0 * total)).max(CELL_SIZE_METRES * CELL_SIZE_METRES),
             best,
         })
     }
@@ -249,16 +255,17 @@ impl Geometry {
         Some(plan.expected[fix.cell * plan.columns.len() + column])
     }
 
+    /// Index of the cell on `floor` closest to this point.
+    fn nearest_cell(&self, floor: usize, x: f64, z: f64) -> Option<usize> {
+        let distance = |cell: &Cell| (cell.x - x).powi(2) + (cell.z - z).powi(2);
+        let cells = &self.floors.get(floor)?.cells;
+        (0..cells.len()).min_by(|&a, &b| distance(&cells[a]).total_cmp(&distance(&cells[b])))
+    }
+
     /// The room of the cell closest to this point.
     pub fn room_near(&self, floor: usize, x: f64, z: f64) -> Option<&str> {
-        let distance = |cell: &&Cell| (cell.x - x).powi(2) + (cell.z - z).powi(2);
-        let cell = self
-            .floors
-            .get(floor)?
-            .cells
-            .iter()
-            .min_by(|a, b| distance(a).total_cmp(&distance(b)))?;
-        Some(&self.rooms[cell.room])
+        let cell = self.nearest_cell(floor, x, z)?;
+        Some(&self.rooms[self.floors[floor].cells[cell].room])
     }
 
     /// Rooms on a floor with at least one placed router, each once: the rooms twin can count.
@@ -286,10 +293,9 @@ impl Geometry {
         routers: &[&str],
     ) -> BTreeMap<String, i32> {
         let plan = &self.floors[floor];
-        let distance = |cell: &Cell| (cell.x - x).powi(2) + (cell.z - z).powi(2);
-        let cell = (0..plan.cells.len())
-            .min_by(|&a, &b| distance(&plan.cells[a]).total_cmp(&distance(&plan.cells[b])))
-            .unwrap();
+        let cell = self
+            .nearest_cell(floor, x, z)
+            .expect("a cell on this floor");
         routers
             .iter()
             .map(|router| {

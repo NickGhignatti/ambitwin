@@ -5,7 +5,7 @@ use crate::adapters::topics::{
     BUILDING_REGISTRATION_COMPLETED_TOPIC, BUILDING_REGISTRATION_REQUESTED_TOPIC,
     ESTIMATED_OCCUPANCY_TOPIC,
 };
-use crate::domain::Building;
+use crate::domain::{Building, normalize_room_name};
 use crate::service::ports::{OccupancyEvents, RegistrationEvents};
 use async_trait::async_trait;
 use rdkafka::ClientConfig;
@@ -13,7 +13,7 @@ use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use twin_schema::{EstimatedOccupancy, RegistrationRequest, RegistrationRoom};
 
-/// How long call wait in producer's local queue before giving up (not broker ack timeout or delivery timeout).
+// max wait in the local send queue, not the broker ack
 const PRODUCE_TIMEOUT: Duration = Duration::from_secs(5);
 // Bounds the delivery wait too: the Wi-Fi consumer awaits it, and the next tick replaces this one.
 const OCCUPANCY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -21,10 +21,9 @@ const OCCUPANCY_TIMEOUT: Duration = Duration::from_secs(2);
 const OCCUPANCY_RETENTION_MS: &str = "3600000";
 
 pub struct KafkaEventProducer {
-    producer: Option<FutureProducer>,
+    producer: FutureProducer,
 }
 
-/// Topic initialization: creates the required topics if they do not exist.
 async fn ensure_topics(brokers: &str) -> anyhow::Result<()> {
     let admin: AdminClient<_> = ClientConfig::new()
         .set("bootstrap.servers", brokers)
@@ -57,13 +56,7 @@ impl KafkaEventProducer {
         let producer = ClientConfig::new()
             .set("bootstrap.servers", brokers)
             .create()?;
-        Ok(Self {
-            producer: Some(producer),
-        })
-    }
-
-    pub fn disabled() -> Self {
-        Self { producer: None }
+        Ok(Self { producer })
     }
 }
 
@@ -73,10 +66,6 @@ impl RegistrationEvents for KafkaEventProducer {
         &self,
         building: &Building,
     ) -> anyhow::Result<()> {
-        let Some(producer) = &self.producer else {
-            return Ok(());
-        };
-
         let payload = serde_json::to_string(&RegistrationRequest {
             building_id: Some(building.id.clone()),
             name: building.name.clone(),
@@ -86,17 +75,13 @@ impl RegistrationEvents for KafkaEventProducer {
                 .iter()
                 .map(|room| RegistrationRoom {
                     id: room.id.clone(),
-                    name: if room.name.trim().is_empty() {
-                        room.id.clone()
-                    } else {
-                        room.name.clone()
-                    },
+                    name: normalize_room_name(Some(&room.name), &room.id),
                 })
                 .collect(),
         })
         .expect("a registration request always serialises");
 
-        producer
+        self.producer
             .send(
                 FutureRecord::to(BUILDING_REGISTRATION_REQUESTED_TOPIC)
                     .key(&building.id)
@@ -112,31 +97,30 @@ impl RegistrationEvents for KafkaEventProducer {
 #[async_trait]
 impl OccupancyEvents for KafkaEventProducer {
     async fn publish_occupancy(&self, occupancy: &EstimatedOccupancy) {
-        let Some(producer) = &self.producer else {
-            return;
-        };
         let payload = serde_json::to_string(occupancy).expect("room counts always serialise");
         let record = FutureRecord::to(ESTIMATED_OCCUPANCY_TOPIC)
             .key(&occupancy.building_id)
             .payload(&payload);
 
-        let outcome =
-            match tokio::time::timeout(OCCUPANCY_TIMEOUT, producer.send(record, OCCUPANCY_TIMEOUT))
-                .await
-            {
-                Ok(Ok(_)) => "ok",
-                Ok(Err((e, _))) => {
-                    log::warn!("room counts of {} not produced: {e}", occupancy.building_id);
-                    "error"
-                }
-                Err(_) => {
-                    log::warn!(
-                        "room counts of {} not produced: timed out",
-                        occupancy.building_id
-                    );
-                    "timeout"
-                }
-            };
+        let outcome = match tokio::time::timeout(
+            OCCUPANCY_TIMEOUT,
+            self.producer.send(record, OCCUPANCY_TIMEOUT),
+        )
+        .await
+        {
+            Ok(Ok(_)) => "ok",
+            Ok(Err((e, _))) => {
+                log::warn!("room counts of {} not produced: {e}", occupancy.building_id);
+                "error"
+            }
+            Err(_) => {
+                log::warn!(
+                    "room counts of {} not produced: timed out",
+                    occupancy.building_id
+                );
+                "timeout"
+            }
+        };
         record_occupancy_published(outcome);
     }
 }

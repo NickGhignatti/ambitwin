@@ -40,10 +40,9 @@ struct Snapshot {
 struct Site {
     tick: u64,
     tracks: Tracks,
-    dots: Vec<Device>,
 }
 
-/// Each building's tracks and dots, moved on by every fresh Wi-Fi tick. Nothing is stored.
+/// Each building's tracks, moved on by every fresh Wi-Fi tick. Nothing is stored.
 pub struct Tracking {
     buildings: Arc<dyn BuildingStore>,
     placements: Arc<dyn PlacementStore>,
@@ -91,10 +90,9 @@ impl Tracking {
                 site.tracks = Tracks::default();
             }
             site.tick = tick.tick;
-            site.dots = geometry
+            geometry
                 .as_ref()
-                .map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry));
-            site.dots.clone()
+                .map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry))
         };
         if let Some(geometry) = geometry.filter(|_| !tick.answered.is_empty()) {
             self.occupancy
@@ -113,17 +111,6 @@ impl Tracking {
             })
             .await;
         Observed::Accepted
-    }
-
-    /// The building's dots from its newest tick; none once that tick is too old to be true.
-    pub fn dots(&self, building_id: &str, now_ms: u64) -> Vec<Device> {
-        self.sites
-            .lock()
-            .expect("tracking lock")
-            .get(building_id)
-            .filter(|site| now_ms.saturating_sub(site.tick) <= MAX_TICK_AGE_MS)
-            .map(|site| site.dots.clone())
-            .unwrap_or_default()
     }
 
     pub fn held_tick(&self, building_id: &str) -> Option<u64> {
@@ -255,6 +242,17 @@ mod tests {
         }
     }
 
+    fn last_dots(rig: &Rig) -> Vec<Device> {
+        rig.feed
+            .sent
+            .lock()
+            .unwrap()
+            .last()
+            .expect("a published tick")
+            .devices
+            .clone()
+    }
+
     fn move_router(rig: &Rig, x: f64) {
         let mut routers = sim_routers();
         let moved = routers
@@ -281,7 +279,7 @@ mod tests {
             Observed::Accepted
         );
 
-        let dots = rig.tracking.dots("b-est", NOW);
+        let dots = last_dots(&rig);
         assert_eq!(dots.len(), 1);
         assert_eq!(dots[0].room, "f0-10");
         assert_eq!(rig.tracking.held_tick("b-est"), Some(NOW));
@@ -296,7 +294,7 @@ mod tests {
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].building_id, "b-est");
         assert_eq!(sent[0].tick, NOW);
-        assert_eq!(sent[0].devices, rig.tracking.dots("b-est", NOW));
+        assert_eq!(sent[0].devices.len(), 1);
     }
 
     // The browser holds the last list it got, so an empty building must say so.
@@ -371,22 +369,8 @@ mod tests {
             Observed::Accepted
         );
 
-        assert!(rig.tracking.dots("b-gone", NOW).is_empty());
+        assert!(last_dots(&rig).is_empty());
         assert_eq!(rig.tracking.held_tick("b-gone"), Some(NOW));
-    }
-
-    // Kept on screen past three polls, a dot would show someone who may long have left.
-    #[tokio::test]
-    async fn dots_vanish_once_their_tick_is_too_old() {
-        let rig = rig();
-        rig.tracking.observe(tick("b-est", NOW), NOW).await;
-
-        assert_eq!(rig.tracking.dots("b-est", NOW + MAX_TICK_AGE_MS).len(), 1);
-        assert!(
-            rig.tracking
-                .dots("b-est", NOW + MAX_TICK_AGE_MS + 1)
-                .is_empty()
-        );
     }
 
     // After an outage Kafka still holds ten minutes of ticks; replayed, they would move dots backwards.
@@ -442,11 +426,11 @@ mod tests {
 
         let soon = NOW + GEOMETRY_TTL_MS - 1;
         rig.tracking.observe(tick("b-est", soon), soon).await;
-        assert_eq!(rig.tracking.dots("b-est", soon)[0].room, "f0-10");
+        assert_eq!(last_dots(&rig)[0].room, "f0-10");
 
         let later = NOW + GEOMETRY_TTL_MS;
         rig.tracking.observe(tick("b-est", later), later).await;
-        assert_eq!(rig.tracking.dots("b-est", later)[0].room, "f0-20");
+        assert_eq!(last_dots(&rig)[0].room, "f0-20");
     }
 
     #[tokio::test]
@@ -458,6 +442,6 @@ mod tests {
         let later = NOW + GEOMETRY_TTL_MS;
         rig.tracking.observe(tick("b-est", later), later).await;
 
-        assert_eq!(rig.tracking.dots("b-est", later).len(), 1);
+        assert_eq!(last_dots(&rig).len(), 1);
     }
 }

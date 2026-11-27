@@ -2,8 +2,7 @@ services:
   digital-twin:
     cpus: "3"
     build:
-      # Repo-root context: digital-twin needs to see its sibling ../auth-policy
-      # dir (shared Cedar policy bundle) during build.
+      # repo root: the build reads schemas/ and backend/libs/
       context: ../..
       dockerfile: backend/digital-twin/Dockerfile
       additional_contexts:

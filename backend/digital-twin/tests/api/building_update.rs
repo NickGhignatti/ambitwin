@@ -1,5 +1,3 @@
-// PATCH /building/:buildingId — building-level metadata (currently: name only).
-
 use axum::http::StatusCode;
 use serde_json::json;
 

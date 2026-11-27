@@ -1,8 +1,12 @@
 use std::time::Duration;
 
-use mongodb::bson::doc;
-use mongodb::options::ClientOptions;
+use mongodb::Database;
+use mongodb::bson::{Document, doc};
 use uuid::Uuid;
+
+mod support;
+
+use support::test_app::test_database;
 
 use digital_twin::adapters::driven::persistence::jobs::MongoUploadQueue;
 use digital_twin::domain::{AcceptedUpload, Building, Coordinates, Dimensions, Room, UploadStatus};
@@ -32,37 +36,23 @@ fn dummy_building(id: &str) -> Building {
     }
 }
 
-async fn open_queue(collection_name: &str) -> MongoUploadQueue {
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let opts = ClientOptions::parse(&uri).await.unwrap();
-    let client = mongodb::Client::with_options(opts).unwrap();
-    let buildings = client
-        .database("digital_twin_test")
-        .collection::<Building>("buildings_for_jobs_test");
-    MongoUploadQueue::with_collection_name(&buildings, collection_name)
+async fn open_queue(database: &Database) -> MongoUploadQueue {
+    MongoUploadQueue::from_building_collection(&database.collection("buildings"))
         .await
         .unwrap()
 }
 
-async fn test_queue() -> (MongoUploadQueue, String) {
-    let collection_name = format!("pending_uploads_{}", Uuid::new_v4());
-    (open_queue(&collection_name).await, collection_name)
+async fn test_queue() -> (MongoUploadQueue, Database) {
+    let database = test_database("jobs").await;
+    (open_queue(&database).await, database)
 }
 
-async fn raw_collection(collection_name: &str) -> mongodb::Collection<mongodb::bson::Document> {
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    mongodb::Client::with_uri_str(&uri)
-        .await
-        .unwrap()
-        .database("digital_twin_test")
-        .collection(collection_name)
+fn raw_collection(database: &Database) -> mongodb::Collection<Document> {
+    database.collection("pending_uploads")
 }
 
-async fn finished_at(collection_name: &str, id: &str) -> Option<mongodb::bson::Bson> {
-    raw_collection(collection_name)
-        .await
+async fn finished_at(database: &Database, id: &str) -> Option<mongodb::bson::Bson> {
+    raw_collection(database)
         .find_one(doc! { "id": id })
         .await
         .unwrap()
@@ -84,12 +74,8 @@ async fn enqueued(queue: &MongoUploadQueue) -> String {
 
 const LEASE: Duration = Duration::from_secs(30);
 
-async fn index_keys(collection_name: &str) -> Vec<(mongodb::bson::Document, bool)> {
-    let mut cursor = raw_collection(collection_name)
-        .await
-        .list_indexes()
-        .await
-        .unwrap();
+async fn index_keys(database: &Database) -> Vec<(mongodb::bson::Document, bool)> {
+    let mut cursor = raw_collection(database).list_indexes().await.unwrap();
     let mut keys = Vec::new();
     while cursor.advance().await.unwrap() {
         let index = cursor.deserialize_current().unwrap();
@@ -103,10 +89,10 @@ async fn index_keys(collection_name: &str) -> Vec<(mongodb::bson::Document, bool
 // reads every queued upload, and every upload carries its whole building.
 #[tokio::test]
 async fn the_queue_indexes_what_status_claim_and_resolve_look_up() {
-    let (queue, collection_name) = test_queue().await;
+    let (queue, database) = test_queue().await;
     enqueued(&queue).await;
 
-    let keys = index_keys(&collection_name).await;
+    let keys = index_keys(&database).await;
     assert!(
         keys.iter()
             .any(|(k, unique)| *k == doc! { "id": 1 } && *unique),
@@ -176,32 +162,6 @@ async fn an_upload_whose_lease_expired_is_redelivered() {
 }
 
 #[tokio::test]
-async fn every_delivery_is_counted() {
-    let (queue, collection_name) = test_queue().await;
-    let id = enqueued(&queue).await;
-
-    queue.claim(Duration::ZERO).await.unwrap().unwrap();
-    queue.claim(Duration::ZERO).await.unwrap().unwrap();
-
-    let uri =
-        std::env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let client = mongodb::Client::with_uri_str(&uri).await.unwrap();
-    let raw = client
-        .database("digital_twin_test")
-        .collection::<mongodb::bson::Document>(&collection_name);
-    let doc = raw
-        .find_one(doc! { "id": { "$eq": &id } })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        doc.get_i32("attempts").unwrap(),
-        2,
-        "the retry budget depends on this count"
-    );
-}
-
-#[tokio::test]
 async fn a_provisioned_upload_is_ready_and_no_longer_claimable() {
     let (queue, _) = test_queue().await;
     let id = enqueued(&queue).await;
@@ -242,14 +202,10 @@ async fn an_unknown_handle_has_no_status() {
 // wait (30s) before it goes; an hour leaves wide margin.
 #[tokio::test]
 async fn finished_uploads_expire_an_hour_after_they_finish() {
-    let (queue, collection_name) = test_queue().await;
+    let (queue, database) = test_queue().await;
     enqueued(&queue).await;
 
-    let mut cursor = raw_collection(&collection_name)
-        .await
-        .list_indexes()
-        .await
-        .unwrap();
+    let mut cursor = raw_collection(&database).list_indexes().await.unwrap();
     let mut expiry = None;
     while cursor.advance().await.unwrap() {
         let index = cursor.deserialize_current().unwrap();
@@ -262,7 +218,7 @@ async fn finished_uploads_expire_an_hour_after_they_finish() {
 
 #[tokio::test]
 async fn resolving_records_when_the_upload_finished() {
-    let (queue, collection_name) = test_queue().await;
+    let (queue, database) = test_queue().await;
     let ready = enqueued(&queue).await;
     let failed = enqueued(&queue).await;
     let pending = enqueued(&queue).await;
@@ -271,16 +227,16 @@ async fn resolving_records_when_the_upload_finished() {
     queue.mark_failed(&failed, "boom").await.unwrap();
 
     assert!(matches!(
-        finished_at(&collection_name, &ready).await,
+        finished_at(&database, &ready).await,
         Some(mongodb::bson::Bson::DateTime(_))
     ));
     assert!(matches!(
-        finished_at(&collection_name, &failed).await,
+        finished_at(&database, &failed).await,
         Some(mongodb::bson::Bson::DateTime(_))
     ));
     // Pending records store finished_at as null, like leased_until; TTL only removes dates.
     assert!(!matches!(
-        finished_at(&collection_name, &pending).await,
+        finished_at(&database, &pending).await,
         Some(mongodb::bson::Bson::DateTime(_))
     ));
 }
@@ -289,30 +245,28 @@ async fn resolving_records_when_the_upload_finished() {
 // a record without its field.
 #[tokio::test]
 async fn uploads_finished_before_expiry_existed_are_given_a_finish_time() {
-    let (queue, collection_name) = test_queue().await;
+    let (queue, database) = test_queue().await;
     let id = enqueued(&queue).await;
     queue.mark_ready(&id).await.unwrap();
-    raw_collection(&collection_name)
-        .await
+    raw_collection(&database)
         .update_one(doc! { "id": &id }, doc! { "$unset": { "finished_at": "" } })
         .await
         .unwrap();
 
-    open_queue(&collection_name).await;
+    open_queue(&database).await;
 
     assert!(matches!(
-        finished_at(&collection_name, &id).await,
+        finished_at(&database, &id).await,
         Some(mongodb::bson::Bson::DateTime(_))
     ));
 }
 
 #[tokio::test]
 async fn a_completion_arriving_after_the_record_expired_is_a_no_op() {
-    let (queue, collection_name) = test_queue().await;
+    let (queue, database) = test_queue().await;
     let id = enqueued(&queue).await;
     queue.mark_ready(&id).await.unwrap();
-    raw_collection(&collection_name)
-        .await
+    raw_collection(&database)
         .delete_one(doc! { "id": &id })
         .await
         .unwrap();

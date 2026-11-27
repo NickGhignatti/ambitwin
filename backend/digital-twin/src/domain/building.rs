@@ -35,12 +35,6 @@ pub struct Building {
     pub domains: Vec<String>,
 }
 
-impl PartialEq for Building {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct PositionInput {
     pub x: Option<f64>,
@@ -103,6 +97,24 @@ pub fn validate_capacity(capacity: Option<f64>) -> Result<f64, DomainError> {
     }
 }
 
+/// Reads a request's domain list by hand: an array of non-blank strings, each at most
+/// 100 chars. Nothing is deserialized blind, and a bad shape is a 400, not a 422.
+pub fn parse_domain_names(raw: &serde_json::Value) -> Result<Vec<String>, DomainError> {
+    let invalid = || {
+        DomainError::Validation(
+            "'domains' must be an array of non-blank strings (max 100 chars each)".to_string(),
+        )
+    };
+    raw.as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|item| match item.as_str() {
+            Some(name) if !name.trim().is_empty() && name.len() <= 100 => Ok(name.to_string()),
+            _ => Err(invalid()),
+        })
+        .collect()
+}
+
 pub fn normalize_building_name(name: Option<&str>, id: Option<&str>) -> String {
     let trimmed = name.map(str::trim).filter(|s| !s.is_empty());
     trimmed.or(id).unwrap_or("Building").to_string()
@@ -118,6 +130,32 @@ pub fn normalize_room_name(name: Option<&str>, id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_domain_names_accepts_an_array_of_strings() {
+        assert_eq!(
+            parse_domain_names(&json!(["eng", "ops"])).unwrap(),
+            vec!["eng".to_string(), "ops".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_domain_names_rejects_bad_shapes() {
+        let too_long = "x".repeat(100 + 1);
+        for bad in [
+            json!("eng"),
+            json!([1]),
+            json!(["  "]),
+            json!([too_long]),
+            json!(null),
+        ] {
+            assert!(
+                matches!(parse_domain_names(&bad), Err(DomainError::Validation(_))),
+                "{bad}"
+            );
+        }
+    }
 
     #[test]
     fn normalize_building_name_uses_trimmed_name_when_present() {

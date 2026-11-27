@@ -1,8 +1,7 @@
 language: 'rust'
 
-# build / lint are inherited from .moon/tasks/rust.yml. `test` is overridden
-# below: src/ holds only unit tests now (no real infra), tests/*.rs holds
-# integration tests that need a real MongoDB (see test-integration.sh).
+# build and lint come from .moon/tasks/rust.yml; `test` runs unit tests only,
+# tests/*.rs need MongoDB and run through test-integration.sh
 tasks:
   test:
     command: 'cargo test --lib'

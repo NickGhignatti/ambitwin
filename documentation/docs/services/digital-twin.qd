@@ -115,17 +115,16 @@ let buildings = db::connect(&mongo_uri, "ambitwin")
 1. Connect to MongoDB: database `ambitwin`, collection `buildings`. This also creates the indexes (`id` unique, `domains`).
 
 ```rust
-let sync_enabled = env::var("NODE_ENV").map(|v| v != "test").unwrap_or(true);
 let outbound = OutboundConfig {
-    telemetry_url: env::var("TELEMETRY_URL").unwrap_or_else(|_| "http://localhost:3000".to_string()),
-    dashboard_url: env::var("DASHBOARD_URL").unwrap_or_else(|_| "http://localhost:3001".to_string()),
-    notification_url: env::var("NOTIFICATION_URL").unwrap_or_else(|_| "http://localhost:3004".to_string()),
-    sync_enabled,
+    telemetry_url: env_or("TELEMETRY_URL", "http://localhost:3000"),
+    dashboard_url: env_or("DASHBOARD_URL", "http://localhost:3001"),
+    notification_url: env_or("NOTIFICATION_URL", "http://localhost:3004"),
+    sync_enabled: true,
     client: client(),
 };
 ```
 
-2. The addresses of the three services it calls. `NODE_ENV=test` turns the three HTTP calls off (`sync_enabled = false`). One HTTP client for all of them, with a 5 s timeout.
+2. The addresses of the three services it calls (`env_or` reads a variable, or falls back to its default). The calls are always on here; only the integration tests build an `OutboundConfig` with `sync_enabled: false`. One HTTP client for all of them, with a 5 s timeout.
 
 ```rust
 let events = Arc::new(
@@ -136,12 +135,12 @@ let events = Arc::new(
 3. The Kafka producer. Creating it first makes sure the topics `building-registration-requested`, `building-registration-completed` and `estimated-occupancy` exist.
 
 ```rust
-let placements = Arc::new(MongoPlacements::new(placements::connect(&mongo_uri, "ambitwin").await …));
+let placements = Arc::new(MongoPlacements::from_building_collection(&buildings));
 let store = Arc::new(MongoBuildings::new(buildings.clone()));
 let queue = Arc::new(MongoUploadQueue::from_building_collection(&buildings).await.expect("create upload queue indexes"));
 ```
 
-4. Open the `placements` and `pending_uploads` collections and create their indexes.
+4. Open the `placements` and `pending_uploads` collections on the buildings client, and create the queue indexes.
 
 ```rust
 let provisioning = Arc::new(Provisioning::new(store.clone(), queue, downstream.clone(), events.clone()));
@@ -156,7 +155,7 @@ wifi_consumer::spawn(&kafka_brokers, Arc::new(Tracking::new(store.clone(), place
 7. Build the Redis feed (it connects only on its first publish) and start the **Wi-Fi consumer**.
 8. Build the router with the rate limiter on, and serve on `PORT` until `SIGTERM` or `Ctrl+C`.
 
-A failure in steps 1 to 4 stops the process (`expect`): the service never runs half wired. The three background loops are started with `spawn` and are never waited on.
+A failure in steps 1 to 4, or a port it cannot bind, stops the process with a non-zero exit (`expect`): the service never runs half wired, and the orchestrator sees a crash, not a clean stop. The three background loops are started with `spawn` and are never waited on.
 
 | Variable | Default | What it is |
 |---|---|---|
@@ -166,7 +165,6 @@ A failure in steps 1 to 4 stops the process (`expect`): the service never runs h
 | `TELEMETRY_URL` | `http://localhost:3000` | Room limits after an edit |
 | `DASHBOARD_URL` | `http://localhost:3001` | Starting columns |
 | `NOTIFICATION_URL` | `http://localhost:3004` | The "provisioning failed" alert |
-| `NODE_ENV` | | `test` turns off the three HTTP calls above |
 | `PORT` | `3000` | HTTP |
 
 ---
@@ -178,7 +176,7 @@ MongoDB, database `ambitwin`:
 | Collection | One document per | Shape | Indexes |
 |---|---|---|---|
 | `buildings` | building | `{id, name, rooms: [{id, name, capacity, position, dimensions, color?}], domains}` | `id` unique. `domains` |
-| `pending_uploads` | upload | the building, the caller's raw claims, `status`, `attempts`, `leased_until`, `accepted_at`, `error`, `finished_at` | `id` unique. `status` + `leased_until`. `finished_at` with expiry 1 h |
+| `pending_uploads` | upload | the building, the caller's raw claims, `status`, `leased_until`, `accepted_at`, `error`, `finished_at` | `id` unique. `status` + `leased_until`. `finished_at` with expiry 1 h |
 | `placements` | building | `{_id: buildingId, sensors: {"<sensorId>": {x, y, z}}}` | `_id` |
 
 - Tracks and dots live **in memory only**. A restart starts every building from no tracks.
@@ -205,15 +203,9 @@ pub struct Building {
     pub rooms: Vec<Room>,
     pub domains: Vec<String>,
 }
-
-impl PartialEq for Building {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
 ```
 
-A room is a box: `position` is its **centre**, `dimensions` its width, height and depth. A building is its rooms plus the list of domains that own it. Two buildings are "equal" when their **ids** match, whatever else differs.
+A room is a box: `position` is its **centre**, `dimensions` its width, height and depth. A building is its rooms plus the list of domains that own it.
 
 `Building` and `Room` are not shared shapes: no other Rust service parses them. The cross-language readers (agent, frontend) are kept in line by `schemas/fixtures/building.json`, checked in `tests/building_conformance.rs`.
 
@@ -355,32 +347,21 @@ Then the upload is saved **together with the caller's raw claims header** (`clai
 
 ### The queue: `UploadQueue` on MongoDB
 
-A job is a document in `pending_uploads`. Three queries do all the work:
+A job is a document in `pending_uploads`. Its `status` is the domain's own `UploadStatus`, stored lowercase. Three queries do all the work:
 
 ```rust
-fn claimable_filter(now: DateTime) -> Document {
-    doc! {
-        "status": "pending",
-        "$or": [
-            { "leased_until": null },
-            { "leased_until": { "$lte": now } },
-        ],
-    }
-}
+// claim
+let claimable = doc! {
+    "status": "pending",
+    "$or": [{ "leased_until": null }, { "leased_until": { "$lte": now } }],
+};
+let lease = doc! { "$set": { "leased_until": expires_at } };
 
-fn claim_update(expires_at: DateTime) -> Document {
-    doc! {
-        "$set": { "leased_until": expires_at },
-        "$inc": { "attempts": 1 },
-    }
-}
-
-fn resolve_filter(id: &str) -> Document {
-    doc! { "id": { "$eq": id }, "status": "pending" }
-}
+// resolve (mark_ready, mark_failed)
+doc! { "id": { "$eq": id }, "status": "pending" }
 ```
 
-- **Claim**: find *one* job that is `pending` and either never leased or whose lease has run out, and in the same atomic step set a new lease (`now + 30 s`) and add 1 to `attempts`. `find_one_and_update` makes this one operation, so two workers can never take the same job at the same time.
+- **Claim**: find *one* job that is `pending` and either never leased or whose lease has run out, and in the same atomic step set a new lease (`now + 30 s`). `find_one_and_update` makes this one operation, so two workers can never take the same job at the same time.
 - **Resolve** (`mark_ready` and `mark_failed`): find the job that is still `pending` and change its status. It returns the job **as it was before**, and from that the time since `accepted_at`. If the job was already resolved, nothing matches and the answer is `None`: a repeat does nothing.
 
 A **lease** is like borrowing a library book for 30 seconds. If the borrower (the worker) crashes, the book comes back by itself when the time runs out and someone else can take it. That is why a crash in the middle of provisioning loses nothing.
@@ -471,7 +452,7 @@ async fn provision(&self, upload: &AcceptedUpload) -> Result<(), DomainError> {
 
 **Example.** `telemetry` is down for 2 minutes. The job is claimed at 0 s, 30 s, 60 s, 90 s, 120 s: 5 attempts, 5 identical requests on Kafka. When `telemetry` comes back it registers the building 5 times (each an upsert) and answers 5 times. The first `ready` resolves the job. The other 4 match nothing.
 
-- `attempts` grows, but nothing reads it: there is no retry limit.
+- There is no retry limit.
 
 .mermaid
     sequenceDiagram
@@ -489,11 +470,11 @@ async fn provision(&self, upload: &AcceptedUpload) -> Result<(), DomainError> {
         H->>H: new UUID, normalize_building_name
         H->>P: accept(building, claims)
         P->>P: domains not empty, can_edit_every(claims, domains)
-        P->>Q: enqueue: status pending, attempts 0
+        P->>Q: enqueue: status pending
         H-->>B: 202 {buildingId}
         W->>P: provision_next(30 s)
         P->>Q: claim: a pending job, lease free or run out
-        Q-->>P: AcceptedUpload, lease until now + 30 s, attempts + 1
+        Q-->>P: AcceptedUpload, lease until now + 30 s
         P->>S: upsert(building)
         P->>K: publish_building_registration_request
         P->>D: init_preferences: POST dashboard /preferences/init/{id}
@@ -507,9 +488,9 @@ Example data: one room, editor in `eng`.
 | 1 | `{"name":" HQ ","domains":["eng"],"rooms":[{"id":"r1","name":"","capacity":20,"position":{"x":5,"y":1.5,"z":4},"dimensions":{"width":10,"height":3,"depth":8}}]}` |
 | 2 | `Room {id: r1, name: r1, capacity: 20.0, …}`. The blank name becomes the id |
 | 3 | `Building {id: 5c1e…, name: HQ, domains: [eng]}`. The name is trimmed |
-| 6 | `pending_uploads`: `{id: 5c1e…, building, claims: "<raw header>", status: pending, attempts: 0}` |
+| 6 | `pending_uploads`: `{id: 5c1e…, building, claims: "<raw header>", status: pending}` |
 | 7 | `202 {"buildingId":"5c1e…"}` |
-| 10 | The same job, `leased_until` now + 30 s, `attempts` 1 |
+| 10 | The same job, `leased_until` now + 30 s |
 | 12 | `{"buildingId":"5c1e…","name":"HQ","rooms":[{"id":"r1","name":"r1"}]}` on Kafka, key `5c1e…` |
 | 13 | `POST …/preferences/init/5c1e…` with the uploader's claims |
 
@@ -518,22 +499,24 @@ Example data: one room, editor in `eng`.
 ### What goes to the other services
 
 ```rust
-pub async fn sync_building_clone(config: &OutboundConfig, building: &Building, max_temperature: Option<f64>, claims_header: Option<&str>) -> anyhow::Result<()> {
-    if !config.sync_enabled { return Ok(()); }
-    // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}], maxTemperature? }
-    // non-2xx: bail! "Failed to sync sensor threshold clone: {status} {details}"
-}
+impl DownstreamSync for OutboundConfig {
+    async fn clone_thresholds(&self, building: &Building, claims: &str) -> anyhow::Result<()> {
+        if !self.sync_enabled { return Ok(()); }
+        // PUT {telemetry}/thresholds/buildings/{id}  { name, rooms: [{id, name}] }
+        // non-2xx: bail! "Failed to sync sensor threshold clone: {status} {details}"
+    }
 
-pub async fn init_building_preferences(config: &OutboundConfig, building_id: &str, claims_header: Option<&str>) {
-    // POST {dashboard}/preferences/init/{id}; an Err is only logged
-}
+    async fn init_preferences(&self, building_id: &str, claims: &str) {
+        // POST {dashboard}/preferences/init/{id}; a transport error or non-2xx is only logged
+    }
 
-pub async fn notify_provisioning_failed(config: &OutboundConfig, building_id: &str, error: &str) {
-    // POST {notification}/trigger with the system identity; an Err is only logged
+    async fn notify_provisioning_failed(&self, building_id: &str, error: &str) {
+        // POST {notification}/trigger with the system identity; a transport error or non-2xx is only logged
+    }
 }
 ```
 
-- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. And `init_preferences` does not even check the status code.
+- The threshold sync **fails** on a non-2xx answer (it returns an `Err`). The other two are best effort: an error is only logged. Both also log a non-2xx answer.
 - The `id` goes through `urlencoding::encode`, so it cannot break the path.
 - The failure alert has no end user to forward claims from, so it presents a made-up system header: base64 of `{"sub":"system:digital-twin","accountName":"system:digital-twin","memberships":[]}`.
 
@@ -596,10 +579,8 @@ pub async fn resolve(&self, id: &str, error: Option<&str>) -> Result<Option<Dura
     }
 }
 
-// A failed upload must not leave an orphaned twin behind -- whether provisioning
-// failed before telemetry ever heard about it, or telemetry rejected it later.
-// Notify before deleting: notification resolves the building's domains by
-// calling back into digital-twin, so the twin must still exist when it does.
+// a failed upload leaves no twin behind; notify first, since notification
+// reads the building's domains back from here
 async fn fail(&self, id: &str, error: &str) -> Result<Option<Duration>, DomainError> {
     let Some(elapsed) = self.queue.mark_failed(id, error).await? else {
         // Already failed means a retry: notify went out, only the delete may be outstanding.
@@ -654,15 +635,13 @@ async fn fail(&self, id: &str, error: &str) -> Result<Option<Duration>, DomainEr
 
 ```rust
 pub async fn get(&self, id: &str, claims: &GatewayClaims) -> Result<Building, DomainError> {
-    let building = self.find(id).await?;
-    if !authz::can_read_building(claims, &building.domains) {
-        return Err(DomainError::Forbidden("Requires membership in one of this building's domains".to_string()));
-    }
+    let building = find_building(&*self.store, id).await?;
+    authz::require_read(claims, &building)?;
     self.normalize(building).await
 }
 ```
 
-Find (or `404`), check the caller may read it (or `403`), then repair names. `list_for_domain` checks the caller is a member of the asked domain, then lists and repairs each building.
+Find (or `404`), check the caller may read it (or `403`), then repair names. `find_building` and `authz::require_read` / `require_edit` are the one place for that `404` and `403`: `Placements` and `Provisioning::resync` use them too. `list_for_domain` checks the caller is a member of the asked domain, then lists and repairs each building.
 
 ```rust
 pub async fn counts_per_domain(&self, requested: &[String], claims: &GatewayClaims) -> Result<HashMap<String, i64>, DomainError> {
@@ -694,6 +673,11 @@ vec![
 
 ```rust
 async fn normalize(&self, mut building: Building) -> Result<Building, DomainError> {
+    if heal_names(&mut building) { self.store.upsert(&building).await?; }
+    Ok(building)
+}
+
+fn heal_names(building: &mut Building) -> bool {
     let mut changed = false;
     let normalized = normalize_building_name(Some(&building.name), Some(&building.id));
     if normalized != building.name { building.name = normalized; changed = true; }
@@ -701,8 +685,7 @@ async fn normalize(&self, mut building: Building) -> Result<Building, DomainErro
         let normalized = normalize_room_name(Some(&room.name), &room.id);
         if normalized != room.name { room.name = normalized; changed = true; }
     }
-    if changed { self.store.upsert(&building).await?; }
-    Ok(building)
+    changed
 }
 ```
 
@@ -712,21 +695,29 @@ A stored blank name is replaced by the id. If anything changed, the building is 
 
 ```rust
 pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaims) -> Result<Building, DomainError> {
-    let mut building = self.get_building_by_id_for_edit(id, claims).await?;
+    let mut building = find_building(&*self.store, id).await?;
+    authz::require_edit(claims, &building)?;
 
     if let Some(name) = patch.name { building.name = name; }
-    if let Some(domains) = patch.domains { building.domains = domains; }
+    if let Some(domains) = patch.domains {
+        if !authz::can_edit_every(claims, &domains) {
+            return Err(DomainError::Forbidden("Requires an editing role in every domain the building is moved to".to_string()));
+        }
+        building.domains = domains;
+    }
+    heal_names(&mut building);
     self.store.upsert(&building).await?;
-    self.downstream.clone_thresholds(&building, patch.max_temperature, &claims.raw).await?;
+    self.downstream.clone_thresholds(&building, &claims.raw).await?;
 
     Ok(building)
 }
 ```
 
 1. Load the building and check the caller edits one of its **current** domains.
-2. Apply `name` and `domains` if present.
-3. **Save.**
-4. Tell `telemetry` (`PUT /thresholds/buildings/{id}`) with the caller's own claims.
+2. Apply `name` and `domains` if present. New `domains` must be non-empty, and the caller must edit **every** one of them, like `POST /register`.
+3. Heal blank names, so `PATCH {"name":"  "}` stores the id, not a blank.
+4. **Save**, once. A refused edit writes nothing.
+5. Tell `telemetry` (`PUT /thresholds/buildings/{id}`) with the caller's own claims.
 
 .mermaid
     sequenceDiagram
@@ -735,17 +726,18 @@ pub async fn update(&self, id: &str, patch: BuildingPatch, claims: &GatewayClaim
         participant U as Buildings::update
         participant S as MongoBuildings
         participant T as telemetry
-        B->>U: PATCH /building/b1 {name, domains, maxTemperature}
-        U->>S: find, normalize
-        U->>U: can_edit_domains(claims, current domains)
-        U->>U: apply name and domains when present
+        B->>U: PATCH /building/b1 {name, domains}
+        U->>S: find
+        U->>U: require_edit(claims, building)
+        U->>U: apply name; domains only if can_edit_every(claims, new domains)
+        U->>U: heal_names
         U->>S: upsert(building)
-        U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature?}
+        U->>T: clone_thresholds: PUT /thresholds/buildings/b1 {name, rooms}
         T-->>U: 2xx
         U-->>B: Building
 
 - Rooms cannot change: the patch has no room field. The room set is write-once.
-- A non-2xx answer from `telemetry` fails the request with `500`, **after** step 3 already saved.
+- A non-2xx answer from `telemetry` fails the request with `500`, **after** step 4 already saved.
 
 ---
 
@@ -802,15 +794,13 @@ An outsider gets `[]`, the same answer as for a building that does not exist, so
 
 ```rust
 pub async fn apply(&self, building_id: &str, changes: PlacementChanges, claims: &GatewayClaims) -> Result<(), DomainError> {
-    let building = self.building(building_id).await?;
-    if !authz::can_edit_domains(claims, &building.domains) {
-        return Err(DomainError::Forbidden("Requires an editing role in one of this building's domains".to_string()));
-    }
+    let building = find_building(&*self.buildings, building_id).await?;
+    authz::require_edit(claims, &building)?;
     Ok(self.store.apply(building_id, &changes).await?)
 }
 ```
 
-`list` checks `can_read_building` and sorts by sensor id. `apply` checks `can_edit_domains`. The store does the write:
+`list` checks `require_read` and sorts by sensor id. `apply` checks `require_edit`. The store does the write:
 
 ```rust
 let mut update = Document::new();
@@ -851,7 +841,7 @@ Only the **position** lives here. The sensor itself (type, room, name) belongs t
         H->>C: checked(upsert, delete)
         C-->>H: PlacementChanges or 400
         H->>P: apply(b1, changes, claims)
-        P->>P: building exists, can_edit_domains
+        P->>P: find_building, require_edit
         P->>S: one update_one with $set and $unset, upsert
         H-->>B: 204
 
@@ -887,17 +877,17 @@ For each membership, the domain is put in **every set the role's weight reaches*
 
 The resource is the domain being asked about. Cedar then decides `Allow` or not:
 
-| Helper | Cedar action | True when |
+| Helper | Cedar action | Allowed when |
 |---|---|---|
 | `is_member_of(d)` | `Read` | Any known role in `d` |
-| `can_read_building(ds)` | `Read` | Member of one of `ds`, or the caller is `system:ap-simulator` |
-| `can_edit_domains(ds)` | `Edit` | `business_staff` or higher in **one** of `ds` |
+| `require_read(building)` | `Read` | Member of one of its domains, or the caller is `system:ap-simulator`. Else `403` |
+| `require_edit(building)` | `Edit` | `business_staff` or higher in **one** of its domains. Else `403` |
 | `can_edit_every(ds)` | `Edit` | `ds` not empty and editor in **all** |
 | `filter_readable_domains_from_memberships` | `Read` | Keeps the readable ones |
 
 Any failure while building the Cedar request is logged and answers **false**: deny by default.
 
-**Example.** Ada is `admin` in `other`. A building in `eng` and `ops`. `can_read_building` is false: a platform admin is not a member of every domain.
+**Example.** Ada is `admin` in `other`. A building in `eng` and `ops`. `require_read` answers `403`: a platform admin is not a member of every domain.
 
 ---
 
@@ -939,7 +929,7 @@ The edge strips `/twin`. Every route except the public ones needs `x-gateway-cla
 | `POST` | `/register` | Editor (`business_staff` or higher) in **every** listed domain | Check the building, queue it | `202 {buildingId}` |
 | `GET` | `/building/{id}/status` | Any signed-in caller | Upload status | `{status}` |
 | `GET` | `/building/{id}` | Member of one of its domains, or `system:ap-simulator` | One building | `Building` |
-| `PATCH` | `/building/{id}` | Editor in one of its **current** domains | Change `name`, `domains`. Send room limits to `telemetry` | `Building` |
+| `PATCH` | `/building/{id}` | Editor in one of its **current** domains, and in **every** new domain | Change `name`, `domains`. Send room limits to `telemetry` | `Building` |
 | `POST` | `/building/{id}/sync` | Editor in one of its domains | Announce it to `telemetry` again | `202` |
 | `GET` | `/buildings/{domain}` | Member of that domain | All its buildings | `[Building]` |
 | `POST` | `/buildings/counts` | Any signed-in caller | Count per domain, unreadable domains dropped | `{counts: {domain: n}}` |
@@ -1053,8 +1043,7 @@ let devices = {
         site.tracks = Tracks::default();
     }
     site.tick = tick.tick;
-    site.dots = geometry.as_ref().map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry));
-    site.dots.clone()
+    geometry.as_ref().map_or_else(Vec::new, |geometry| site.tracks.step(&tick, geometry))
 };
 if let Some(geometry) = geometry.filter(|_| !tick.answered.is_empty()) {
     self.occupancy.publish_occupancy(&EstimatedOccupancy {
@@ -1119,7 +1108,7 @@ For each room outline, find where the straight line from the cell to the router 
 
 ```rust
 let misfit = heard.iter().map(|&(c, s)| (s - row[c]).powi(2)).sum::<f64>();
-let mut cost = misfit / (2.0 * SIGNAL_SD_DB.powi(2));        // SIGNAL_SD_DB = 4.5
+let mut cost = misfit / (2.0 * SIGNAL_NOISE_DB.powi(2));        // SIGNAL_NOISE_DB = 4.5
 if let Some(prior) = prior {
     let walked = (cell.x - prior.x).powi(2) + (cell.z - prior.z).powi(2);
     if walked > prior.reach.powi(2) { return None; }
@@ -1164,9 +1153,9 @@ For a burst with no prior, pick the floor of the **loudest** router (a floor sla
 ### Following phones: `Tracks::step`
 
 ```rust
-pub const MAX_SPEED_M_S: f64 = 2.0;
-const DRIFT_M_S: f64 = 0.5;
-pub const FORGET_AFTER_TICKS: u64 = 3;
+const WALKING_SPEED_LIMIT_METRES_PER_SECOND: f64 = 2.0;
+const DRIFT_METRES_PER_SECOND: f64 = 0.5;
+const FORGET_AFTER_TICKS: u64 = 3;
 const RING_TOLERANCE_DB: f64 = 9.0;
 ```
 
@@ -1185,12 +1174,12 @@ A tick has two kinds of rows: `connected` (phones joined to a router, each with 
 
 ```rust
 fn prior(&self, now_ms: u64) -> Prior {
-    let seconds = now_ms.saturating_sub(self.at_ms) as f64 / 1000.0;
+    let seconds = now_ms.saturating_sub(self.updated_at_ms) as f64 / 1000.0;
     Prior {
         x: self.x,
         z: self.z,
-        variance: self.variance + (DRIFT_M_S * seconds).powi(2),
-        reach: MAX_SPEED_M_S * seconds + 2.0 * self.variance.sqrt(),
+        variance: self.variance + (DRIFT_METRES_PER_SECOND * seconds).powi(2),
+        reach: WALKING_SPEED_LIMIT_METRES_PER_SECOND * seconds + 2.0 * self.variance.sqrt(),
     }
 }
 ```
@@ -1316,10 +1305,8 @@ just test twin-integration   # tests/*.rs against a throwaway MongoDB
 
 ## Gaps
 
-- **`PATCH` can move a building into any domain.** It checks the editing role only in the building's **current** domains. The new `domains` list is not checked, and may even be empty. `POST /register` checks every domain.
 - **`PATCH` saves before `telemetry` answers.** When the limit sync fails, the caller gets `500` but the new name and domains are already stored.
-- **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever. `attempts` is counted but never read.
-- **`init_preferences` ignores the answer code.** A `4xx` or `5xx` from `dashboard` looks like success, and the building gets no live feed until someone saves its columns.
+- **No retry limit.** A job `telemetry` never answers is republished every 30 s for ever.
 - **Status and ownership lookup need only a signed-in caller.** Any user can learn a building's domains, or an upload's status, from its id or name.
 - **The rate limit lives in memory.** Two copies of the service each allow 300 per minute.
 - **Placements outlive their building.** A failed upload deletes the building, never its `placements` document.

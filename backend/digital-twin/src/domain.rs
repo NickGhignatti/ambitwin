@@ -6,7 +6,7 @@ pub mod upload;
 
 pub use building::{
     Building, Coordinates, Dimensions, DimensionsInput, PositionInput, Room,
-    normalize_building_name, normalize_room_name, validate_capacity,
+    normalize_building_name, normalize_room_name, parse_domain_names, validate_capacity,
 };
 pub use error::DomainError;
 pub use placement::{MAX_BATCH_PLACEMENTS, Placement, PlacementChanges};

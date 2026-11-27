@@ -1,19 +1,16 @@
 FROM rust-base AS chef
 WORKDIR /app/backend/digital-twin
-
-# ── capture the dependency graph ────────────────────────────────────────
-FROM chef AS planner
 COPY schemas/claims-schema /app/schemas/claims-schema
 COPY schemas/twin-schema /app/schemas/twin-schema
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
+
+# ── capture the dependency graph ────────────────────────────────────────
+FROM chef AS planner
 COPY backend/digital-twin .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS dev
 COPY --from=planner /app/backend/digital-twin/recipe.json recipe.json
-COPY schemas/claims-schema /app/schemas/claims-schema
-COPY schemas/twin-schema /app/schemas/twin-schema
-COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 RUN --mount=type=cache,target=/sccache,sharing=shared \
     RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache CARGO_INCREMENTAL=0 \
     cargo chef cook --recipe-path recipe.json
@@ -29,9 +26,6 @@ CMD ["cargo", "watch", "-x", "run"]
 
 FROM chef AS builder
 COPY --from=planner /app/backend/digital-twin/recipe.json recipe.json
-COPY schemas/claims-schema /app/schemas/claims-schema
-COPY schemas/twin-schema /app/schemas/twin-schema
-COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY backend/libs/auth-policy /app/backend/libs/auth-policy
 COPY backend/libs/auth-contracts /app/backend/libs/auth-contracts

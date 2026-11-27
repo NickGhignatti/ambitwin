@@ -901,7 +901,7 @@ pub async fn register_from_event(&self, building_id: &str, payload: &Value) -> a
         G->>PG: upsert building and rooms
         G->>K: building-registration-completed, ready or failed
         C->>K: commit the offset
-        Tw->>G: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature}
+        Tw->>G: PUT /thresholds/buildings/b1 {name, rooms}
         G->>PG: same upsert, plus building temperature max when given
 
 .mermaid

@@ -1,18 +1,15 @@
-use std::time::Instant;
-
 use axum::http::StatusCode;
 use cucumber::{then, when};
 use serde_json::Value;
 
 use crate::support::fixtures::building_with;
-use crate::support::world::{POLL_INTERVAL, READY_TIMEOUT, TwinWorld};
+use crate::support::registration::wait_for_status;
+use crate::support::world::TwinWorld;
 
-#[when(expr = "I upload a valid building description to organization {string}")]
-pub async fn upload_valid(world: &mut TwinWorld, domain: String) {
-    let payload = building_with(serde_json::json!({ "width": 10, "height": 10, "depth": 10 }));
-    world
-        .call("POST", "/register", &domain, Some(payload))
-        .await;
+async fn upload(world: &mut TwinWorld, domain: &str, room_width: i64) {
+    let payload =
+        building_with(serde_json::json!({ "width": room_width, "height": 10, "depth": 10 }));
+    world.call("POST", "/register", domain, Some(payload)).await;
     world.building_id = world
         .body
         .get("buildingId")
@@ -20,17 +17,14 @@ pub async fn upload_valid(world: &mut TwinWorld, domain: String) {
         .map(str::to_owned);
 }
 
+#[when(expr = "I upload a valid building description to organization {string}")]
+pub async fn upload_valid(world: &mut TwinWorld, domain: String) {
+    upload(world, &domain, 10).await;
+}
+
 #[when(expr = "I upload a building description with an invalid room to organization {string}")]
 async fn upload_invalid(world: &mut TwinWorld, domain: String) {
-    let payload = building_with(serde_json::json!({ "width": -1, "height": 10, "depth": 10 }));
-    world
-        .call("POST", "/register", &domain, Some(payload))
-        .await;
-    world.building_id = world
-        .body
-        .get("buildingId")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    upload(world, &domain, -1).await;
 }
 
 #[then("the upload is acknowledged with a tracking handle")]
@@ -65,18 +59,5 @@ async fn refused(world: &mut TwinWorld) {
 
 #[then(expr = "the tracking handle eventually reports {string}")]
 pub async fn handle_reports(world: &mut TwinWorld, expected: String) {
-    let path = format!("/building/{}/status", world.handle());
-    let deadline = Instant::now() + READY_TIMEOUT;
-    loop {
-        world.call("GET", &path, "test-domain", None).await;
-        let reported = world.body.get("status").and_then(Value::as_str);
-        if reported == Some(expected.as_str()) {
-            return;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "handle still reported {reported:?} after {READY_TIMEOUT:?}, expected {expected:?}"
-        );
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
+    wait_for_status(&world.router, world.handle(), &expected).await;
 }

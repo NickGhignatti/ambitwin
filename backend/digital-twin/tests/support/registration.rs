@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use axum::Router;
 use axum::http::StatusCode;
 use serde_json::Value;
@@ -5,12 +7,13 @@ use serde_json::Value;
 use crate::support::fixtures::{editor_token, mock_building, token};
 use crate::support::http_client::send;
 
-/// The upload happens in the background queue, an HTTP test can't immediately ask
-/// for the building after posting it. This function uses a loop to repeatedly hit
-/// the /status endpoint until the "instant resolver" finishes the job, ensuring the
-/// test doesn't fail due to a race condition.
-pub async fn wait_until_ready(router: &Router, handle: &str) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+const READY_TIMEOUT: Duration = Duration::from_secs(15);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Polls the upload's status until it reports `expected`, panicking after `READY_TIMEOUT`:
+/// the worker provisions uploads in the background.
+pub async fn wait_for_status(router: &Router, handle: &str, expected: &str) {
+    let deadline = Instant::now() + READY_TIMEOUT;
     loop {
         let res = send(
             router.clone(),
@@ -20,15 +23,15 @@ pub async fn wait_until_ready(router: &Router, handle: &str) {
             None,
         )
         .await;
-        if res.body["status"] == "ready" {
+        if res.body["status"] == expected {
             return;
         }
         assert!(
-            std::time::Instant::now() < deadline,
-            "upload {handle} never became ready, last status was {}",
+            Instant::now() < deadline,
+            "upload {handle} still reported {} after {READY_TIMEOUT:?}, expected {expected:?}",
             res.body["status"]
         );
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(POLL_INTERVAL).await;
     }
 }
 
@@ -46,7 +49,7 @@ pub async fn register(router: &Router, payload: Value) -> String {
         .as_str()
         .expect("a tracking handle")
         .to_string();
-    wait_until_ready(router, &handle).await;
+    wait_for_status(router, &handle, "ready").await;
     handle
 }
 
