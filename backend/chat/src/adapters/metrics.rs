@@ -47,7 +47,7 @@ pub static HTTP_REQUEST_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
 });
 
 fn is_infra_path(path: &str) -> bool {
-    matches!(path, "/metrics" | "/metrics/" | "/health" | "/health/")
+    matches!(path, "/metrics" | "/health")
 }
 
 pub async fn track_metrics(request: Request, next: Next) -> Response {
@@ -162,7 +162,7 @@ mod tests {
     #[tokio::test]
     async fn the_infrastructure_endpoints_are_not_measured() {
         assert!(is_infra_path("/health"));
-        assert!(is_infra_path("/metrics/"));
+        assert!(is_infra_path("/metrics"));
         assert!(!is_infra_path("/conversations"));
     }
 

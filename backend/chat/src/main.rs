@@ -10,9 +10,11 @@ use chat::adapters::driven::agent::AgentService;
 use chat::adapters::driven::persistence::conversations::MongoConversations;
 use chat::adapters::driven::persistence::db;
 use chat::adapters::ratelimit::RateLimiter;
+use chat::build_router;
 use chat::service::conversations::Conversations;
 use chat::state::AppState;
-use chat::{DEFAULT_HISTORY_MAX_MESSAGES, build_router};
+
+const DEFAULT_HISTORY_MAX_MESSAGES: usize = 10;
 
 /// Node re-read and re-validated this per request, so a bad value only surfaced as a
 /// 500 on the first message. Reading it once at boot turns the same mistake into a

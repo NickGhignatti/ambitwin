@@ -8,20 +8,12 @@ pub mod state;
 
 use state::AppState;
 
-pub const DEFAULT_HISTORY_MAX_MESSAGES: usize = 10;
-
-fn public_routes() -> Router<AppState> {
-    Router::new()
-        .route("/health", get(adapters::metrics::health))
-        .route("/health/", get(adapters::metrics::health))
-        .route("/metrics", get(adapters::metrics::metrics_handler))
-        .route("/metrics/", get(adapters::metrics::metrics_handler))
-}
-
-fn protected_routes() -> Router<AppState> {
+pub fn build_router(state: AppState) -> Router {
     use adapters::driving::http_api::controllers::*;
 
     Router::new()
+        .route("/health", get(adapters::metrics::health))
+        .route("/metrics", get(adapters::metrics::metrics_handler))
         .route(
             "/conversations",
             post(create_conversation).get(list_conversations),
@@ -33,14 +25,8 @@ fn protected_routes() -> Router<AppState> {
                 .delete(delete_conversation),
         )
         .route("/conversations/{id}/messages", post(send_message))
-}
-
-pub fn build_router(state: AppState) -> Router {
-    let rate_limiter = state.rate_limiter.clone();
-    public_routes()
-        .merge(protected_routes())
         .layer(axum::middleware::from_fn_with_state(
-            rate_limiter,
+            state.rate_limiter.clone(),
             adapters::ratelimit::rate_limit,
         ))
         .layer(axum::middleware::from_fn(adapters::metrics::track_metrics))
