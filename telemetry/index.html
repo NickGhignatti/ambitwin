@@ -1306,7 +1306,7 @@ for batch in readings.chunks(MAX_BATCH_READINGS) {
     G-&gt;&gt;PG: upsert building and rooms
     G-&gt;&gt;K: building-registration-completed, ready or failed
     C-&gt;&gt;K: commit the offset
-    Tw-&gt;&gt;G: PUT /thresholds/buildings/b1 {name, rooms, maxTemperature}
+    Tw-&gt;&gt;G: PUT /thresholds/buildings/b1 {name, rooms}
     G-&gt;&gt;PG: same upsert, plus building temperature max when given</pre></figure><figure><pre class="mermaid">flowchart TD
     M[&quot;request message&quot;] --&gt; J{&quot;JSON with buildingId?&quot;}
     J -- no --&gt; D[&quot;log, commit, no answer&quot;]

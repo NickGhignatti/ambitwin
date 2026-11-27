@@ -239,11 +239,10 @@ paths:
         "404": { $ref: "error.yaml#/components/responses/NotFound" }
     patch:
       tags: [Buildings]
-      summary: Rename, move between domains, or set the temperature limit
+      summary: Rename, or move between domains
       description: |
-        Needs an editing role in one of the building's domains. Rooms cannot be changed here.
-        `maxTemperature` is not stored here: it is passed on to telemetry as the building's
-        temperature threshold.
+        Needs an editing role in one of the building's current domains, and in every new one.
+        Rooms cannot be changed here. Temperature limits are set on telemetry, not here.
       requestBody:
         required: true
         content:
@@ -255,7 +254,6 @@ paths:
                 domains:
                   type: array
                   items: { type: string }
-                maxTemperature: { type: number, example: 26 }
       responses:
         "200":
           description: The changed building.
