@@ -924,7 +924,7 @@ fn history_max_messages() -> usize {
 
 Read **once at start**. The old Node service re-read and re-checked it on every request, so a bad value only showed up as a `500` on the first message. Now the same mistake is a container that refuses to start. Not set: 10. Set to `0`, to a negative number or to text: panic.
 
-`main` then connects to MongoDB (panic if it cannot), builds `Conversations` from the Mongo store and the `agent` client, builds the router, and serves on `0.0.0.0:{PORT}` with a graceful shutdown on `Ctrl+C` or `SIGTERM`. The connection info is passed (`into_make_service_with_connect_info`) so the rate limiter can fall back to the peer address.
+`main` then connects to MongoDB (panic if it cannot), builds `Conversations` from the Mongo store and the `agent` client, builds the router, and serves on `0.0.0.0:{PORT}` with a graceful shutdown on `Ctrl+C` or `SIGTERM`. A port it cannot bind, or a server that stops with an error, ends the process with exit code 1 (`Error: Address already in use (os error 98)`), so the container restarts instead of looking like a clean stop. The connection info is passed (`into_make_service_with_connect_info`) so the rate limiter can fall back to the peer address.
 
 | Variable | Default | What it is |
 |---|---|---|
