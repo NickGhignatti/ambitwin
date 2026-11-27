@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::domain::identity::GatewayClaims;
 use crate::domain::{
     Building, DimensionsInput, DomainError, PositionInput, Room, normalize_building_name,
-    normalize_room_name, validate_capacity,
+    normalize_room_name, parse_domain_names, validate_capacity,
 };
 use crate::domain::{Placement, PlacementChanges};
 use crate::service::buildings::BuildingPatch;
@@ -115,11 +115,7 @@ pub async fn get_building_counts(
     claims: GatewayClaims,
     Json(body): Json<GetCountsRequest>,
 ) -> Result<Json<serde_json::Value>, DomainError> {
-    // a raw Value keeps the 400; axum's own Json rejection would be 422
-    let domains: Vec<String> = serde_json::from_value(body.domains).map_err(|_| {
-        DomainError::Validation("'domains' must be an array of strings".to_string())
-    })?;
-
+    let domains = parse_domain_names(&body.domains)?;
     let counts = state.buildings.counts_per_domain(&domains, &claims).await?;
     Ok(Json(serde_json::json!({ "counts": counts })))
 }
