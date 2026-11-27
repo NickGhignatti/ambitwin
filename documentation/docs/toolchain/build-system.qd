@@ -280,7 +280,7 @@ A project missing from `.moon/workspace.yml` does not exist for `moon`: no insta
 | First | `auth-contracts:lint (5s 902ms, 6bcfbfb3)` | 5.9 s |
 | Second | `auth-contracts:lint (cached, 6bcfbfb3)` | 8 ms |
 
-**Real affected example.** With uncommitted edits to `backend/notification/CLAUDE.md`, `backend/chat/openapi.yaml` and `backend/agent/evals/dataset.json`, `moon query affected` lists projects `notification`, `chat` and `agent` as touched. No `test` or `lint` is affected: none of those files is a test or lint input. Only `agent:lint-fix` and `agent:relock` are, because they declare no inputs and so match any file of their project.
+**Real affected example.** With uncommitted edits to `backend/notification/CLAUDE.md`, `backend/chat/README.md` and `backend/agent/evals/dataset.json`, `moon query affected` lists projects `notification`, `chat` and `agent` as touched. No `test` or `lint` is affected: none of those files is a test or lint input. Only `agent:lint-fix` and `agent:relock` are, because they declare no inputs and so match any file of their project.
 
 ### Will a task run?
 
