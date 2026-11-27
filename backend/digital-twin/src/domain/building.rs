@@ -98,7 +98,7 @@ pub fn validate_capacity(capacity: Option<f64>) -> Result<f64, DomainError> {
 }
 
 /// Reads a request's domain list by hand: an array of non-blank strings, each at most
-/// 100 chars. Nothing is deserialized blind, and a bad shape is a 400 rather than axum's 422.
+/// 100 chars. Nothing is deserialized blind, and a bad shape is a 400, not a 422.
 pub fn parse_domain_names(raw: &serde_json::Value) -> Result<Vec<String>, DomainError> {
     let invalid = || {
         DomainError::Validation(
