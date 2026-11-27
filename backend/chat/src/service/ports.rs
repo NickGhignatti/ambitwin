@@ -19,9 +19,8 @@ pub trait ConversationStore: Send + Sync {
         title: &str,
     ) -> anyhow::Result<Option<Conversation>>;
     async fn delete_owned(&self, user_id: &str, id: &str) -> anyhow::Result<bool>;
-    /// Appends both halves of one exchange in a single write and returns the stored
-    /// assistant message, whose id and timestamp are assigned here. `new_title`
-    /// renames the conversation in the same write when the first exchange names it.
+    /// Appends both messages in one write; returns the stored assistant message, id and time
+    /// set here. `new_title` renames the conversation in that same write.
     async fn append_exchange(
         &self,
         user_id: &str,
@@ -35,10 +34,8 @@ pub trait ConversationStore: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentEvent {
     Token(String),
-    /// `answer` is the authoritative final text when the agent sends one: it differs
-    /// from the concatenated tokens whenever the agent rewrites what the model
-    /// produced — stripped hallucinated citations, or a preamble streamed before a
-    /// tool call. Absent on an agent old enough not to send it, hence the `Option`.
+    /// `answer`, when sent, replaces the joined tokens: agent strips unbacked citations and
+    /// text streamed before a tool call. `None` from an older agent.
     Done {
         answer: Option<String>,
         citations: Vec<Citation>,
@@ -49,9 +46,8 @@ pub type AnswerStream = Pin<Box<dyn Stream<Item = anyhow::Result<AgentEvent>> + 
 
 #[async_trait]
 pub trait AgentClient: Send + Sync {
-    /// Resolves once agent has accepted the question and the response headers
-    /// are in — every later token arrives on the stream. A failure to reach the agent,
-    /// or a non-2xx status, is a `BadGateway` here rather than a stream error.
+    /// Resolves once agent has accepted the question; tokens then arrive on the stream.
+    /// Unreachable or non-2xx is `BadGateway` here, not a stream error.
     async fn ask(
         &self,
         question: &str,

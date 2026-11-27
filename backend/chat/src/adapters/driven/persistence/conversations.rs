@@ -38,9 +38,7 @@ struct ConversationDocument {
     updated_at: DateTime,
 }
 
-/// Every `_id` crosses into the domain as a bare hex string. The bson crate would
-/// otherwise render it as `{"$oid": "..."}`, which is not what the API returns —
-/// and it applies to embedded messages too, not just the conversation.
+/// Ids leave as bare hex strings, embedded messages included: bson would render `{"$oid": …}`.
 impl From<MessageDocument> for ChatMessage {
     fn from(document: MessageDocument) -> Self {
         ChatMessage {
@@ -184,8 +182,7 @@ impl ConversationStore for MongoConversations {
         let user = stored(user_message, now);
         let assistant = stored(assistant_message, now);
 
-        // `updatedAt` has no Mongoose to maintain it any more. listConversations sorts
-        // by it, so a write that forgets it stops the list reordering with no error.
+        // the list sorts by `updatedAt`; a write that skips it stops the reordering silently
         let mut set = doc! { "updatedAt": now };
         if let Some(title) = new_title {
             set.insert("title", title);

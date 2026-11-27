@@ -76,10 +76,8 @@ impl Conversations {
         }
     }
 
-    /// Every failure that can be known before the first token — validation, ownership,
-    /// the message cap, an unreachable agent — surfaces as the outer `Err`, so the HTTP
-    /// adapter can still answer with a status code. Once the stream is returned the
-    /// response has begun and later failures travel as stream items.
+    /// Failures known before the first token (validation, ownership, cap, agent unreachable)
+    /// are the outer `Err`, so they still get a status code; later ones are stream items.
     pub async fn send_message(
         &self,
         user_id: &str,
@@ -118,9 +116,8 @@ impl Conversations {
     }
 }
 
-/// The upstream stream is `Send` but not `Sync`, so anything borrowed across an await
-/// inside `step` has to live outside it — hence the split between the stream and the
-/// plain data the persist step needs.
+/// Kept apart from `Answer` because `upstream` is not `Sync`: `persist` may borrow only
+/// plain data across its await.
 struct Exchange {
     upstream: AnswerStream,
     answer: Answer,
