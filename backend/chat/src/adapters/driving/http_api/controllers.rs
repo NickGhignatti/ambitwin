@@ -12,25 +12,14 @@ use crate::domain::{Conversation, ConversationSummary, DomainError, GatewayClaim
 use crate::service::conversations::ChatEvent;
 use crate::state::AppState;
 
-/// A body that is absent or unreadable is treated as an empty one, exactly as
-/// `req.body?.field` did — the field-level validation then produces the message the
-/// client used to get, instead of a framework rejection in a different shape.
-///
-/// The body stays a `Value` rather than a typed struct because `Option<T>` cannot
-/// tell an absent field from an explicit `null`, and `title` needs that distinction:
-/// absent defaults to "New chat", `null` is a validation error.
+/// An unreadable body counts as empty, so field validation answers with its usual message.
+/// A `Value`, not a struct: an absent `title` defaults, a `null` one is rejected.
 fn payload(body: Result<Json<Value>, JsonRejection>) -> Value {
     body.map(|Json(value)| value).unwrap_or(Value::Null)
 }
 
-/// `None` only when the field is absent; a present-but-non-string value (`null`
-/// included) yields `Some(_)`-shaped failure downstream via `validate_text`.
-fn field<'a>(body: &'a Value, name: &str) -> Option<&'a Value> {
-    body.get(name)
-}
-
 fn text<'a>(body: &'a Value, name: &str) -> Option<&'a str> {
-    field(body, name).and_then(Value::as_str)
+    body.get(name).and_then(Value::as_str)
 }
 
 pub async fn create_conversation(
@@ -39,7 +28,7 @@ pub async fn create_conversation(
     body: Result<Json<Value>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Conversation>), DomainError> {
     let request = payload(body);
-    let title = match field(&request, "title") {
+    let title = match request.get("title") {
         None => TitleField::Absent,
         Some(value) => TitleField::Present(value.as_str()),
     };
@@ -96,9 +85,9 @@ fn frame(event: Result<ChatEvent, DomainError>) -> Event {
             json!({ "type": "error", "error": error_type, "message": message })
         }
     };
-    Event::default().json_data(body).unwrap_or_else(|_| {
-        Event::default().data(r#"{"type":"error","error":"Internal Server Error"}"#)
-    })
+    Event::default()
+        .json_data(body)
+        .expect("a json Value always serialises")
 }
 
 /// Errors that are knowable before generation starts still answer with a status code;

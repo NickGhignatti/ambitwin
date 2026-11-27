@@ -752,9 +752,7 @@ fn frame(event: Result<ChatEvent, DomainError>) -> Event {
             json!({ "type": "error", "error": error_type, "message": message })
         }
     };
-    Event::default().json_data(body).unwrap_or_else(|_| {
-        Event::default().data(r#"{"type":"error","error":"Internal Server Error"}"#)
-    })
+    Event::default().json_data(body).expect("a json Value always serialises")
 }
 
 pub async fn send_message(
