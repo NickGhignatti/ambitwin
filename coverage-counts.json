@@ -1,0 +1,116 @@
+{
+  "auth-contracts": {
+    "lines_covered": 50,
+    "lines_total": 51,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "auth-middleware": {
+    "lines_covered": 76,
+    "lines_total": 76,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "auth-policy": {
+    "lines_covered": 70,
+    "lines_total": 71,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "claims-gateway": {
+    "lines_covered": 612,
+    "lines_total": 721,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "provisioner": {
+    "lines_covered": 97,
+    "lines_total": 147,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "chat": {
+    "lines_covered": 1672,
+    "lines_total": 1763,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "notification": {
+    "lines_covered": 3754,
+    "lines_total": 3906,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "socket": {
+    "lines_covered": 804,
+    "lines_total": 879,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "twin": {
+    "lines_covered": 4303,
+    "lines_total": 4615,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "agent": {
+    "lines_covered": 2817,
+    "lines_total": 3169,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "telemetry": {
+    "lines_covered": 6252,
+    "lines_total": 6530,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "claims-schema": {
+    "lines_covered": 129,
+    "lines_total": 129,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "telemetry-schema": {
+    "lines_covered": 229,
+    "lines_total": 237,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "twin-schema": {
+    "lines_covered": 203,
+    "lines_total": 204,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "registry": {
+    "lines_covered": 204,
+    "lines_total": 269,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "tenancy": {
+    "lines_covered": 720,
+    "lines_total": 803,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "dashboard": {
+    "lines_covered": 1350,
+    "lines_total": 1482,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "ap-collector": {
+    "lines_covered": 1850,
+    "lines_total": 1874,
+    "branches_covered": 0,
+    "branches_total": 0
+  },
+  "notification-schema": {
+    "lines_covered": 10,
+    "lines_total": 10,
+    "branches_covered": 0,
+    "branches_total": 0
+  }
+}

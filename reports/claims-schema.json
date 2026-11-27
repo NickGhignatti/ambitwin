@@ -1,0 +1,1 @@
+{"service":"claims-schema","tool":"cargo-llvm-cov","commit":"5f1cba1977d56e0536a2c92a1b044b11ff6f5246","files":[{"path":"schemas/claims-schema/src/lib.rs","lines_covered":127,"lines_total":127,"branches_covered":0,"branches_total":0,"uncovered":[]}]}

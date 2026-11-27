@@ -1,0 +1,1 @@
+{"service":"auth-middleware","tool":"go test -cover, via gocover-cobertura","commit":"5f1cba1977d56e0536a2c92a1b044b11ff6f5246","files":[{"path":"backend/libs/auth-middleware/middleware.go","lines_covered":76,"lines_total":76,"branches_covered":0,"branches_total":0,"uncovered":[]}]}
