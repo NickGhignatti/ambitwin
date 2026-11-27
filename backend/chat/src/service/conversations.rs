@@ -142,41 +142,27 @@ impl Exchange {
             return None;
         }
 
-        match self.upstream.next().await {
+        let last = match self.upstream.next().await {
             Some(Ok(AgentEvent::Token(text))) => {
                 self.answer.text.push_str(&text);
-                Some((Ok(ChatEvent::Token(text)), self))
+                return Some((Ok(ChatEvent::Token(text)), self));
             }
             Some(Ok(AgentEvent::Done { answer, citations })) => {
-                self.finished = true;
                 if let Some(answer) = answer {
                     self.answer.text = answer;
                 }
-                let persisted = self.answer.persist(citations).await.map(ChatEvent::Done);
-                Some((persisted, self))
+                self.answer.persist(citations).await.map(ChatEvent::Done)
             }
-            Some(Err(_)) => {
-                self.finished = true;
-                Some((
-                    Err(DomainError::BadGateway(
-                        "agent stream ended unexpectedly".to_string(),
-                    )),
-                    self,
-                ))
-            }
-            // The terminal frame is the only signal that the answer is whole. Without
-            // it there is nothing safe to persist, so this is the streaming equivalent
-            // of the old shape check on the buffered response.
-            None => {
-                self.finished = true;
-                Some((
-                    Err(DomainError::BadGateway(
-                        "agent returned an invalid response".to_string(),
-                    )),
-                    self,
-                ))
-            }
-        }
+            Some(Err(_)) => Err(DomainError::BadGateway(
+                "agent stream ended unexpectedly".to_string(),
+            )),
+            // no `done` frame: the answer may be cut short, so nothing is saved
+            None => Err(DomainError::BadGateway(
+                "agent returned an invalid response".to_string(),
+            )),
+        };
+        self.finished = true;
+        Some((last, self))
     }
 }
 

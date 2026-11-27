@@ -337,32 +337,26 @@ async fn step(mut self) -> Option<(Result<ChatEvent, DomainError>, Self)> {
         return None;
     }
 
-    match self.upstream.next().await {
+    let last = match self.upstream.next().await {
         Some(Ok(AgentEvent::Token(text))) => {
             self.answer.text.push_str(&text);
-            Some((Ok(ChatEvent::Token(text)), self))
+            return Some((Ok(ChatEvent::Token(text)), self));
         }
         Some(Ok(AgentEvent::Done { answer, citations })) => {
-            self.finished = true;
             if let Some(answer) = answer {
                 self.answer.text = answer;
             }
-            let persisted = self.answer.persist(citations).await.map(ChatEvent::Done);
-            Some((persisted, self))
+            self.answer.persist(citations).await.map(ChatEvent::Done)
         }
-        Some(Err(_)) => {
-            self.finished = true;
-            Some((Err(DomainError::BadGateway("agent stream ended unexpectedly".to_string())), self))
-        }
-        None => {
-            self.finished = true;
-            Some((Err(DomainError::BadGateway("agent returned an invalid response".to_string())), self))
-        }
-    }
+        Some(Err(_)) => Err(DomainError::BadGateway("agent stream ended unexpectedly".to_string())),
+        None => Err(DomainError::BadGateway("agent returned an invalid response".to_string())),
+    };
+    self.finished = true;
+    Some((last, self))
 }
 ```
 
-`futures::stream::unfold` calls `step` again and again. Each call waits for the next event from `agent` and produces **one** event for the browser:
+`futures::stream::unfold` calls `step` again and again. Each call waits for the next event from `agent` and produces **one** event for the browser. A token goes on; anything else is the last event, so `finished` is set once, at the end:
 
 | `agent` gives | `chat` does |
 |---|---|
