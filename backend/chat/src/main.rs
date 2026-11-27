@@ -16,9 +16,7 @@ use chat::state::AppState;
 
 const DEFAULT_HISTORY_MAX_MESSAGES: usize = 10;
 
-/// Node re-read and re-validated this per request, so a bad value only surfaced as a
-/// 500 on the first message. Reading it once at boot turns the same mistake into a
-/// container that refuses to start.
+/// Read once at boot: a bad `HISTORY_MAX_MESSAGES` stops the container, not the first message.
 fn history_max_messages() -> usize {
     match env::var("HISTORY_MAX_MESSAGES") {
         Err(_) => DEFAULT_HISTORY_MAX_MESSAGES,

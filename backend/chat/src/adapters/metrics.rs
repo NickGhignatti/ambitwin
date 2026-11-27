@@ -13,8 +13,7 @@ pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 const LABELS: &[&str] = &["method", "route", "status_code"];
 
-// prometheus.rules.yml alerts on these exact names. Renaming them silences the
-// alerts rather than breaking them, so the `chat_` prefix outlives the rewrite.
+// prometheus.rules.yml alerts on these exact names; a rename silences those alerts with no error
 pub static HTTP_REQUESTS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec_with_registry!(
         "chat_http_requests_total",

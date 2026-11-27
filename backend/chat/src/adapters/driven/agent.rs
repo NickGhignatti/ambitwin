@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::domain::{CLAIMS_HEADER, Citation, DomainError, HistoryTurn};
 use crate::service::ports::{AgentClient, AgentEvent, AnswerStream};
 
-/// Bounds the handshake, not the answer. A total request timeout would kill long
-/// generations mid-flight; the read timeout still caps a stalled stream, because
-/// `reqwest` applies it per read rather than to the whole response.
+/// Bounds the handshake, not the answer: a total timeout would cut long answers, while the
+/// read timeout (per read in `reqwest`) still ends a stalled stream.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -50,7 +49,7 @@ impl AgentService {
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(READ_TIMEOUT)
                 .build()
-                .expect("the default TLS backend is available"),
+                .expect("the client config is valid"),
             base_url,
         }
     }
@@ -108,10 +107,8 @@ fn frames(
         .flatten()
 }
 
-/// Splits on the blank line that terminates an SSE event and keeps the remainder
-/// buffered — a frame is routinely delivered across two TCP reads, and a multi-byte
-/// character can straddle the split, so the buffer stays bytes until a whole frame
-/// is in hand.
+/// Cuts every whole SSE frame (ending in a blank line) off the buffer and keeps the rest.
+/// Bytes, not text: a frame or a multi-byte character can span two reads.
 fn take_frames(buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
     while let Some(end) = buffer
@@ -169,9 +166,7 @@ mod tests {
         format!("data: {}\n\n", serde_json::to_string(frame).unwrap())
     }
 
-    // Agent builds these frames from Python dataclass `__dict__` dumps and this file parses
-    // them by hand. Reading the fixture rather than a literal is the point: a literal here
-    // keeps passing after agent renames a field.
+    // read the fixture, not a literal: a literal keeps passing after agent renames a field
     #[test]
     fn every_stream_the_fixture_pins_decodes_to_what_agent_meant() {
         for case in fixture()["cases"].as_array().unwrap() {
@@ -214,8 +209,7 @@ mod tests {
         }
     }
 
-    // The leniency is deliberate: agent may add a frame kind, or be too old to send
-    // `answer`, without a lockstep release. Each tolerated frame must degrade, never error.
+    // agent may add frame kinds or omit `answer` without a lockstep release; each must degrade
     #[test]
     fn every_frame_the_fixture_tolerates_is_survived() {
         for case in fixture()["tolerated"].as_array().unwrap() {

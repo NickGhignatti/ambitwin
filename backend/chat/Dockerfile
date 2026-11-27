@@ -32,9 +32,7 @@ COPY backend/chat .
 RUN cargo build --release
 
 FROM gcr.io/distroless/cc-debian12:nonroot AS production
-# Distroless: no shell, no package manager, patched upstream - so the cd-registry Trivy
-# scan needs no apt-get upgrade step here. ca-certificates and libssl ship in the base
-# image; zlib does not.
+# distroless: no shell or package manager, patched upstream, so no apt-get upgrade step
 COPY --from=builder /app/backend/chat/target/release/chat /usr/local/bin/chat
 
 EXPOSE 3000
