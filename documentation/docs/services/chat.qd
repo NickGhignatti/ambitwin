@@ -554,12 +554,11 @@ A read error becomes one error event. The service above stops at the first error
 pub const CONVERSATIONS: &str = "conversations";
 
 let db_name = options.default_database.clone().unwrap_or_else(|| "chatdb".to_string());
-// … two indexes
-{ "userId": 1 }
+// … one index
 { "userId": 1, "updatedAt": -1 }
 ```
 
-The database name comes from the path of `MONGO_URI`, else `chatdb`. Two indexes: one for owner lookups, one to list a person's conversations newest first.
+The database name comes from the path of `MONGO_URI`, else `chatdb`. One index, to list a person's conversations newest first. It also serves any lookup on `userId` alone, because `userId` is its first key. A lookup by `_id` uses Mongo's own `_id` index.
 
 Messages live **inside** their conversation:
 
