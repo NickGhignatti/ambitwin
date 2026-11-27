@@ -38,19 +38,6 @@ struct ConversationDocument {
     updated_at: DateTime,
 }
 
-#[derive(Debug, Deserialize)]
-struct SummaryDocument {
-    #[serde(rename = "_id")]
-    id: ObjectId,
-    #[serde(rename = "userId")]
-    user_id: String,
-    title: String,
-    #[serde(rename = "createdAt")]
-    created_at: DateTime,
-    #[serde(rename = "updatedAt")]
-    updated_at: DateTime,
-}
-
 /// Every `_id` crosses into the domain as a bare hex string. The bson crate would
 /// otherwise render it as `{"$oid": "..."}`, which is not what the API returns —
 /// and it applies to embedded messages too, not just the conversation.
@@ -77,18 +64,6 @@ impl From<ConversationDocument> for Conversation {
                 .into_iter()
                 .map(ChatMessage::from)
                 .collect(),
-            created_at: iso8601(document.created_at.timestamp_millis()),
-            updated_at: iso8601(document.updated_at.timestamp_millis()),
-        }
-    }
-}
-
-impl From<SummaryDocument> for ConversationSummary {
-    fn from(document: SummaryDocument) -> Self {
-        ConversationSummary {
-            id: document.id.to_hex(),
-            user_id: document.user_id,
-            title: document.title,
             created_at: iso8601(document.created_at.timestamp_millis()),
             updated_at: iso8601(document.updated_at.timestamp_millis()),
         }
@@ -144,15 +119,14 @@ impl ConversationStore for MongoConversations {
     async fn summaries(&self, user_id: &str) -> anyhow::Result<Vec<ConversationSummary>> {
         let cursor = self
             .collection
-            .clone_with_type::<SummaryDocument>()
             .find(doc! { "userId": { "$eq": user_id } })
             .projection(doc! { "messages": 0 })
             .sort(doc! { "updatedAt": -1 })
             .await?;
-        let documents: Vec<SummaryDocument> = cursor.try_collect().await?;
+        let documents: Vec<ConversationDocument> = cursor.try_collect().await?;
         Ok(documents
             .into_iter()
-            .map(ConversationSummary::from)
+            .map(|document| Conversation::from(document).into())
             .collect())
     }
 

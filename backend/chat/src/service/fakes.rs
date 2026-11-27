@@ -55,13 +55,8 @@ impl ConversationStore for InMemoryConversations {
             .unwrap()
             .iter()
             .filter(|c| c.user_id == user_id)
-            .map(|c| ConversationSummary {
-                id: c.id.clone(),
-                user_id: c.user_id.clone(),
-                title: c.title.clone(),
-                created_at: c.created_at.clone(),
-                updated_at: c.updated_at.clone(),
-            })
+            .cloned()
+            .map(ConversationSummary::from)
             .collect())
     }
 

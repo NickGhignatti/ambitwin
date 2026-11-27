@@ -84,6 +84,18 @@ pub struct ConversationSummary {
     pub updated_at: String,
 }
 
+impl From<Conversation> for ConversationSummary {
+    fn from(conversation: Conversation) -> Self {
+        ConversationSummary {
+            id: conversation.id,
+            user_id: conversation.user_id,
+            title: conversation.title,
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HistoryTurn {
     pub role: Role,
