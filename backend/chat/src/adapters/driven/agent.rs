@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-use std::pin::Pin;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -90,25 +88,24 @@ impl AgentClient for AgentService {
     }
 }
 
-struct SseReader {
-    bytes: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
-    buffer: Vec<u8>,
-    pending: VecDeque<anyhow::Result<AgentEvent>>,
-    exhausted: bool,
-}
-
 fn frames(
     bytes: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
 ) -> impl Stream<Item = anyhow::Result<AgentEvent>> + Send {
-    futures::stream::unfold(
-        SseReader {
-            bytes: Box::pin(bytes),
-            buffer: Vec::new(),
-            pending: VecDeque::new(),
-            exhausted: false,
-        },
-        SseReader::step,
-    )
+    bytes
+        .scan(Vec::new(), |buffer, chunk| {
+            let events: Vec<_> = match chunk {
+                Ok(chunk) => {
+                    buffer.extend_from_slice(&chunk);
+                    take_frames(buffer)
+                        .iter()
+                        .filter_map(|frame| parse_frame(frame))
+                        .collect()
+                }
+                Err(error) => vec![Err(error.into())],
+            };
+            futures::future::ready(Some(futures::stream::iter(events)))
+        })
+        .flatten()
 }
 
 /// Splits on the blank line that terminates an SSE event and keeps the remainder
@@ -147,36 +144,6 @@ fn parse_frame(raw: &[u8]) -> Option<anyhow::Result<AgentEvent>> {
         }
         Ok(AgentFrame::Ignored) => None,
         Err(e) => Some(Err(anyhow::anyhow!("unreadable agent frame: {e}"))),
-    }
-}
-
-impl SseReader {
-    async fn step(mut self) -> Option<(anyhow::Result<AgentEvent>, Self)> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Some((event, self));
-            }
-            if self.exhausted {
-                return None;
-            }
-
-            match self.bytes.next().await {
-                Some(Ok(chunk)) => {
-                    self.buffer.extend_from_slice(&chunk);
-                    for frame in take_frames(&mut self.buffer) {
-                        self.pending.extend(parse_frame(&frame));
-                    }
-                }
-                Some(Err(e)) => {
-                    self.exhausted = true;
-                    self.pending.push_back(Err(anyhow::Error::new(e)));
-                }
-                // A stream that stops without its terminal frame leaves nothing
-                // buffered worth salvaging; the service reads the absence of a
-                // `done` event as an invalid response.
-                None => self.exhausted = true,
-            }
-        }
     }
 }
 

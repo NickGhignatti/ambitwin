@@ -502,61 +502,51 @@ enum AgentFrame {
 The frames are pinned in `schemas/fixtures/agent-stream.json`. Its `tolerated` cases must be survived, so the skipping is a decision, not luck.
 
 ```rust
-async fn step(mut self) -> Option<(anyhow::Result<AgentEvent>, Self)> {
-    loop {
-        if let Some(event) = self.pending.pop_front() {
-            return Some((event, self));
-        }
-        if self.exhausted {
-            return None;
-        }
-
-        match self.bytes.next().await {
-            Some(Ok(chunk)) => {
-                self.buffer.extend_from_slice(&chunk);
-                for frame in take_frames(&mut self.buffer) {
-                    self.pending.extend(parse_frame(&frame));
+fn frames(
+    bytes: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
+) -> impl Stream<Item = anyhow::Result<AgentEvent>> + Send {
+    bytes
+        .scan(Vec::new(), |buffer, chunk| {
+            let events: Vec<_> = match chunk {
+                Ok(chunk) => {
+                    buffer.extend_from_slice(&chunk);
+                    take_frames(buffer).iter().filter_map(|frame| parse_frame(frame)).collect()
                 }
-            }
-            Some(Err(e)) => {
-                self.exhausted = true;
-                self.pending.push_back(Err(anyhow::Error::new(e)));
-            }
-            None => self.exhausted = true,
-        }
-    }
+                Err(error) => vec![Err(error.into())],
+            };
+            futures::future::ready(Some(futures::stream::iter(events)))
+        })
+        .flatten()
 }
 ```
 
-The reader works in a loop:
+Two stream tools from `futures` do the work:
 
-1. Anything waiting in `pending`? Hand out the first one.
-2. Exhausted and nothing pending? The stream is over.
-3. Otherwise read the next chunk of bytes, add them to the buffer, cut whole frames, parse each one into `pending`, and go around again.
+1. `scan` keeps one buffer of bytes across reads. Each chunk of bytes is added to it, whole frames are cut off, and each frame is parsed. One chunk gives a list of zero, one or several events.
+2. `flatten` hands those events out one at a time, in order.
 
-A read error becomes an error event, then the stream ends. A clean end of the bytes just ends the stream, and the service above reads the absence of `Done` as an invalid response.
+A read error becomes one error event. The service above stops at the first error, so nothing after it is used. A clean end of the bytes just ends the stream, and the service reads the absence of `Done` as an invalid response.
 
 .mermaid
     sequenceDiagram
         autonumber
         participant N as Network
-        participant R as SseReader::step
+        participant S as frames (scan)
         participant T as take_frames
         participant P as parse_frame
         participant C as Exchange::step
-        C->>R: next event?
-        R->>R: anything in pending? no
-        R->>N: next chunk
-        N-->>R: bytes
-        R->>R: add to buffer
-        R->>T: cut at every blank line
-        T-->>R: whole frames, rest stays in buffer
+        C->>S: next event?
+        S->>N: next chunk
+        N-->>S: bytes
+        S->>S: add to buffer
+        S->>T: cut at every blank line
+        T-->>S: whole frames, rest stays in buffer
         loop each whole frame
-            R->>P: frame bytes
+            S->>P: frame bytes
             P->>P: join the data: lines, read JSON
-            P-->>R: Token, Done, nothing, or an error
+            P-->>S: Token, Done, nothing, or an error
         end
-        R-->>C: first pending event
+        S-->>C: events, one at a time (flatten)
 
 **Example, a split frame.** Read 1 brings `data: {"type":"token","te`. Read 2 brings `xt":"Room "}\n\n`. After read 1 there is no blank line, so nothing is cut and the bytes wait. After read 2 the whole frame is cut and gives `Token("Room ")`.
 
