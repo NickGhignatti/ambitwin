@@ -1,6 +1,5 @@
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use claims_schema::decode_claims_header;
 
 use crate::domain::{CLAIMS_HEADER, ClaimsPayload, DomainError, GatewayClaims};
 
@@ -20,10 +19,8 @@ impl<S: Send + Sync> FromRequestParts<S> for GatewayClaims {
             .ok_or_else(|| unauthorized("Missing authentication token"))?
             .to_string();
 
-        let decoded = decode_claims_header(&raw)
+        let payload = ClaimsPayload::decode(&raw)
             .ok_or_else(|| unauthorized("Invalid authentication token"))?;
-        let payload: ClaimsPayload = serde_json::from_slice(&decoded)
-            .map_err(|_| unauthorized("Invalid authentication token"))?;
 
         let user_id = payload
             .user_id()
