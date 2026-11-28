@@ -104,7 +104,6 @@ pub struct Citation {
     pub chunk_id: String,
     pub document_id: String,
     pub source: String,
-    #[serde(default)]
     pub section_path: Option<String>,
 }
 ```
@@ -479,7 +478,7 @@ Read one whole frame:
 #[serde(tag = "type", rename_all = "lowercase")]
 enum AgentFrame {
     Token { #[serde(default)] text: String },
-    Done { #[serde(default)] answer: Option<String>, #[serde(default)] citations: Vec<Citation> },
+    Done { answer: Option<String>, #[serde(default)] citations: Vec<Citation> },
     #[serde(other)]
     Ignored,
 }

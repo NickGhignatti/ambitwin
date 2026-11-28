@@ -28,7 +28,6 @@ enum AgentFrame {
         text: String,
     },
     Done {
-        #[serde(default)]
         answer: Option<String>,
         #[serde(default)]
         citations: Vec<Citation>,

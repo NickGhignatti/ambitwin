@@ -34,7 +34,6 @@ pub struct Citation {
     pub chunk_id: String,
     pub document_id: String,
     pub source: String,
-    #[serde(default)]
     pub section_path: Option<String>,
 }
 
