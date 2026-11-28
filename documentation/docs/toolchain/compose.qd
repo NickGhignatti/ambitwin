@@ -266,10 +266,10 @@ Only the dev overrides publish database ports. Two services on one host port sto
     sequenceDiagram
         autonumber
         participant J as just
-        participant S as test-integration.sh
+        participant S as scripts/compose-integration-tests.sh
         participant D as docker compose
         participant T as telemetry-test
-        J->>S: bash backend/telemetry/test-integration.sh
+        J->>S: run from backend/telemetry
         S->>S: RUST_VERSION from the mise pin
         S->>S: trap down --volumes on EXIT
         S->>D: -p telemetry-integration-tests up --build --exit-code-from telemetry-test

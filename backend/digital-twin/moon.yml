@@ -1,12 +1,12 @@
 language: 'rust'
 
 # build and lint come from .moon/tasks/rust.yml; `test` runs unit tests only,
-# tests/*.rs need MongoDB and run through test-integration.sh
+# tests/*.rs need MongoDB and run through docker-compose.test.yml
 tasks:
   test:
     command: 'cargo test --lib'
   test-integration:
-    command: 'bash test-integration.sh'
+    command: 'sh ../../scripts/compose-integration-tests.sh'
     inputs:
       - 'src/**/*'
       - 'tests/**/*'

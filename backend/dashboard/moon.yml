@@ -18,7 +18,7 @@ tasks:
       mergeArgs: 'replace'
 
   test-integration:
-    command: 'bash test-integration.sh'
+    command: 'sh ../../scripts/compose-integration-tests.sh'
     inputs:
       - 'src/**/*'
       - 'tests/**/*'

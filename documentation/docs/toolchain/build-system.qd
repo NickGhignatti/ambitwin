@@ -223,7 +223,7 @@ A project missing from `.moon/workspace.yml` does not exist for `moon`: no insta
 | `chat`, `notification` | `test` = `cargo test --lib --test architecture_fitness` | The other `tests/*.rs` need MongoDB or Redis |
 | `socket`, `telemetry` | `test` = `cargo test --lib --test architecture` | Same reason |
 | `dashboard`, `digital-twin` | `test` = `cargo test --lib` | Same reason |
-| Those six | add `test-integration` = `bash test-integration.sh` | Starts throwaway databases, runs every test, removes them |
+| Those six | add `test-integration` = `sh ../../scripts/compose-integration-tests.sh` | Starts throwaway databases, runs every test, removes them |
 | `registry`, `tenancy` | add `test-integration` = `go test -tags=integration -count 1 ./...` | Postgres through testcontainers |
 | `frontend` | own `build` and `test` inputs, `test` = `npm run test:unit`, `lint` inputs track `eslint.config.ts` | Vite and Vitest |
 | `ap-simulator`, `aq-simulator`, `ap-collector` | `test`, `lint`, `lint-fix` as `uv` scripts | The root `.gitignore` ignores `package.json` |

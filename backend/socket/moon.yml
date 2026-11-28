@@ -2,7 +2,7 @@ language: "rust"
 
 # build / lint / deps / audit are inherited from .moon/tasks/rust.yml. `test` is overridden
 # below: src/ unit tests plus tests/architecture.rs (both need no infra), while the rest of
-# tests/*.rs needs a real Redis (see test-integration.sh).
+# tests/*.rs needs a real Redis (see docker-compose.test.yml).
 tasks:
   test:
     command: "cargo test --lib --test architecture"
@@ -14,7 +14,7 @@ tasks:
     options:
       mergeArgs: "replace"
   test-integration:
-    command: "bash test-integration.sh"
+    command: "sh ../../scripts/compose-integration-tests.sh"
     inputs:
       - "src/**/*"
       - "tests/**/*"
