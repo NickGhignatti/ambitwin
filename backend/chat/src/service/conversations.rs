@@ -53,7 +53,7 @@ impl Conversations {
         self.store
             .find_owned(user_id, id)
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 
     pub async fn rename(
@@ -66,20 +66,18 @@ impl Conversations {
         self.store
             .rename(user_id, id, &title)
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 
     pub async fn delete(&self, user_id: &str, id: &str) -> Result<(), DomainError> {
         match self.store.delete_owned(user_id, id).await? {
             true => Ok(()),
-            false => Err(DomainError::not_found()),
+            false => Err(DomainError::NotFound),
         }
     }
 
-    /// Every failure that can be known before the first token — validation, ownership,
-    /// the message cap, an unreachable agent — surfaces as the outer `Err`, so the HTTP
-    /// adapter can still answer with a status code. Once the stream is returned the
-    /// response has begun and later failures travel as stream items.
+    /// Failures known before the first token (validation, ownership, cap, agent unreachable)
+    /// are the outer `Err`, so they still get a status code; later ones are stream items.
     pub async fn send_message(
         &self,
         user_id: &str,
@@ -118,9 +116,8 @@ impl Conversations {
     }
 }
 
-/// The upstream stream is `Send` but not `Sync`, so anything borrowed across an await
-/// inside `step` has to live outside it — hence the split between the stream and the
-/// plain data the persist step needs.
+/// Kept apart from `Answer` because `upstream` is not `Sync`: `persist` may borrow only
+/// plain data across its await.
 struct Exchange {
     upstream: AnswerStream,
     answer: Answer,
@@ -142,41 +139,27 @@ impl Exchange {
             return None;
         }
 
-        match self.upstream.next().await {
+        let last = match self.upstream.next().await {
             Some(Ok(AgentEvent::Token(text))) => {
                 self.answer.text.push_str(&text);
-                Some((Ok(ChatEvent::Token(text)), self))
+                return Some((Ok(ChatEvent::Token(text)), self));
             }
             Some(Ok(AgentEvent::Done { answer, citations })) => {
-                self.finished = true;
                 if let Some(answer) = answer {
                     self.answer.text = answer;
                 }
-                let persisted = self.answer.persist(citations).await.map(ChatEvent::Done);
-                Some((persisted, self))
+                self.answer.persist(citations).await.map(ChatEvent::Done)
             }
-            Some(Err(_)) => {
-                self.finished = true;
-                Some((
-                    Err(DomainError::BadGateway(
-                        "agent stream ended unexpectedly".to_string(),
-                    )),
-                    self,
-                ))
-            }
-            // The terminal frame is the only signal that the answer is whole. Without
-            // it there is nothing safe to persist, so this is the streaming equivalent
-            // of the old shape check on the buffered response.
-            None => {
-                self.finished = true;
-                Some((
-                    Err(DomainError::BadGateway(
-                        "agent returned an invalid response".to_string(),
-                    )),
-                    self,
-                ))
-            }
-        }
+            Some(Err(_)) => Err(DomainError::BadGateway(
+                "agent stream ended unexpectedly".to_string(),
+            )),
+            // no `done` frame: the answer may be cut short, so nothing is saved
+            None => Err(DomainError::BadGateway(
+                "agent returned an invalid response".to_string(),
+            )),
+        };
+        self.finished = true;
+        Some((last, self))
     }
 }
 
@@ -199,7 +182,7 @@ impl Answer {
                 self.new_title.as_deref(),
             )
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 }
 
@@ -218,6 +201,29 @@ mod tests {
         stream: impl Stream<Item = Result<ChatEvent, DomainError>>,
     ) -> Vec<Result<ChatEvent, DomainError>> {
         Box::pin(stream).collect().await
+    }
+
+    async fn send_question(
+        service: &Conversations,
+        conversation_id: &str,
+        question: &str,
+    ) -> Vec<Result<ChatEvent, DomainError>> {
+        let stream = service
+            .send_message("ada", conversation_id, Some(question), "claims")
+            .await
+            .unwrap();
+        collect(stream).await
+    }
+
+    async fn load_conversation(
+        store: &InMemoryConversations,
+        conversation_id: &str,
+    ) -> Conversation {
+        store
+            .find_owned("ada", conversation_id)
+            .await
+            .unwrap()
+            .unwrap()
     }
 
     fn tokens(events: &[Result<ChatEvent, DomainError>]) -> String {
@@ -263,11 +269,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap()
+        load_conversation(store, &conversation.id).await
     }
 
     #[tokio::test]
@@ -316,7 +318,7 @@ mod tests {
 
         assert!(matches!(
             service.open("bob", &owned.id).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
     }
 
@@ -340,7 +342,7 @@ mod tests {
 
         assert!(matches!(
             service.rename("bob", &owned.id, Some("mine now")).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
     }
 
@@ -355,12 +357,7 @@ mod tests {
             Err(DomainError::Validation(_))
         ));
         assert_eq!(
-            store
-                .find_owned("ada", &owned.id)
-                .await
-                .unwrap()
-                .unwrap()
-                .title,
+            load_conversation(&store, &owned.id).await.title,
             DEFAULT_TITLE
         );
     }
@@ -373,7 +370,7 @@ mod tests {
 
         assert!(matches!(
             service.delete("bob", &owned.id).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
         assert!(store.find_owned("ada", &owned.id).await.unwrap().is_some());
     }
@@ -397,13 +394,7 @@ mod tests {
         ])));
         let service = service(store.clone(), agent);
 
-        let events = collect(
-            service
-                .send_message("ada", &conversation.id, Some("which room?"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        let events = send_question(&service, &conversation.id, "which room?").await;
 
         assert_eq!(tokens(&events), "Room B2 is full.");
         let stored = finished(&events).expect("the stream ends with the stored message");
@@ -426,13 +417,7 @@ mod tests {
         ])));
         let service = service(store.clone(), agent);
 
-        let events = collect(
-            service
-                .send_message("ada", &conversation.id, Some("which room?"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        let events = send_question(&service, &conversation.id, "which room?").await;
 
         assert_eq!(
             tokens(&events),
@@ -441,11 +426,7 @@ mod tests {
         );
         assert_eq!(finished(&events).unwrap().content, "Room B2 is full.");
 
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert_eq!(
             saved.messages[1].content, "Room B2 is full.",
             "what is stored is the agent's cleaned answer, not the raw stream"
@@ -461,19 +442,9 @@ mod tests {
             Arc::new(ScriptedAgent::answering("plain answer")),
         );
 
-        collect(
-            service
-                .send_message("ada", &conversation.id, Some("which room?"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        send_question(&service, &conversation.id, "which room?").await;
 
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert_eq!(saved.messages[1].content, "plain answer");
     }
 
@@ -483,19 +454,9 @@ mod tests {
         let conversation = conversation_with(&store, DEFAULT_TITLE, 0).await;
         let service = service(store.clone(), Arc::new(ScriptedAgent::answering("answer")));
 
-        collect(
-            service
-                .send_message("ada", &conversation.id, Some("question"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        send_question(&service, &conversation.id, "question").await;
 
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert_eq!(saved.messages.len(), 2);
         assert_eq!(saved.messages[0].role, Role::User);
         assert_eq!(saved.messages[0].content, "question");
@@ -512,23 +473,13 @@ mod tests {
         ])));
         let service = service(store.clone(), agent);
 
-        let events = collect(
-            service
-                .send_message("ada", &conversation.id, Some("question"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        let events = send_question(&service, &conversation.id, "question").await;
 
         assert!(matches!(
             events.last(),
             Some(Err(DomainError::BadGateway(m))) if m == "agent stream ended unexpectedly"
         ));
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert!(saved.messages.is_empty());
     }
 
@@ -541,24 +492,14 @@ mod tests {
         ])));
         let service = service(store.clone(), agent);
 
-        let events = collect(
-            service
-                .send_message("ada", &conversation.id, Some("question"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        let events = send_question(&service, &conversation.id, "question").await;
 
         assert!(matches!(
             events.last(),
             Some(Err(DomainError::BadGateway(m)))
                 if m == "agent returned an invalid response"
         ));
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert!(saved.messages.is_empty());
     }
 
@@ -606,13 +547,7 @@ mod tests {
         let agent = Arc::new(ScriptedAgent::answering("ok"));
         let service = Conversations::new(store, agent.clone(), 4);
 
-        collect(
-            service
-                .send_message("ada", &conversation.id, Some("newest"), "claims")
-                .await
-                .unwrap(),
-        )
-        .await;
+        send_question(&service, &conversation.id, "newest").await;
 
         let calls = agent.calls.lock().unwrap();
         assert_eq!(calls[0].history.len(), 4);
@@ -658,7 +593,7 @@ mod tests {
                 .send_message("bob", &conversation.id, Some("q"), "claims")
                 .await
                 .err(),
-            Some(DomainError::NotFound(_))
+            Some(DomainError::NotFound)
         ));
     }
 
@@ -668,19 +603,9 @@ mod tests {
         let conversation = conversation_with(&store, DEFAULT_TITLE, 0).await;
         let service = service(store.clone(), Arc::new(ScriptedAgent::answering("ok")));
 
-        collect(
-            service
-                .send_message("ada", &conversation.id, Some("which rooms are free?"), "c")
-                .await
-                .unwrap(),
-        )
-        .await;
+        send_question(&service, &conversation.id, "which rooms are free?").await;
 
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert_eq!(saved.title, "which rooms are free?");
     }
 
@@ -690,19 +615,9 @@ mod tests {
         let conversation = conversation_with(&store, "Rooms", 1).await;
         let service = service(store.clone(), Arc::new(ScriptedAgent::answering("ok")));
 
-        collect(
-            service
-                .send_message("ada", &conversation.id, Some("and the labs?"), "c")
-                .await
-                .unwrap(),
-        )
-        .await;
+        send_question(&service, &conversation.id, "and the labs?").await;
 
-        let saved = store
-            .find_owned("ada", &conversation.id)
-            .await
-            .unwrap()
-            .unwrap();
+        let saved = load_conversation(&store, &conversation.id).await;
         assert_eq!(saved.title, "Rooms");
     }
 }

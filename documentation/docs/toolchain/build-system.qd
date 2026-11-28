@@ -191,7 +191,7 @@ Version 2.6.4, pinned in `.mise.toml`, always started through `mise exec`.
 
 | Language | Projects |
 |---|---|
-| `rust` | `chat`, `digital-twin`, `notification`, `socket`, `dashboard`, `telemetry`, `telemetry-schema`, `claims-schema`, `twin-schema`, `notification-schema` |
+| `rust` | `chat`, `digital-twin`, `notification`, `socket`, `dashboard`, `telemetry`, `telemetry-schema`, `claims-schema`, `twin-schema`, `notification-schema`, `rate-limit` |
 | `go` | `claims-gateway`, `tenancy`, `registry`, `provisioner`, `auth-contracts`, `auth-middleware`, `auth-policy` |
 | `typescript` | `frontend`, `sensor-simulator` |
 | `python` | `agent`, `ap-simulator`, `aq-simulator`, `ap-collector`, `acceptance` |
@@ -223,7 +223,7 @@ A project missing from `.moon/workspace.yml` does not exist for `moon`: no insta
 | `chat`, `notification` | `test` = `cargo test --lib --test architecture_fitness` | The other `tests/*.rs` need MongoDB or Redis |
 | `socket`, `telemetry` | `test` = `cargo test --lib --test architecture` | Same reason |
 | `dashboard`, `digital-twin` | `test` = `cargo test --lib` | Same reason |
-| Those six | add `test-integration` = `bash test-integration.sh` | Starts throwaway databases, runs every test, removes them |
+| Those six | add `test-integration` = `sh ../../scripts/compose-integration-tests.sh` | Starts throwaway databases, runs every test, removes them |
 | `registry`, `tenancy` | add `test-integration` = `go test -tags=integration -count 1 ./...` | Postgres through testcontainers |
 | `frontend` | own `build` and `test` inputs, `test` = `npm run test:unit`, `lint` inputs track `eslint.config.ts` | Vite and Vitest |
 | `ap-simulator`, `aq-simulator`, `ap-collector` | `test`, `lint`, `lint-fix` as `uv` scripts | The root `.gitignore` ignores `package.json` |
@@ -280,7 +280,7 @@ A project missing from `.moon/workspace.yml` does not exist for `moon`: no insta
 | First | `auth-contracts:lint (5s 902ms, 6bcfbfb3)` | 5.9 s |
 | Second | `auth-contracts:lint (cached, 6bcfbfb3)` | 8 ms |
 
-**Real affected example.** With uncommitted edits to `backend/notification/CLAUDE.md`, `backend/chat/openapi.yaml` and `backend/agent/evals/dataset.json`, `moon query affected` lists projects `notification`, `chat` and `agent` as touched. No `test` or `lint` is affected: none of those files is a test or lint input. Only `agent:lint-fix` and `agent:relock` are, because they declare no inputs and so match any file of their project.
+**Real affected example.** With uncommitted edits to `backend/notification/CLAUDE.md`, `backend/chat/README.md` and `backend/agent/evals/dataset.json`, `moon query affected` lists projects `notification`, `chat` and `agent` as touched. No `test` or `lint` is affected: none of those files is a test or lint input. Only `agent:lint-fix` and `agent:relock` are, because they declare no inputs and so match any file of their project.
 
 ### Will a task run?
 

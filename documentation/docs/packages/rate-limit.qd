@@ -1,0 +1,91 @@
+.docname {Rate Limit}
+.include {docs}
+
+.glossary
+    | Word | Meaning | Example |
+    |---|---|---|
+    | Crate | A Rust library other Rust code builds against | `rate-limit` |
+    | Middleware | Code that runs before a route handler and can stop the request | `rate_limit` |
+    | Window | The stretch of time a count covers before it starts over | 60 s |
+    | `x-forwarded-for` | A header listing the addresses a request passed through, oldest first | `203.0.113.5, 198.51.100.7` |
+    | Peer address | The address of whoever opened the TCP connection | the edge proxy |
+    | `429` | HTTP status "Too Many Requests" | the answer once a client is over the limit |
+
+Rust crate at `backend/libs/rate-limit`. It caps how often one client may call a service: **300 requests per 60 s per client IP**, then `429`.
+
+| Used by | Wired in |
+|---|---|
+| `chat` | `src/lib.rs` `build_router`, state in `src/state.rs` |
+| `digital-twin` | same |
+| `notification` | same |
+
+Dependencies: `axum` (the `tokio` feature, for `ConnectInfo`) and `dashmap`.
+
+---
+
+## What a service gets
+
+| Item | What it is |
+|---|---|
+| `RateLimiter::new(enabled)` | The counters. `Clone` shares them, so every route counts into one map |
+| `rate_limit` | The middleware, used with `axum::middleware::from_fn_with_state(limiter, rate_limit)` |
+| `enabled: false` | Lets every request through. Tests use it, because they send more than 300 requests |
+
+The service must serve with `into_make_service_with_connect_info::<SocketAddr>()`. Without it there is no peer address to fall back on.
+
+---
+
+## How one request is counted
+
+.mermaid
+    flowchart TD
+        R["request"] --> E{"enabled?"}
+        E -- no --> N["next handler"]
+        E -- yes --> I["client IP: last x-forwarded-for entry, else peer, else 0.0.0.0"]
+        I --> S["sweep idle clients, at most once per window"]
+        S --> W{"window for this IP older than 60 s?"}
+        W -- yes --> Z["start over at 0"]
+        W -- no --> C["count + 1"]
+        Z --> C
+        C --> L{"count over 300?"}
+        L -- yes --> T["429"]
+        L -- no --> N
+
+Example, one client behind the edge:
+
+| Step | Request from | `x-forwarded-for` | Counted as | Count | Answer |
+|---|---|---|---|---|---|
+| 1 | Ada | `198.51.100.7` | `198.51.100.7` | 1 | `200` |
+| 2–300 | Ada | same | same | 300 | `200` |
+| 301 | Ada | same | same | 301 | `429` |
+| 302 | Ada, forging a header | `10.0.0.1, 198.51.100.7` | `198.51.100.7` | 302 | `429` |
+| 303 | Bob | `198.51.100.8` | `198.51.100.8` | 1 | `200` |
+
+Step 302 is why the **rightmost** entry counts: the edge appends the address it saw, so only the last entry is one the client cannot write.
+
+---
+
+## Tests
+
+| Test | Checks |
+|---|---|
+| `client_ip` tests | The edge's entry wins; no header falls back to the peer; no source gives `0.0.0.0`; a malformed header falls back to the peer |
+| Middleware tests | 300 pass; the 301st is `429`; a disabled limiter never refuses; one noisy client does not slow another; a new forged address per request does not reset the count; an idle client is forgotten; the count starts over after the window |
+
+```bash
+mise exec -- cargo test --manifest-path backend/libs/rate-limit/Cargo.toml
+```
+
+---
+
+## Building a service that uses it
+
+The dependency is a path, `../libs/rate-limit`, so each consumer image builds from the repo root. Each `Dockerfile` copies the crate before `cargo chef prepare` **and** before each `cargo chef cook`; a path missing during `cook` fails the build half way. `.github/services.json` lists the folder in each consumer's `depends_on`, so a change here reruns all three.
+
+---
+
+## Gaps
+
+- **The counts live in memory.** Two copies of one service each allow the full 300 per minute.
+- **`/health` and `/metrics` count too.** They pass through the same limiter.
+- **Many people behind one address share one count.** An office behind one NAT gets 300 per minute in total.

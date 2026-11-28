@@ -13,8 +13,7 @@ pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 const LABELS: &[&str] = &["method", "route", "status_code"];
 
-// prometheus.rules.yml alerts on these exact names. Renaming them silences the
-// alerts rather than breaking them, so the `chat_` prefix outlives the rewrite.
+// prometheus.rules.yml alerts on these exact names; a rename silences those alerts with no error
 pub static HTTP_REQUESTS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec_with_registry!(
         "chat_http_requests_total",
@@ -47,7 +46,7 @@ pub static HTTP_REQUEST_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
 });
 
 fn is_infra_path(path: &str) -> bool {
-    matches!(path, "/metrics" | "/metrics/" | "/health" | "/health/")
+    matches!(path, "/metrics" | "/health")
 }
 
 pub async fn track_metrics(request: Request, next: Next) -> Response {
@@ -162,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn the_infrastructure_endpoints_are_not_measured() {
         assert!(is_infra_path("/health"));
-        assert!(is_infra_path("/metrics/"));
+        assert!(is_infra_path("/metrics"));
         assert!(!is_infra_path("/conversations"));
     }
 

@@ -1,21 +1,22 @@
 use env_logger::Env;
-use log::{error, info};
+use log::info;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::signal::unix::{SignalKind, signal};
 
 use chat::adapters::driven::agent::AgentService;
 use chat::adapters::driven::persistence::conversations::MongoConversations;
 use chat::adapters::driven::persistence::db;
-use chat::adapters::ratelimit::RateLimiter;
+use chat::build_router;
 use chat::service::conversations::Conversations;
 use chat::state::AppState;
-use chat::{DEFAULT_HISTORY_MAX_MESSAGES, build_router};
+use rate_limit::RateLimiter;
 
-/// Node re-read and re-validated this per request, so a bad value only surfaced as a
-/// 500 on the first message. Reading it once at boot turns the same mistake into a
-/// container that refuses to start.
+const DEFAULT_HISTORY_MAX_MESSAGES: usize = 10;
+
+/// Read once at boot: a bad `HISTORY_MAX_MESSAGES` stops the container, not the first message.
 fn history_max_messages() -> usize {
     match env::var("HISTORY_MAX_MESSAGES") {
         Err(_) => DEFAULT_HISTORY_MAX_MESSAGES,
@@ -28,30 +29,15 @@ fn history_max_messages() -> usize {
 }
 
 async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
+    let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler is installable");
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate.recv() => {}
     }
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let mongo_uri =
@@ -75,18 +61,13 @@ async fn main() {
 
     let app = build_router(state);
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    if let Ok(listener) = TcpListener::bind(format!("0.0.0.0:{port}")).await {
-        info!("Chat Service started on port {port}");
-        if let Err(e) = axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        {
-            error!("Failed to serve: {e}");
-        }
-    } else {
-        error!("Failed to bind to port {port}");
-    }
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    info!("Chat Service started on port {port}");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
+    Ok(())
 }

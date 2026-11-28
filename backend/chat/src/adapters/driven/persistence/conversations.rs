@@ -38,22 +38,7 @@ struct ConversationDocument {
     updated_at: DateTime,
 }
 
-#[derive(Debug, Deserialize)]
-struct SummaryDocument {
-    #[serde(rename = "_id")]
-    id: ObjectId,
-    #[serde(rename = "userId")]
-    user_id: String,
-    title: String,
-    #[serde(rename = "createdAt")]
-    created_at: DateTime,
-    #[serde(rename = "updatedAt")]
-    updated_at: DateTime,
-}
-
-/// Every `_id` crosses into the domain as a bare hex string. The bson crate would
-/// otherwise render it as `{"$oid": "..."}`, which is not what the API returns —
-/// and it applies to embedded messages too, not just the conversation.
+/// Ids leave as bare hex strings, embedded messages included: bson would render `{"$oid": …}`.
 impl From<MessageDocument> for ChatMessage {
     fn from(document: MessageDocument) -> Self {
         ChatMessage {
@@ -83,18 +68,6 @@ impl From<ConversationDocument> for Conversation {
     }
 }
 
-impl From<SummaryDocument> for ConversationSummary {
-    fn from(document: SummaryDocument) -> Self {
-        ConversationSummary {
-            id: document.id.to_hex(),
-            user_id: document.user_id,
-            title: document.title,
-            created_at: iso8601(document.created_at.timestamp_millis()),
-            updated_at: iso8601(document.updated_at.timestamp_millis()),
-        }
-    }
-}
-
 fn stored(message: NewMessage, created_at: DateTime) -> MessageDocument {
     MessageDocument {
         id: ObjectId::new(),
@@ -118,7 +91,7 @@ impl MongoConversations {
 
     /// An id that is not a valid ObjectId can never match a stored conversation, so it
     /// is a miss — and the service turns every miss into a 404, never a 400.
-    fn owned(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
+    fn owner_filter(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
         ObjectId::parse_str(id)
             .ok()
             .map(|id| doc! { "_id": { "$eq": id }, "userId": { "$eq": user_id } })
@@ -144,20 +117,19 @@ impl ConversationStore for MongoConversations {
     async fn summaries(&self, user_id: &str) -> anyhow::Result<Vec<ConversationSummary>> {
         let cursor = self
             .collection
-            .clone_with_type::<SummaryDocument>()
             .find(doc! { "userId": { "$eq": user_id } })
             .projection(doc! { "messages": 0 })
             .sort(doc! { "updatedAt": -1 })
             .await?;
-        let documents: Vec<SummaryDocument> = cursor.try_collect().await?;
+        let documents: Vec<ConversationDocument> = cursor.try_collect().await?;
         Ok(documents
             .into_iter()
-            .map(ConversationSummary::from)
+            .map(|document| Conversation::from(document).into())
             .collect())
     }
 
     async fn find_owned(&self, user_id: &str, id: &str) -> anyhow::Result<Option<Conversation>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
         Ok(self
@@ -173,7 +145,7 @@ impl ConversationStore for MongoConversations {
         id: &str,
         title: &str,
     ) -> anyhow::Result<Option<Conversation>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
         Ok(self
@@ -188,7 +160,7 @@ impl ConversationStore for MongoConversations {
     }
 
     async fn delete_owned(&self, user_id: &str, id: &str) -> anyhow::Result<bool> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(false);
         };
         Ok(self.collection.delete_one(filter).await?.deleted_count == 1)
@@ -202,7 +174,7 @@ impl ConversationStore for MongoConversations {
         assistant_message: NewMessage,
         new_title: Option<&str>,
     ) -> anyhow::Result<Option<ChatMessage>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
 
@@ -210,8 +182,7 @@ impl ConversationStore for MongoConversations {
         let user = stored(user_message, now);
         let assistant = stored(assistant_message, now);
 
-        // `updatedAt` has no Mongoose to maintain it any more. listConversations sorts
-        // by it, so a write that forgets it stops the list reordering with no error.
+        // the list sorts by `updatedAt`; a write that skips it stops the reordering silently
         let mut set = doc! { "updatedAt": now };
         if let Some(title) = new_title {
             set.insert("title", title);

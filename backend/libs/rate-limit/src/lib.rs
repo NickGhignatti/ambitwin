@@ -1,5 +1,5 @@
-// Copied verbatim, tests included, into chat, digital-twin and notification: no shared
-// Rust lib holds middleware, so a fix that lands in one copy must land in all three.
+//! Per-client-IP request limit, as Axum middleware: 300 requests per 60 s, then `429`.
+//! Counts live in memory, so each running copy of a service has its own limit.
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 const WINDOW: Duration = Duration::from_secs(60);
 const LIMIT: u32 = 300;
 
+/// The shared counters. Clone it freely: every clone counts into the same map.
+/// `enabled: false` lets every request through, for tests that send more than the limit.
 #[derive(Clone)]
 pub struct RateLimiter {
     counters: Arc<DashMap<IpAddr, (Instant, u32)>>,
@@ -54,6 +56,9 @@ fn client_ip(headers: &HeaderMap, peer: Option<SocketAddr>) -> IpAddr {
         .unwrap_or(IpAddr::from([0, 0, 0, 0]))
 }
 
+/// Counts the request against its client IP and answers `429 Too Many Requests` once the
+/// IP has sent more than 300 in the current window. Needs `into_make_service_with_connect_info`
+/// for the peer-address fallback; without it, a request with no `x-forwarded-for` counts as `0.0.0.0`.
 pub async fn rate_limit(
     State(limiter): State<RateLimiter>,
     request: Request,

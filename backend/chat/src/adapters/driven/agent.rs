@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-use std::pin::Pin;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -10,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::domain::{CLAIMS_HEADER, Citation, DomainError, HistoryTurn};
 use crate::service::ports::{AgentClient, AgentEvent, AnswerStream};
 
-/// Bounds the handshake, not the answer. A total request timeout would kill long
-/// generations mid-flight; the read timeout still caps a stalled stream, because
-/// `reqwest` applies it per read rather than to the whole response.
+/// Bounds the handshake, not the answer: a total timeout would cut long answers, while the
+/// read timeout (per read in `reqwest`) still ends a stalled stream.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -31,7 +28,6 @@ enum AgentFrame {
         text: String,
     },
     Done {
-        #[serde(default)]
         answer: Option<String>,
         #[serde(default)]
         citations: Vec<Citation>,
@@ -52,7 +48,7 @@ impl AgentService {
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(READ_TIMEOUT)
                 .build()
-                .expect("the default TLS backend is available"),
+                .expect("the client config is valid"),
             base_url,
         }
     }
@@ -90,31 +86,28 @@ impl AgentClient for AgentService {
     }
 }
 
-struct SseReader {
-    bytes: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
-    buffer: Vec<u8>,
-    pending: VecDeque<anyhow::Result<AgentEvent>>,
-    exhausted: bool,
-}
-
 fn frames(
     bytes: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
 ) -> impl Stream<Item = anyhow::Result<AgentEvent>> + Send {
-    futures::stream::unfold(
-        SseReader {
-            bytes: Box::pin(bytes),
-            buffer: Vec::new(),
-            pending: VecDeque::new(),
-            exhausted: false,
-        },
-        SseReader::step,
-    )
+    bytes
+        .scan(Vec::new(), |buffer, chunk| {
+            let events: Vec<_> = match chunk {
+                Ok(chunk) => {
+                    buffer.extend_from_slice(&chunk);
+                    take_frames(buffer)
+                        .iter()
+                        .filter_map(|frame| parse_frame(frame))
+                        .collect()
+                }
+                Err(error) => vec![Err(error.into())],
+            };
+            futures::future::ready(Some(futures::stream::iter(events)))
+        })
+        .flatten()
 }
 
-/// Splits on the blank line that terminates an SSE event and keeps the remainder
-/// buffered — a frame is routinely delivered across two TCP reads, and a multi-byte
-/// character can straddle the split, so the buffer stays bytes until a whole frame
-/// is in hand.
+/// Cuts every whole SSE frame (ending in a blank line) off the buffer and keeps the rest.
+/// Bytes, not text: a frame or a multi-byte character can span two reads.
 fn take_frames(buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
     while let Some(end) = buffer
@@ -150,36 +143,6 @@ fn parse_frame(raw: &[u8]) -> Option<anyhow::Result<AgentEvent>> {
     }
 }
 
-impl SseReader {
-    async fn step(mut self) -> Option<(anyhow::Result<AgentEvent>, Self)> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Some((event, self));
-            }
-            if self.exhausted {
-                return None;
-            }
-
-            match self.bytes.next().await {
-                Some(Ok(chunk)) => {
-                    self.buffer.extend_from_slice(&chunk);
-                    for frame in take_frames(&mut self.buffer) {
-                        self.pending.extend(parse_frame(&frame));
-                    }
-                }
-                Some(Err(e)) => {
-                    self.exhausted = true;
-                    self.pending.push_back(Err(anyhow::Error::new(e)));
-                }
-                // A stream that stops without its terminal frame leaves nothing
-                // buffered worth salvaging; the service reads the absence of a
-                // `done` event as an invalid response.
-                None => self.exhausted = true,
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,9 +165,7 @@ mod tests {
         format!("data: {}\n\n", serde_json::to_string(frame).unwrap())
     }
 
-    // Agent builds these frames from Python dataclass `__dict__` dumps and this file parses
-    // them by hand. Reading the fixture rather than a literal is the point: a literal here
-    // keeps passing after agent renames a field.
+    // read the fixture, not a literal: a literal keeps passing after agent renames a field
     #[test]
     fn every_stream_the_fixture_pins_decodes_to_what_agent_meant() {
         for case in fixture()["cases"].as_array().unwrap() {
@@ -247,8 +208,7 @@ mod tests {
         }
     }
 
-    // The leniency is deliberate: agent may add a frame kind, or be too old to send
-    // `answer`, without a lockstep release. Each tolerated frame must degrade, never error.
+    // agent may add frame kinds or omit `answer` without a lockstep release; each must degrade
     #[test]
     fn every_frame_the_fixture_tolerates_is_survived() {
         for case in fixture()["tolerated"].as_array().unwrap() {

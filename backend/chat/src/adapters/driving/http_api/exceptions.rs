@@ -15,7 +15,11 @@ impl DomainError {
             DomainError::Unauthorized(m) => {
                 (StatusCode::UNAUTHORIZED, "Unauthorized Error", m.clone())
             }
-            DomainError::NotFound(m) => (StatusCode::NOT_FOUND, "Not Found Error", m.clone()),
+            DomainError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "Not Found Error",
+                "Conversation not found".to_string(),
+            ),
             DomainError::Conflict(m) => (StatusCode::CONFLICT, "Conflict Error", m.clone()),
             DomainError::BadGateway(m) => (StatusCode::BAD_GATEWAY, "Bad Gateway Error", m.clone()),
             DomainError::Internal(e) => {
@@ -54,67 +58,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_validation_error_keeps_its_message_and_node_type_name() {
-        let (status, body) = rendered(DomainError::Validation(
-            "content must be a non-empty string".into(),
-        ))
-        .await;
+    async fn each_error_renders_its_status_type_and_message() {
+        let cases = [
+            (
+                DomainError::Validation("content must be a non-empty string".into()),
+                StatusCode::BAD_REQUEST,
+                "Validation Error",
+                "content must be a non-empty string",
+            ),
+            (
+                DomainError::Unauthorized("Missing authentication token".into()),
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized Error",
+                "Missing authentication token",
+            ),
+            (
+                DomainError::NotFound,
+                StatusCode::NOT_FOUND,
+                "Not Found Error",
+                "Conversation not found",
+            ),
+            (
+                DomainError::Conflict("Conversation message limit reached".into()),
+                StatusCode::CONFLICT,
+                "Conflict Error",
+                "Conversation message limit reached",
+            ),
+            (
+                DomainError::BadGateway("Could not reach agent".into()),
+                StatusCode::BAD_GATEWAY,
+                "Bad Gateway Error",
+                "Could not reach agent",
+            ),
+            // the cause stays in the log: the client sees only the generic message
+            (
+                DomainError::Internal(anyhow::anyhow!("mongo credentials rejected")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                INTERNAL_MESSAGE,
+            ),
+        ];
 
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(body["type"], "Validation Error");
-        assert_eq!(body["message"], "content must be a non-empty string");
-    }
-
-    #[tokio::test]
-    async fn a_missing_conversation_is_a_404_not_a_403() {
-        let (status, body) = rendered(DomainError::not_found()).await;
-
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        assert_eq!(body["type"], "Not Found Error");
-        assert_eq!(body["message"], "Conversation not found");
-    }
-
-    #[tokio::test]
-    async fn the_message_cap_is_a_conflict() {
-        let (status, body) = rendered(DomainError::Conflict(
-            "Conversation message limit reached".into(),
-        ))
-        .await;
-
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["type"], "Conflict Error");
-    }
-
-    #[tokio::test]
-    async fn an_unreachable_agent_is_a_bad_gateway() {
-        let (status, body) =
-            rendered(DomainError::BadGateway("Could not reach agent".into())).await;
-
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
-        assert_eq!(body["type"], "Bad Gateway Error");
-        assert_eq!(body["message"], "Could not reach agent");
-    }
-
-    #[tokio::test]
-    async fn a_missing_token_is_unauthorized() {
-        let (status, body) = rendered(DomainError::Unauthorized(
-            "Missing authentication token".into(),
-        ))
-        .await;
-
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(body["type"], "Unauthorized Error");
-    }
-
-    #[tokio::test]
-    async fn an_internal_failure_never_leaks_its_cause() {
-        let (status, body) = rendered(DomainError::Internal(anyhow::anyhow!(
-            "mongo credentials rejected"
-        )))
-        .await;
-
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(body["type"], "Internal Server Error");
-        assert_eq!(body["message"], INTERNAL_MESSAGE);
+        for (error, status, error_type, message) in cases {
+            let (rendered_status, body) = rendered(error).await;
+            assert_eq!(rendered_status, status, "{error_type}");
+            assert_eq!(body["type"], error_type);
+            assert_eq!(body["message"], message, "{error_type}");
+        }
     }
 }

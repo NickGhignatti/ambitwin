@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::adapters::ratelimit::RateLimiter;
 use crate::service::buildings::Buildings;
 use crate::service::placements::Placements;
 use crate::service::provisioning::Provisioning;
+use rate_limit::RateLimiter;
 
 #[derive(Clone)]
 pub struct AppState {

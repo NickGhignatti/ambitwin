@@ -59,6 +59,7 @@ deps.
 | `backend/chat` | Rust / Axum / Mongo | Chat sessions, SSE streaming, drives `agent` |
 | `backend/agent` | Python / FastAPI / pgvector | RAG assistant, LLM tool-calling |
 | `backend/libs/{auth-contracts,auth-middleware,auth-policy}` | Go modules | Shared, embedded, never deployed |
+| `backend/libs/rate-limit` | Rust crate | Per-IP request limit middleware for chat, digital-twin, notification |
 | `backend/acceptance` | Python | Cross-service acceptance suite |
 | `schemas/{claims,notification,telemetry,twin}-schema` | Rust crates | Shapes crossing a service boundary |
 | `schemas/{fixtures,json}` | JSON | Cross-language conformance fixtures + written contracts |

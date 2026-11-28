@@ -39,6 +39,7 @@
 - [Notification Schema](./docs/packages/notification-schema.qd)
 - [Auth Middleware](./docs/packages/auth-middleware.qd)
 - [Auth Policy](./docs/packages/auth-policy.qd)
+- [Rate Limit](./docs/packages/rate-limit.qd)
 
 ###! Services
 - [Claims Gateway](./docs/services/claims-gateway.qd)

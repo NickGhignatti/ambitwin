@@ -9,13 +9,13 @@ async-trait = "0.1.91"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "matched-path", "tokio"] }
 base64 = "0.23"
 claims-schema = { path = "../../schemas/claims-schema" }
-dashmap = "6.2.1"
 env_logger = { version = "0.11.10", default-features = false, features = ["humantime"] }
 futures = "0.3.32"
 log = "0.4.32"
 mongodb = "3"
 notification-schema = { path = "../../schemas/notification-schema" }
 prometheus = { version = "0.14", default-features = false }
+rate-limit = { version = "0.1.0", path = "../libs/rate-limit" }
 rdkafka = "0.40"
 redis = { version = "1.2.3", default-features = false, features = ["tokio-comp"] }
 reqwest = { version = "0.13.4", features = ["json"] }

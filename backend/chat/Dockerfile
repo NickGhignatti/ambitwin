@@ -4,6 +4,7 @@ WORKDIR /app/backend/chat
 # ── capture the dependency graph ────────────────────────────────────────
 FROM chef AS planner
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY backend/chat .
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -11,6 +12,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS debug-deps
 COPY --from=planner /app/backend/chat/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 RUN --mount=type=cache,target=/sccache,sharing=shared \
     RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache CARGO_INCREMENTAL=0 \
     cargo chef cook --recipe-path recipe.json
@@ -27,14 +29,13 @@ CMD ["cargo", "watch", "-x", "run"]
 FROM chef AS builder
 COPY --from=planner /app/backend/chat/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY backend/chat .
 RUN cargo build --release
 
 FROM gcr.io/distroless/cc-debian12:nonroot AS production
-# Distroless: no shell, no package manager, patched upstream - so the cd-registry Trivy
-# scan needs no apt-get upgrade step here. ca-certificates and libssl ship in the base
-# image; zlib does not.
+# distroless: no shell or package manager, patched upstream, so no apt-get upgrade step
 COPY --from=builder /app/backend/chat/target/release/chat /usr/local/bin/chat
 
 EXPOSE 3000

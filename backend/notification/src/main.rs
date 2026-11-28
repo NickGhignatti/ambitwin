@@ -12,13 +12,13 @@ use notification::adapters::driven::push::WebPushSender;
 use notification::adapters::driven::redis_bus::RedisBus;
 use notification::adapters::driven::twin::TwinDirectory;
 use notification::adapters::driving::alert_listener;
-use notification::adapters::ratelimit::RateLimiter;
 use notification::build_router;
 use notification::service::alerts::Alerts;
 use notification::service::ports::SystemClock;
 use notification::service::preferences::Preferences;
 use notification::service::push::Push;
 use notification::state::AppState;
+use rate_limit::RateLimiter;
 
 async fn shutdown_signal() {
     let ctrl_c = async {

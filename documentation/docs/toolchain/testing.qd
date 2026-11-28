@@ -103,12 +103,12 @@ One fixture, read by each language's own parser. A rename that one language miss
         autonumber
         participant D as Developer
         participant M as moon<br/>telemetry:test-integration
-        participant S as test-integration.sh
+        participant S as scripts/compose-integration-tests.sh
         participant C as docker compose<br/>project telemetry-integration-tests
         participant T as telemetry-test container
         D->>M: just test telemetry-integration
-        M->>S: bash test-integration.sh, cache off
-        S->>S: read RUST_VERSION from the mise pins
+        M->>S: sh ../../scripts/compose-integration-tests.sh, cache off
+        S->>S: service = folder name, read RUST_VERSION from the mise pins
         S->>S: trap: compose down on exit
         S->>C: up --build --exit-code-from telemetry-test
         C->>C: build rust-base, then telemetry target dev

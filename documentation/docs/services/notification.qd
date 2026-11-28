@@ -63,7 +63,6 @@ Ports and adapters. `tests/architecture_fitness.rs` fails the build when a layer
 | `src/service/` | The use cases `Alerts`, `Push`, `Preferences`. `ports.rs`. `fakes.rs` for tests | any framework, `crate::adapters` |
 | `src/adapters/driving/` | `http_api/` (handlers, claims extractor, error mapping) and `alert_listener.rs` (Kafka) | `crate::adapters::driven` |
 | `src/adapters/driven/` | Mongo stores, the Web Push sender, the Redis bus and cooldown, the digital-twin lookup | |
-| `src/adapters/ratelimit.rs` | 300 requests per minute per client IP | |
 | `src/main.rs` | Reads config, connects, wires everything, starts the listener and the server | |
 
 The same test checks that the claims header name only comes from `claims_schema::CLAIMS_HEADER`, which must equal `x-gateway-claims`.
@@ -1082,7 +1081,7 @@ The membership check is the same `Audience` as everywhere else. So an `admin` or
 | `NotFound` | 404 | `Not Found Error` |
 | `Internal` | 500 | `Internal Server Error`. The message is generic, the cause only logged |
 
-A client over 300 requests in 60 s gets `429`. The client IP is the **rightmost** `x-forwarded-for` entry, the one the edge appended, so a forged left entry cannot reset the count.
+A client over 300 requests in 60 s gets `429`. The client IP is the **rightmost** `x-forwarded-for` entry, the one the edge appended, so a forged left entry cannot reset the count. The limiter is the shared crate [Rate Limit](../packages/rate-limit.qd).
 
 ---
 

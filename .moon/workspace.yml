@@ -15,6 +15,7 @@ projects:
   auth-contracts: "backend/libs/auth-contracts"
   auth-middleware: "backend/libs/auth-middleware"
   auth-policy: "backend/libs/auth-policy"
+  rate-limit: "backend/libs/rate-limit"
   tenancy: "backend/tenancy"
   claims-gateway: "backend/claims-gateway"
   registry: "backend/registry"

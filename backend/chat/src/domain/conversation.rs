@@ -10,13 +10,13 @@ pub const MAX_MESSAGE_LENGTH: usize = 8000;
 pub const MAX_TITLE_LENGTH: usize = 120;
 pub const DEFAULT_TITLE: &str = "New chat";
 
-const JS_ISO: &[BorrowedFormatItem] =
+const ISO_8601_MILLISECONDS_UTC: &[BorrowedFormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
 
-pub fn iso8601(millis: i64) -> String {
-    OffsetDateTime::from_unix_timestamp_nanos(millis as i128 * 1_000_000)
+pub fn iso8601(unix_milliseconds: i64) -> String {
+    OffsetDateTime::from_unix_timestamp_nanos(unix_milliseconds as i128 * 1_000_000)
         .expect("millisecond timestamps are in range")
-        .format(JS_ISO)
+        .format(ISO_8601_MILLISECONDS_UTC)
         .expect("format is total over valid datetimes")
 }
 
@@ -34,7 +34,6 @@ pub struct Citation {
     pub chunk_id: String,
     pub document_id: String,
     pub source: String,
-    #[serde(default)]
     pub section_path: Option<String>,
 }
 
@@ -82,6 +81,18 @@ pub struct ConversationSummary {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+}
+
+impl From<Conversation> for ConversationSummary {
+    fn from(conversation: Conversation) -> Self {
+        ConversationSummary {
+            id: conversation.id,
+            user_id: conversation.user_id,
+            title: conversation.title,
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -170,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_render_the_way_the_node_service_rendered_them() {
+    fn timestamps_render_as_iso_8601_with_milliseconds() {
         assert_eq!(iso8601(0), "1970-01-01T00:00:00.000Z");
         assert_eq!(iso8601(1_755_770_400_123), "2025-08-21T10:00:00.123Z");
     }

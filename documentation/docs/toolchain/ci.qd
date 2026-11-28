@@ -137,6 +137,7 @@ What the current `depends_on` gives:
 | `backend/libs/auth-contracts` | `auth-middleware`, `auth-policy`, `claims-gateway`, `provisioner`, `registry`, `tenancy` | They build against its source through a local `replace` |
 | `backend/libs/auth-middleware` | `claims-gateway`, `tenancy` | Local `replace`; its dependency versions must reach their `go.sum` |
 | `backend/libs/auth-policy` | `tenancy` | Local `replace`: the Cedar bundle tenancy evaluates |
+| `backend/libs/rate-limit` | `chat`, `notification`, `twin` | Cargo `path`: the per-IP request limit they all run |
 | `schemas/claims-schema` | `chat`, `notification`, `telemetry`, `socket`, `twin`, `dashboard` | Every Rust service parses claims with it |
 | `schemas/telemetry-schema` | `notification`, `telemetry`, `socket`, `twin`, `dashboard` | They share the tick and alert shapes |
 | `schemas/twin-schema` | `telemetry`, `socket`, `twin` | Registration, Wi-Fi and device shapes |

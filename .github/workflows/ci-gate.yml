@@ -32,6 +32,7 @@ jobs:
       auth_policy: ${{ contains(fromJSON(steps.filter.outputs.changes), 'auth-policy') }}
       auth_contracts: ${{ contains(fromJSON(steps.filter.outputs.changes), 'auth-contracts') }}
       auth_middleware: ${{ contains(fromJSON(steps.filter.outputs.changes), 'auth-middleware') }}
+      rate_limit: ${{ contains(fromJSON(steps.filter.outputs.changes), 'rate-limit') }}
       claims_schema: ${{ contains(fromJSON(steps.filter.outputs.changes), 'claims-schema') }}
       telemetry_schema: ${{ contains(fromJSON(steps.filter.outputs.changes), 'telemetry-schema') }}
       twin_schema: ${{ contains(fromJSON(steps.filter.outputs.changes), 'twin-schema') }}
@@ -177,6 +178,14 @@ jobs:
       service_key: tenancy
       working_directory: backend/tenancy
 
+  rate-limit:
+    needs: changes
+    if: needs.changes.outputs.rate_limit == 'true'
+    uses: ./.github/workflows/tpl-rust-ci.yml
+    with:
+      service_key: rate-limit
+      working_directory: backend/libs/rate-limit
+
   claims-schema:
     needs: changes
     if: needs.changes.outputs.claims_schema == 'true'
@@ -290,6 +299,7 @@ jobs:
       - telemetry
       - socket
       - twin
+      - rate-limit
       - claims-schema
       - telemetry-schema
       - twin-schema
@@ -384,6 +394,7 @@ jobs:
       - telemetry
       - socket
       - twin
+      - rate-limit
       - claims-schema
       - telemetry-schema
       - twin-schema

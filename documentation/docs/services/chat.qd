@@ -63,7 +63,6 @@ Ports and adapters. `tests/architecture_fitness.rs` fails the build when a rule 
 | `src/adapters/driving/http_api/` | The claims extractor, the handlers, the SSE frames, the error mapping | `crate::adapters::driven` |
 | `src/adapters/driven/persistence/` | The MongoDB store. The only file that knows `ObjectId` | |
 | `src/adapters/driven/agent.rs` | `AgentService`: calls `agent` `/ask` and reads its SSE stream | |
-| `src/adapters/ratelimit.rs` | 300 requests per minute per client IP | |
 
 "Driving" means the outside world drives the service (HTTP comes in). "Driven" means the service drives the outside world (it calls MongoDB and `agent`).
 
@@ -104,7 +103,6 @@ pub struct Citation {
     pub chunk_id: String,
     pub document_id: String,
     pub source: String,
-    #[serde(default)]
     pub section_path: Option<String>,
 }
 ```
@@ -270,7 +268,7 @@ pub async fn open(&self, user_id: &str, id: &str) -> Result<Conversation, Domain
     self.store
         .find_owned(user_id, id)
         .await?
-        .ok_or_else(DomainError::not_found)
+        .ok_or(DomainError::NotFound)
 }
 ```
 
@@ -337,32 +335,26 @@ async fn step(mut self) -> Option<(Result<ChatEvent, DomainError>, Self)> {
         return None;
     }
 
-    match self.upstream.next().await {
+    let last = match self.upstream.next().await {
         Some(Ok(AgentEvent::Token(text))) => {
             self.answer.text.push_str(&text);
-            Some((Ok(ChatEvent::Token(text)), self))
+            return Some((Ok(ChatEvent::Token(text)), self));
         }
         Some(Ok(AgentEvent::Done { answer, citations })) => {
-            self.finished = true;
             if let Some(answer) = answer {
                 self.answer.text = answer;
             }
-            let persisted = self.answer.persist(citations).await.map(ChatEvent::Done);
-            Some((persisted, self))
+            self.answer.persist(citations).await.map(ChatEvent::Done)
         }
-        Some(Err(_)) => {
-            self.finished = true;
-            Some((Err(DomainError::BadGateway("agent stream ended unexpectedly".to_string())), self))
-        }
-        None => {
-            self.finished = true;
-            Some((Err(DomainError::BadGateway("agent returned an invalid response".to_string())), self))
-        }
-    }
+        Some(Err(_)) => Err(DomainError::BadGateway("agent stream ended unexpectedly".to_string())),
+        None => Err(DomainError::BadGateway("agent returned an invalid response".to_string())),
+    };
+    self.finished = true;
+    Some((last, self))
 }
 ```
 
-`futures::stream::unfold` calls `step` again and again. Each call waits for the next event from `agent` and produces **one** event for the browser:
+`futures::stream::unfold` calls `step` again and again. Each call waits for the next event from `agent` and produces **one** event for the browser. A token goes on; anything else is the last event, so `finished` is set once, at the end:
 
 | `agent` gives | `chat` does |
 |---|---|
@@ -388,7 +380,7 @@ async fn persist(&self, citations: Vec<Citation>) -> Result<ChatMessage, DomainE
             self.new_title.as_deref(),
         )
         .await?
-        .ok_or_else(DomainError::not_found)
+        .ok_or(DomainError::NotFound)
 }
 ```
 
@@ -485,7 +477,7 @@ Read one whole frame:
 #[serde(tag = "type", rename_all = "lowercase")]
 enum AgentFrame {
     Token { #[serde(default)] text: String },
-    Done { #[serde(default)] answer: Option<String>, #[serde(default)] citations: Vec<Citation> },
+    Done { answer: Option<String>, #[serde(default)] citations: Vec<Citation> },
     #[serde(other)]
     Ignored,
 }
@@ -502,61 +494,51 @@ enum AgentFrame {
 The frames are pinned in `schemas/fixtures/agent-stream.json`. Its `tolerated` cases must be survived, so the skipping is a decision, not luck.
 
 ```rust
-async fn step(mut self) -> Option<(anyhow::Result<AgentEvent>, Self)> {
-    loop {
-        if let Some(event) = self.pending.pop_front() {
-            return Some((event, self));
-        }
-        if self.exhausted {
-            return None;
-        }
-
-        match self.bytes.next().await {
-            Some(Ok(chunk)) => {
-                self.buffer.extend_from_slice(&chunk);
-                for frame in take_frames(&mut self.buffer) {
-                    self.pending.extend(parse_frame(&frame));
+fn frames(
+    bytes: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
+) -> impl Stream<Item = anyhow::Result<AgentEvent>> + Send {
+    bytes
+        .scan(Vec::new(), |buffer, chunk| {
+            let events: Vec<_> = match chunk {
+                Ok(chunk) => {
+                    buffer.extend_from_slice(&chunk);
+                    take_frames(buffer).iter().filter_map(|frame| parse_frame(frame)).collect()
                 }
-            }
-            Some(Err(e)) => {
-                self.exhausted = true;
-                self.pending.push_back(Err(anyhow::Error::new(e)));
-            }
-            None => self.exhausted = true,
-        }
-    }
+                Err(error) => vec![Err(error.into())],
+            };
+            futures::future::ready(Some(futures::stream::iter(events)))
+        })
+        .flatten()
 }
 ```
 
-The reader works in a loop:
+Two stream tools from `futures` do the work:
 
-1. Anything waiting in `pending`? Hand out the first one.
-2. Exhausted and nothing pending? The stream is over.
-3. Otherwise read the next chunk of bytes, add them to the buffer, cut whole frames, parse each one into `pending`, and go around again.
+1. `scan` keeps one buffer of bytes across reads. Each chunk of bytes is added to it, whole frames are cut off, and each frame is parsed. One chunk gives a list of zero, one or several events.
+2. `flatten` hands those events out one at a time, in order.
 
-A read error becomes an error event, then the stream ends. A clean end of the bytes just ends the stream, and the service above reads the absence of `Done` as an invalid response.
+A read error becomes one error event. The service above stops at the first error, so nothing after it is used. A clean end of the bytes just ends the stream, and the service reads the absence of `Done` as an invalid response.
 
 .mermaid
     sequenceDiagram
         autonumber
         participant N as Network
-        participant R as SseReader::step
+        participant S as frames (scan)
         participant T as take_frames
         participant P as parse_frame
         participant C as Exchange::step
-        C->>R: next event?
-        R->>R: anything in pending? no
-        R->>N: next chunk
-        N-->>R: bytes
-        R->>R: add to buffer
-        R->>T: cut at every blank line
-        T-->>R: whole frames, rest stays in buffer
+        C->>S: next event?
+        S->>N: next chunk
+        N-->>S: bytes
+        S->>S: add to buffer
+        S->>T: cut at every blank line
+        T-->>S: whole frames, rest stays in buffer
         loop each whole frame
-            R->>P: frame bytes
+            S->>P: frame bytes
             P->>P: join the data: lines, read JSON
-            P-->>R: Token, Done, nothing, or an error
+            P-->>S: Token, Done, nothing, or an error
         end
-        R-->>C: first pending event
+        S-->>C: events, one at a time (flatten)
 
 **Example, a split frame.** Read 1 brings `data: {"type":"token","te`. Read 2 brings `xt":"Room "}\n\n`. After read 1 there is no blank line, so nothing is cut and the bytes wait. After read 2 the whole frame is cut and gives `Token("Room ")`.
 
@@ -570,12 +552,11 @@ A read error becomes an error event, then the stream ends. A clean end of the by
 pub const CONVERSATIONS: &str = "conversations";
 
 let db_name = options.default_database.clone().unwrap_or_else(|| "chatdb".to_string());
-// … two indexes
-{ "userId": 1 }
+// … one index
 { "userId": 1, "updatedAt": -1 }
 ```
 
-The database name comes from the path of `MONGO_URI`, else `chatdb`. Two indexes: one for owner lookups, one to list a person's conversations newest first.
+The database name comes from the path of `MONGO_URI`, else `chatdb`. One index, to list a person's conversations newest first. It also serves any lookup on `userId` alone, because `userId` is its first key. A lookup by `_id` uses Mongo's own `_id` index.
 
 Messages live **inside** their conversation:
 
@@ -614,7 +595,7 @@ Three private "document" types mirror what MongoDB stores (`ObjectId`, `DateTime
 ### Owned lookups
 
 ```rust
-fn owned(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
+fn owner_filter(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
     ObjectId::parse_str(id)
         .ok()
         .map(|id| doc! { "_id": { "$eq": id }, "userId": { "$eq": user_id } })
@@ -682,7 +663,7 @@ All behind the edge at `/chat/*`. The edge must not buffer: Caddy needs `flush_i
 | `DELETE` | `/conversations/{id}` | Owner | Delete | `204` |
 | `POST` | `/conversations/{id}/messages` | Owner | Ask. The answer streams back | SSE |
 
-Every request goes through two layers: a **rate limiter** and a metrics layer. The limiter allows 300 requests per minute per client IP, then answers `429`. The IP is the **rightmost** value of `x-forwarded-for`, the one the edge appended, not one the client could write. A sweep once per minute drops the clients that were idle. (The same file is copied into `chat`, `digital-twin` and `notification`: no shared Rust library holds middleware, so a fix in one copy must be made in all three.)
+Every request goes through two layers: a **rate limiter** and a metrics layer. The limiter allows 300 requests per minute per client IP, then answers `429`. The IP is the **rightmost** value of `x-forwarded-for`, the one the edge appended, not one the client could write. A sweep once per minute drops the clients that were idle. The limiter is the shared crate [Rate Limit](../packages/rate-limit.qd), also used by `digital-twin` and `notification`.
 
 ### Who is the owner
 
@@ -697,10 +678,8 @@ impl<S: Send + Sync> FromRequestParts<S> for GatewayClaims {
             .ok_or_else(|| unauthorized("Missing authentication token"))?
             .to_string();
 
-        let decoded = decode_claims_header(&raw)
+        let payload = ClaimsPayload::decode(&raw)
             .ok_or_else(|| unauthorized("Invalid authentication token"))?;
-        let payload: ClaimsPayload = serde_json::from_slice(&decoded)
-            .map_err(|_| unauthorized("Invalid authentication token"))?;
 
         let user_id = payload.user_id()
             .ok_or_else(|| unauthorized("Authentication token is missing an account id"))?
@@ -726,7 +705,7 @@ impl DomainError {
         match self {
             DomainError::Validation(m) => (StatusCode::BAD_REQUEST, "Validation Error", m.clone()),
             DomainError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, "Unauthorized Error", m.clone()),
-            DomainError::NotFound(m) => (StatusCode::NOT_FOUND, "Not Found Error", m.clone()),
+            DomainError::NotFound => (StatusCode::NOT_FOUND, "Not Found Error", "Conversation not found".to_string()),
             DomainError::Conflict(m) => (StatusCode::CONFLICT, "Conflict Error", m.clone()),
             DomainError::BadGateway(m) => (StatusCode::BAD_GATEWAY, "Bad Gateway Error", m.clone()),
             DomainError::Internal(e) => {
@@ -771,9 +750,7 @@ fn frame(event: Result<ChatEvent, DomainError>) -> Event {
             json!({ "type": "error", "error": error_type, "message": message })
         }
     };
-    Event::default().json_data(body).unwrap_or_else(|_| {
-        Event::default().data(r#"{"type":"error","error":"Internal Server Error"}"#)
-    })
+    Event::default().json_data(body).expect("a json Value always serialises")
 }
 
 pub async fn send_message(
@@ -943,7 +920,7 @@ fn history_max_messages() -> usize {
 
 Read **once at start**. The old Node service re-read and re-checked it on every request, so a bad value only showed up as a `500` on the first message. Now the same mistake is a container that refuses to start. Not set: 10. Set to `0`, to a negative number or to text: panic.
 
-`main` then connects to MongoDB (panic if it cannot), builds `Conversations` from the Mongo store and the `agent` client, builds the router, and serves on `0.0.0.0:{PORT}` with a graceful shutdown on `Ctrl+C` or `SIGTERM`. The connection info is passed (`into_make_service_with_connect_info`) so the rate limiter can fall back to the peer address.
+`main` then connects to MongoDB (panic if it cannot), builds `Conversations` from the Mongo store and the `agent` client, builds the router, and serves on `0.0.0.0:{PORT}` with a graceful shutdown on `Ctrl+C` or `SIGTERM`. A port it cannot bind, or a server that stops with an error, ends the process with exit code 1 (`Error: Address already in use (os error 98)`), so the container restarts instead of looking like a clean stop. The connection info is passed (`into_make_service_with_connect_info`) so the rate limiter can fall back to the peer address.
 
 | Variable | Default | What it is |
 |---|---|---|

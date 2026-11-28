@@ -2102,13 +2102,13 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "claims-schema",
- "dashmap",
  "env_logger",
  "futures",
  "log",
  "mongodb",
  "notification-schema",
  "prometheus",
+ "rate-limit",
  "rdkafka",
  "redis",
  "reqwest",
@@ -2678,6 +2678,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "rate-limit"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dashmap",
 ]
 
 [[package]]

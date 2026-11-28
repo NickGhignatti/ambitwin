@@ -14,9 +14,6 @@ pub async fn connect(uri: &str) -> anyhow::Result<Database> {
 
     let conversations = database.collection::<mongodb::bson::Document>(CONVERSATIONS);
     conversations
-        .create_index(IndexModel::builder().keys(doc! { "userId": 1 }).build())
-        .await?;
-    conversations
         .create_index(
             IndexModel::builder()
                 .keys(doc! { "userId": 1, "updatedAt": -1 })
