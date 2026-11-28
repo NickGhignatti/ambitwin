@@ -7,7 +7,6 @@ edition = "2024"
 anyhow = "1"
 async-trait = "0.1.91"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "matched-path", "tokio"] }
-base64 = "0.23"
 bytes = "1"
 claims-schema = { path = "../../schemas/claims-schema" }
 dashmap = "6.2.1"
@@ -23,6 +22,7 @@ tokio = { version = "1.52.3", features = ["macros", "net", "rt-multi-thread", "s
 prometheus = { version = "0.14", default-features = false }
 
 [dev-dependencies]
+base64 = "0.23"
 tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
 
