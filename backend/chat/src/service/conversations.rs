@@ -53,7 +53,7 @@ impl Conversations {
         self.store
             .find_owned(user_id, id)
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 
     pub async fn rename(
@@ -66,13 +66,13 @@ impl Conversations {
         self.store
             .rename(user_id, id, &title)
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 
     pub async fn delete(&self, user_id: &str, id: &str) -> Result<(), DomainError> {
         match self.store.delete_owned(user_id, id).await? {
             true => Ok(()),
-            false => Err(DomainError::not_found()),
+            false => Err(DomainError::NotFound),
         }
     }
 
@@ -182,7 +182,7 @@ impl Answer {
                 self.new_title.as_deref(),
             )
             .await?
-            .ok_or_else(DomainError::not_found)
+            .ok_or(DomainError::NotFound)
     }
 }
 
@@ -318,7 +318,7 @@ mod tests {
 
         assert!(matches!(
             service.open("bob", &owned.id).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
     }
 
@@ -342,7 +342,7 @@ mod tests {
 
         assert!(matches!(
             service.rename("bob", &owned.id, Some("mine now")).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
     }
 
@@ -370,7 +370,7 @@ mod tests {
 
         assert!(matches!(
             service.delete("bob", &owned.id).await,
-            Err(DomainError::NotFound(_))
+            Err(DomainError::NotFound)
         ));
         assert!(store.find_owned("ada", &owned.id).await.unwrap().is_some());
     }
@@ -593,7 +593,7 @@ mod tests {
                 .send_message("bob", &conversation.id, Some("q"), "claims")
                 .await
                 .err(),
-            Some(DomainError::NotFound(_))
+            Some(DomainError::NotFound)
         ));
     }
 

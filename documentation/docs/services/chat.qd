@@ -269,7 +269,7 @@ pub async fn open(&self, user_id: &str, id: &str) -> Result<Conversation, Domain
     self.store
         .find_owned(user_id, id)
         .await?
-        .ok_or_else(DomainError::not_found)
+        .ok_or(DomainError::NotFound)
 }
 ```
 
@@ -381,7 +381,7 @@ async fn persist(&self, citations: Vec<Citation>) -> Result<ChatMessage, DomainE
             self.new_title.as_deref(),
         )
         .await?
-        .ok_or_else(DomainError::not_found)
+        .ok_or(DomainError::NotFound)
 }
 ```
 
@@ -706,7 +706,7 @@ impl DomainError {
         match self {
             DomainError::Validation(m) => (StatusCode::BAD_REQUEST, "Validation Error", m.clone()),
             DomainError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, "Unauthorized Error", m.clone()),
-            DomainError::NotFound(m) => (StatusCode::NOT_FOUND, "Not Found Error", m.clone()),
+            DomainError::NotFound => (StatusCode::NOT_FOUND, "Not Found Error", "Conversation not found".to_string()),
             DomainError::Conflict(m) => (StatusCode::CONFLICT, "Conflict Error", m.clone()),
             DomainError::BadGateway(m) => (StatusCode::BAD_GATEWAY, "Bad Gateway Error", m.clone()),
             DomainError::Internal(e) => {

@@ -15,7 +15,11 @@ impl DomainError {
             DomainError::Unauthorized(m) => {
                 (StatusCode::UNAUTHORIZED, "Unauthorized Error", m.clone())
             }
-            DomainError::NotFound(m) => (StatusCode::NOT_FOUND, "Not Found Error", m.clone()),
+            DomainError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "Not Found Error",
+                "Conversation not found".to_string(),
+            ),
             DomainError::Conflict(m) => (StatusCode::CONFLICT, "Conflict Error", m.clone()),
             DomainError::BadGateway(m) => (StatusCode::BAD_GATEWAY, "Bad Gateway Error", m.clone()),
             DomainError::Internal(e) => {
@@ -69,7 +73,7 @@ mod tests {
                 "Missing authentication token",
             ),
             (
-                DomainError::not_found(),
+                DomainError::NotFound,
                 StatusCode::NOT_FOUND,
                 "Not Found Error",
                 "Conversation not found",

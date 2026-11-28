@@ -2,16 +2,10 @@
 pub enum DomainError {
     Validation(String),
     Unauthorized(String),
-    NotFound(String),
+    NotFound,
     Conflict(String),
     BadGateway(String),
     Internal(anyhow::Error),
-}
-
-impl DomainError {
-    pub fn not_found() -> Self {
-        DomainError::NotFound("Conversation not found".to_string())
-    }
 }
 
 impl From<anyhow::Error> for DomainError {
