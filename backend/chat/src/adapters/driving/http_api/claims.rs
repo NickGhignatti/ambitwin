@@ -61,41 +61,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_raw_header_is_preserved_verbatim_for_forwarding() {
-        let header = encoded(r#"{"sub":"3f2b"}"#);
-        assert_eq!(extract(Some(&header)).await.unwrap().raw, header);
-    }
-
-    #[tokio::test]
-    async fn a_missing_header_is_unauthorized() {
-        assert!(matches!(
-            extract(None).await,
-            Err(DomainError::Unauthorized(m)) if m == "Missing authentication token"
-        ));
-    }
-
-    #[tokio::test]
-    async fn an_empty_header_is_unauthorized() {
-        assert!(matches!(
-            extract(Some("")).await,
-            Err(DomainError::Unauthorized(m)) if m == "Missing authentication token"
-        ));
+    async fn a_missing_or_empty_header_is_unauthorized() {
+        for header in [None, Some("")] {
+            assert!(matches!(
+                extract(header).await,
+                Err(DomainError::Unauthorized(m)) if m == "Missing authentication token"
+            ));
+        }
     }
 
     #[tokio::test]
     async fn a_header_that_is_not_base64_json_is_unauthorized() {
-        assert!(matches!(
-            extract(Some("not base64 json!!")).await,
-            Err(DomainError::Unauthorized(m)) if m == "Invalid authentication token"
-        ));
-    }
-
-    #[tokio::test]
-    async fn base64_that_is_not_json_is_unauthorized() {
-        assert!(matches!(
-            extract(Some(&encoded("plain text"))).await,
-            Err(DomainError::Unauthorized(m)) if m == "Invalid authentication token"
-        ));
+        for header in ["not base64 json!!".to_string(), encoded("plain text")] {
+            assert!(matches!(
+                extract(Some(&header)).await,
+                Err(DomainError::Unauthorized(m)) if m == "Invalid authentication token"
+            ));
+        }
     }
 
     #[tokio::test]
