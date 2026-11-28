@@ -91,7 +91,7 @@ impl MongoConversations {
 
     /// An id that is not a valid ObjectId can never match a stored conversation, so it
     /// is a miss — and the service turns every miss into a 404, never a 400.
-    fn owned(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
+    fn owner_filter(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
         ObjectId::parse_str(id)
             .ok()
             .map(|id| doc! { "_id": { "$eq": id }, "userId": { "$eq": user_id } })
@@ -129,7 +129,7 @@ impl ConversationStore for MongoConversations {
     }
 
     async fn find_owned(&self, user_id: &str, id: &str) -> anyhow::Result<Option<Conversation>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
         Ok(self
@@ -145,7 +145,7 @@ impl ConversationStore for MongoConversations {
         id: &str,
         title: &str,
     ) -> anyhow::Result<Option<Conversation>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
         Ok(self
@@ -160,7 +160,7 @@ impl ConversationStore for MongoConversations {
     }
 
     async fn delete_owned(&self, user_id: &str, id: &str) -> anyhow::Result<bool> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(false);
         };
         Ok(self.collection.delete_one(filter).await?.deleted_count == 1)
@@ -174,7 +174,7 @@ impl ConversationStore for MongoConversations {
         assistant_message: NewMessage,
         new_title: Option<&str>,
     ) -> anyhow::Result<Option<ChatMessage>> {
-        let Some(filter) = Self::owned(user_id, id) else {
+        let Some(filter) = Self::owner_filter(user_id, id) else {
             return Ok(None);
         };
 

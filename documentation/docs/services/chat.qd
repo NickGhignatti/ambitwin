@@ -596,7 +596,7 @@ Three private "document" types mirror what MongoDB stores (`ObjectId`, `DateTime
 ### Owned lookups
 
 ```rust
-fn owned(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
+fn owner_filter(user_id: &str, id: &str) -> Option<mongodb::bson::Document> {
     ObjectId::parse_str(id)
         .ok()
         .map(|id| doc! { "_id": { "$eq": id }, "userId": { "$eq": user_id } })
