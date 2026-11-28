@@ -24,10 +24,6 @@ impl InMemoryConversations {
             .iter()
             .position(|c| c.id == id && c.user_id == user_id)
     }
-
-    pub fn insert(&self, conversation: Conversation) {
-        self.conversations.lock().unwrap().push(conversation);
-    }
 }
 
 #[async_trait]
@@ -107,20 +103,15 @@ impl ConversationStore for InMemoryConversations {
         };
 
         let stamp = iso8601(1);
-        let user = ChatMessage {
+        let stored_message = |message: NewMessage| ChatMessage {
             id: self.mint_id(),
-            role: user_message.role,
-            content: user_message.content,
-            citations: user_message.citations,
+            role: message.role,
+            content: message.content,
+            citations: message.citations,
             created_at: stamp.clone(),
         };
-        let assistant = ChatMessage {
-            id: self.mint_id(),
-            role: assistant_message.role,
-            content: assistant_message.content,
-            citations: assistant_message.citations,
-            created_at: stamp.clone(),
-        };
+        let user = stored_message(user_message);
+        let assistant = stored_message(assistant_message);
 
         let conversation = &mut stored[index];
         conversation.messages.push(user);
