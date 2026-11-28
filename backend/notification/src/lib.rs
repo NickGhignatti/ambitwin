@@ -36,7 +36,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(protected_routes())
         .layer(axum::middleware::from_fn_with_state(
             rate_limiter,
-            adapters::ratelimit::rate_limit,
+            rate_limit::rate_limit,
         ))
         .layer(axum::middleware::from_fn(adapters::metrics::track_metrics))
         .with_state(state)

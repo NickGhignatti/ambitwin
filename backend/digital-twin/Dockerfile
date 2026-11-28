@@ -1,6 +1,7 @@
 FROM rust-base AS chef
 WORKDIR /app/backend/digital-twin
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY schemas/twin-schema /app/schemas/twin-schema
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 

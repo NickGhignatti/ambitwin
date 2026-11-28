@@ -8,7 +8,6 @@ use digital_twin::adapters::driven::persistence::db::{self, MongoBuildings};
 use digital_twin::adapters::driven::persistence::jobs::MongoUploadQueue;
 use digital_twin::adapters::driven::persistence::placements::MongoPlacements;
 use digital_twin::adapters::driving::worker;
-use digital_twin::adapters::ratelimit::RateLimiter;
 use digital_twin::build_router;
 use digital_twin::domain::Building;
 use digital_twin::service::buildings::Buildings;
@@ -16,6 +15,7 @@ use digital_twin::service::placements::Placements;
 use digital_twin::service::ports::RegistrationEvents;
 use digital_twin::service::provisioning::Provisioning;
 use digital_twin::state::AppState;
+use rate_limit::RateLimiter;
 
 struct InstantlyResolvingEvents {
     tx: tokio::sync::mpsc::UnboundedSender<String>,

@@ -4,6 +4,7 @@ WORKDIR /app/backend/chat
 # ── capture the dependency graph ────────────────────────────────────────
 FROM chef AS planner
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY backend/chat .
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -11,6 +12,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS debug-deps
 COPY --from=planner /app/backend/chat/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 RUN --mount=type=cache,target=/sccache,sharing=shared \
     RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache CARGO_INCREMENTAL=0 \
     cargo chef cook --recipe-path recipe.json
@@ -27,6 +29,7 @@ CMD ["cargo", "watch", "-x", "run"]
 FROM chef AS builder
 COPY --from=planner /app/backend/chat/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY backend/chat .
 RUN cargo build --release

@@ -113,6 +113,7 @@ Never deployed, always built into a service.
 | `backend/libs/auth-contracts` | Token shape, role ladder, HMAC signing | Go services |
 | `backend/libs/auth-middleware` | Verify a JWT, or read the edge's header | `claims-gateway`, `tenancy` |
 | `backend/libs/auth-policy` | The one Cedar bundle | Every service that runs Cedar |
+| `backend/libs/rate-limit` | 300 requests per minute per client IP, as Axum middleware | `chat`, `digital-twin`, `notification` |
 | `schemas/*-schema` | Rust crates for shared shapes | Rust services |
 | `schemas/fixtures`, `schemas/json` | Examples every language must parse, written contracts | All |
 

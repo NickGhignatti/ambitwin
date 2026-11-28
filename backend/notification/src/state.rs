@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::adapters::ratelimit::RateLimiter;
 use crate::service::alerts::Alerts;
 use crate::service::preferences::Preferences;
+use rate_limit::RateLimiter;
 
 #[derive(Clone)]
 pub struct AppState {

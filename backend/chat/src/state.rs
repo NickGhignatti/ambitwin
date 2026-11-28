@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::adapters::ratelimit::RateLimiter;
 use crate::service::conversations::Conversations;
+use rate_limit::RateLimiter;
 
 #[derive(Clone)]
 pub struct AppState {

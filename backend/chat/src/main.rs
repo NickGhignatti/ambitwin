@@ -9,10 +9,10 @@ use tokio::signal::unix::{SignalKind, signal};
 use chat::adapters::driven::agent::AgentService;
 use chat::adapters::driven::persistence::conversations::MongoConversations;
 use chat::adapters::driven::persistence::db;
-use chat::adapters::ratelimit::RateLimiter;
 use chat::build_router;
 use chat::service::conversations::Conversations;
 use chat::state::AppState;
+use rate_limit::RateLimiter;
 
 const DEFAULT_HISTORY_MAX_MESSAGES: usize = 10;
 

@@ -191,7 +191,7 @@ Version 2.6.4, pinned in `.mise.toml`, always started through `mise exec`.
 
 | Language | Projects |
 |---|---|
-| `rust` | `chat`, `digital-twin`, `notification`, `socket`, `dashboard`, `telemetry`, `telemetry-schema`, `claims-schema`, `twin-schema`, `notification-schema` |
+| `rust` | `chat`, `digital-twin`, `notification`, `socket`, `dashboard`, `telemetry`, `telemetry-schema`, `claims-schema`, `twin-schema`, `notification-schema`, `rate-limit` |
 | `go` | `claims-gateway`, `tenancy`, `registry`, `provisioner`, `auth-contracts`, `auth-middleware`, `auth-policy` |
 | `typescript` | `frontend`, `sensor-simulator` |
 | `python` | `agent`, `ap-simulator`, `aq-simulator`, `ap-collector`, `acceptance` |

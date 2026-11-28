@@ -27,7 +27,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/conversations/{id}/messages", post(send_message))
         .layer(axum::middleware::from_fn_with_state(
             state.rate_limiter.clone(),
-            adapters::ratelimit::rate_limit,
+            rate_limit::rate_limit,
         ))
         .layer(axum::middleware::from_fn(adapters::metrics::track_metrics))
         .with_state(state)

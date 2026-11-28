@@ -900,12 +900,12 @@ dependencies = [
  "cedar-policy",
  "claims-schema",
  "cucumber",
- "dashmap",
  "env_logger",
  "futures",
  "log",
  "mongodb",
  "prometheus",
+ "rate-limit",
  "rdkafka",
  "redis",
  "reqwest",
@@ -2722,6 +2722,14 @@ name = "rand_core"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rate-limit"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dashmap",
+]
 
 [[package]]
 name = "rdkafka"

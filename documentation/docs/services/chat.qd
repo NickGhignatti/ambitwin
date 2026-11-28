@@ -63,7 +63,6 @@ Ports and adapters. `tests/architecture_fitness.rs` fails the build when a rule 
 | `src/adapters/driving/http_api/` | The claims extractor, the handlers, the SSE frames, the error mapping | `crate::adapters::driven` |
 | `src/adapters/driven/persistence/` | The MongoDB store. The only file that knows `ObjectId` | |
 | `src/adapters/driven/agent.rs` | `AgentService`: calls `agent` `/ask` and reads its SSE stream | |
-| `src/adapters/ratelimit.rs` | 300 requests per minute per client IP | |
 
 "Driving" means the outside world drives the service (HTTP comes in). "Driven" means the service drives the outside world (it calls MongoDB and `agent`).
 
@@ -664,7 +663,7 @@ All behind the edge at `/chat/*`. The edge must not buffer: Caddy needs `flush_i
 | `DELETE` | `/conversations/{id}` | Owner | Delete | `204` |
 | `POST` | `/conversations/{id}/messages` | Owner | Ask. The answer streams back | SSE |
 
-Every request goes through two layers: a **rate limiter** and a metrics layer. The limiter allows 300 requests per minute per client IP, then answers `429`. The IP is the **rightmost** value of `x-forwarded-for`, the one the edge appended, not one the client could write. A sweep once per minute drops the clients that were idle. (The same file is copied into `chat`, `digital-twin` and `notification`: no shared Rust library holds middleware, so a fix in one copy must be made in all three.)
+Every request goes through two layers: a **rate limiter** and a metrics layer. The limiter allows 300 requests per minute per client IP, then answers `429`. The IP is the **rightmost** value of `x-forwarded-for`, the one the edge appended, not one the client could write. A sweep once per minute drops the clients that were idle. The limiter is the shared crate [Rate Limit](../packages/rate-limit.qd), also used by `digital-twin` and `notification`.
 
 ### Who is the owner
 

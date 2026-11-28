@@ -7,21 +7,19 @@ use tokio::net::TcpListener;
 use std::sync::Arc;
 
 use digital_twin::adapters::driven::kafka_producer::KafkaEventProducer;
+use digital_twin::adapters::driven::outbound::{OutboundConfig, client};
 use digital_twin::adapters::driven::persistence::db::{self, MongoBuildings};
 use digital_twin::adapters::driven::persistence::jobs::MongoUploadQueue;
 use digital_twin::adapters::driven::persistence::placements::MongoPlacements;
 use digital_twin::adapters::driven::redis_devices::RedisDevicesFeed;
 use digital_twin::adapters::driving::{kafka_consumer, wifi_consumer, worker};
-use digital_twin::adapters::{
-    driven::outbound::{OutboundConfig, client},
-    ratelimit::RateLimiter,
-};
 use digital_twin::build_router;
 use digital_twin::service::buildings::Buildings;
 use digital_twin::service::placements::Placements;
 use digital_twin::service::provisioning::Provisioning;
 use digital_twin::service::tracking::Tracking;
 use digital_twin::state::AppState;
+use rate_limit::RateLimiter;
 
 async fn shutdown_signal() {
     let ctrl_c = async {

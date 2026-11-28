@@ -4,6 +4,7 @@ WORKDIR /app/backend/notification
 # ── capture the dependency graph ────────────────────────────────────────
 FROM chef AS planner
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/notification-schema /app/schemas/notification-schema
 COPY backend/notification .
@@ -13,6 +14,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS debug-deps
 COPY --from=planner /app/backend/notification/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/notification-schema /app/schemas/notification-schema
 RUN --mount=type=cache,target=/sccache,sharing=shared \
@@ -34,6 +36,7 @@ CMD ["cargo", "watch", "-x", "run"]
 FROM chef AS builder
 COPY --from=planner /app/backend/notification/recipe.json recipe.json
 COPY schemas/claims-schema /app/schemas/claims-schema
+COPY backend/libs/rate-limit /app/backend/libs/rate-limit
 COPY schemas/telemetry-schema /app/schemas/telemetry-schema
 COPY schemas/notification-schema /app/schemas/notification-schema
 RUN cargo chef cook --release --recipe-path recipe.json

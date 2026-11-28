@@ -9,6 +9,11 @@
     ]
   },
   {
+    "key": "rate-limit",
+    "dir": "backend/libs/rate-limit",
+    "lang": "rust"
+  },
+  {
     "key": "claims-schema",
     "dir": "schemas/claims-schema",
     "lang": "rust",
@@ -118,6 +123,7 @@
     "cd_context": ".",
     "dockerfile": "backend/chat/Dockerfile",
     "depends_on": [
+      "backend/libs/rate-limit",
       "schemas/claims-schema",
       "schemas/fixtures",
       "schemas/json"
@@ -134,6 +140,7 @@
     "cd_context": ".",
     "dockerfile": "backend/notification/Dockerfile",
     "depends_on": [
+      "backend/libs/rate-limit",
       "schemas/claims-schema",
       "schemas/notification-schema",
       "schemas/telemetry-schema",
@@ -186,6 +193,7 @@
     "cd_context": ".",
     "dockerfile": "backend/digital-twin/Dockerfile",
     "depends_on": [
+      "backend/libs/rate-limit",
       "schemas/claims-schema",
       "schemas/telemetry-schema",
       "schemas/twin-schema",

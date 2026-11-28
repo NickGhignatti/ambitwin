@@ -174,7 +174,6 @@ mod tests {
     use serde_json::Value;
     use tower::ServiceExt;
 
-    use crate::adapters::ratelimit::RateLimiter;
     use crate::domain::CLAIMS_HEADER;
     use crate::service::alerts::Alerts;
     use crate::service::fakes::{
@@ -184,6 +183,7 @@ mod tests {
     use crate::service::preferences::Preferences;
     use crate::service::push::Push;
     use crate::state::AppState;
+    use rate_limit::RateLimiter;
 
     struct Harness {
         state: AppState,

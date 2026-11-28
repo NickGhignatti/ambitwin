@@ -1,0 +1,12 @@
+[package]
+name = "rate-limit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["tokio"] }
+dashmap = "6.2.1"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }

@@ -73,7 +73,7 @@ Ports and adapters. Arrows point inward: only `main.rs` knows the store is Mongo
 | `src/service/` | The use cases `buildings`, `provisioning`, `placements`, `tracking`, `tracks`, `estimator`. `authz` (Cedar). `ports.rs`. `fakes.rs` (test doubles) | `axum`, `mongodb`, `crate::adapters` |
 | `src/adapters/driving/` | `http_api/` (handlers, claims extractor, error mapping), `worker.rs`, `kafka_consumer.rs`, `wifi_consumer.rs` | `crate::adapters::driven` |
 | `src/adapters/driven/` | `persistence/` (`db.rs`, `jobs.rs`, `placements.rs`), `kafka_producer.rs`, `redis_devices.rs`, `outbound.rs` | |
-| `src/adapters/` | `metrics.rs`, `ratelimit.rs`, `topics.rs`: shared by every route | |
+| `src/adapters/` | `metrics.rs`, `topics.rs`: shared by every route. The rate limit is the shared crate [Rate Limit](../packages/rate-limit.qd) | |
 | `src/lib.rs` | `build_router`, and `/contracts` | |
 | `src/main.rs` | Reads env, builds adapters, starts everything | |
 
@@ -897,7 +897,7 @@ Any failure while building the Cedar request is logged and answers **false**: de
     sequenceDiagram
         autonumber
         participant E as Edge
-        participant RL as ratelimit::rate_limit
+        participant RL as rate_limit::rate_limit
         participant M as metrics::track_metrics
         participant X as GatewayClaims extractor
         participant H as handler
@@ -1290,7 +1290,6 @@ just test twin-integration   # tests/*.rs against a throwaway MongoDB
 | `src/service/*.rs` | Every use case against the fakes in `fakes.rs`: no database, no network |
 | `src/adapters/driving/kafka_consumer.rs` | `ready`, `failed` with and without `error`, malformed, repeat, retry on store error, unknown building |
 | `src/adapters/driving/wifi_consumer.rs` | Every fixture tick accepted, every rejected one dropped, a stale tick dropped |
-| `src/adapters/ratelimit.rs` | The limit, per-IP counts, forged addresses, window reset |
 | `src/service/tracks.rs` | Walking speed, the 3-tick forget, shared bursts, passers. A replay of `tests/data/wifi-recording.jsonl` |
 | `tests/api.rs`, `tests/api/*.rs` | Routes through the real router: auth, buildings, update, placements, registration, rooms, tenant scoping |
 | `tests/persistence_*.rs` | The MongoDB adapters |

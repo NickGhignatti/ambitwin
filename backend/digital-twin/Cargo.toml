@@ -9,7 +9,6 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "json
 base64 = "0.23"
 cedar-policy = "4"
 claims-schema = { path = "../../schemas/claims-schema" }
-dashmap = "6.2.1"
 env_logger = { version = "0.11.10", default-features = false, features = ["humantime"] }
 futures = "0.3.32"
 log = "0.4.32"
@@ -26,6 +25,7 @@ urlencoding = "2"
 async-trait = "0.1.91"
 rdkafka = "0.39.0"
 redis = { version = "1.6.0", default-features = false, features = ["tokio-comp"] }
+rate-limit = { version = "0.1.0", path = "../libs/rate-limit" }
 
 [dev-dependencies]
 cucumber = "0.23.0"
